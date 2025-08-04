@@ -41,6 +41,7 @@ import SortableHeader from './SortableHeader'
 import DebugMetrics from './DebugMetrics'
 import TimelineChart from './TimelineChart'
 import MetricsCarousel from './MetricsCarousel'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 interface User {
   email: string
@@ -79,6 +80,13 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const [showAllRecords, setShowAllRecords] = useState(false)
   const [activeTab, setActiveTab] = useState<string>('visao-geral')
   const [filtersCollapsed, setFiltersCollapsed] = useState(true)
+
+  // Título dinâmico baseado no estado do dashboard
+  useDocumentTitle(
+    isLoading 
+      ? 'Carregando Dashboard... | MyMetricHUB'
+      : `Dashboard ${selectedTable === 'coffeemais' ? 'CoffeeMais' : selectedTable === 'constance' ? 'Constance' : selectedTable} | MyMetricHUB`
+  )
 
   useEffect(() => {
     const fetchMetrics = async () => {
