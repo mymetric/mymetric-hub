@@ -542,23 +542,32 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         {/* Filters */}
         <div className="mb-6">
           {/* Mobile Collapsible Header */}
-          <div className="md:hidden mb-2">
+          <div className="md:hidden mb-3">
             <button
               onClick={() => setFiltersCollapsed(!filtersCollapsed)}
-              className="flex items-center justify-between w-full p-3 bg-white rounded-lg border border-gray-200 shadow-sm hover:bg-gray-50 transition-colors"
+              className="flex items-center justify-between w-full p-4 bg-white rounded-xl border border-gray-200 shadow-sm hover:bg-gray-50 transition-all duration-200"
             >
-              <div className="flex items-center gap-2">
-                <BarChart3 className="w-5 h-5 text-gray-600" />
-                <span className="font-medium text-gray-900">Filtros</span>
-                <span className="text-sm text-gray-500">
-                  ({selectedCluster === 'Todos' ? 'Todos os clusters' : selectedCluster})
-                </span>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <BarChart3 className="w-4 h-4 text-blue-600" />
+                </div>
+                <div className="text-left">
+                  <span className="font-semibold text-gray-900 block">Filtros</span>
+                  <span className="text-xs text-gray-500">
+                    {selectedCluster === 'Todos' ? 'Todos os clusters' : selectedCluster} • {startDate} a {endDate}
+                  </span>
+                </div>
               </div>
-              {filtersCollapsed ? (
-                <ChevronDown className="w-5 h-5 text-gray-500" />
-              ) : (
-                <ChevronUp className="w-5 h-5 text-gray-500" />
-              )}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 font-medium">
+                  {filtersCollapsed ? 'Expandir' : 'Recolher'}
+                </span>
+                {filtersCollapsed ? (
+                  <ChevronDown className="w-5 h-5 text-gray-500" />
+                ) : (
+                  <ChevronUp className="w-5 h-5 text-gray-500" />
+                )}
+              </div>
             </button>
           </div>
 
@@ -568,38 +577,76 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
           </div>
           
           {/* Filters Content */}
-          <div className={`flex flex-row items-start gap-2 transition-all duration-300 ease-in-out ${
+          <div className={`transition-all duration-300 ease-in-out relative ${
             filtersCollapsed ? 'md:block hidden' : 'block'
-          }`} style={{ display: 'flex', flexDirection: 'row' }}>
-            {/* Date Range Picker */}
-            <div className="flex-1 overflow-hidden">
-              <DateRangePicker
-                startDate={startDate}
-                endDate={endDate}
-                onDateRangeChange={(start, end) => {
-                  setStartDate(start)
-                  setEndDate(end)
-                }}
-              />
+          }`}>
+            {/* Mobile Layout - Vertical */}
+            <div className="md:hidden space-y-3">
+              {/* Date Range Picker Card */}
+              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <DateRangePicker
+                  startDate={startDate}
+                  endDate={endDate}
+                  onDateRangeChange={(start, end) => {
+                    setStartDate(start)
+                    setEndDate(end)
+                  }}
+                />
+              </div>
+              
+              {/* Cluster Filter Card */}
+              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <label className="block text-sm font-semibold text-gray-700 mb-3">
+                  Cluster
+                </label>
+                <div className="relative">
+                  <PieChart className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <select
+                    value={selectedCluster}
+                    onChange={(e) => setSelectedCluster(e.target.value)}
+                    className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                  >
+                    <option value="Todos">Todos os clusters</option>
+                    {clusters.map(cluster => (
+                      <option key={cluster} value={cluster}>{cluster}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
-            
-            {/* Cluster Filter */}
-            <div className="flex-1 overflow-hidden">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Cluster
-              </label>
-              <div className="relative">
-                <PieChart className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500" />
-                <select
-                  value={selectedCluster}
-                  onChange={(e) => setSelectedCluster(e.target.value)}
-                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                >
-                  <option value="Todos">Todos os clusters</option>
-                  {clusters.map(cluster => (
-                    <option key={cluster} value={cluster}>{cluster}</option>
-                  ))}
-                </select>
+
+            {/* Desktop Layout - Horizontal */}
+            <div className="hidden md:flex flex-row items-start gap-4">
+              {/* Date Range Picker */}
+              <div className="flex-1">
+                <DateRangePicker
+                  startDate={startDate}
+                  endDate={endDate}
+                  onDateRangeChange={(start, end) => {
+                    setStartDate(start)
+                    setEndDate(end)
+                  }}
+                />
+              </div>
+              
+              {/* Cluster Filter */}
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Cluster
+                </label>
+                <div className="relative">
+                  <PieChart className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <select
+                    value={selectedCluster}
+                    onChange={(e) => setSelectedCluster(e.target.value)}
+                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                  >
+                    <option value="Todos">Todos os clusters</option>
+                    {clusters.map(cluster => (
+                      <option key={cluster} value={cluster}>{cluster}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
           </div>
