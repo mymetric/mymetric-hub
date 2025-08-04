@@ -7,8 +7,10 @@ interface ClientSelectorProps {
 }
 
 const clients = [
-  { id: 'coffeemais', name: 'CoffeeMais', description: 'Café e bebidas' },
-  { id: 'constance', name: 'Constance', description: 'Construção civil' }
+  { id: 'coffeemais', name: 'CoffeeMais' },
+  { id: 'constance', name: 'Constance' },
+  { id: 'gringa', name: 'Gringa' },
+  { id: 'bocarosa', name: 'Bocarosa' }
 ]
 
 const ClientSelector = ({ onClientChange, currentClient }: ClientSelectorProps) => {
@@ -25,7 +27,6 @@ const ClientSelector = ({ onClientChange, currentClient }: ClientSelectorProps) 
         <Building2 className="w-5 h-5 text-gray-500" />
         <div className="text-left">
           <div className="font-medium text-gray-900">{selectedClient.name}</div>
-          <div className="text-xs text-gray-500">{selectedClient.description}</div>
         </div>
         <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
@@ -45,7 +46,6 @@ const ClientSelector = ({ onClientChange, currentClient }: ClientSelectorProps) 
                 }`}
               >
                 <div className="font-medium text-gray-900">{client.name}</div>
-                <div className="text-sm text-gray-500">{client.description}</div>
               </button>
             ))}
           </div>

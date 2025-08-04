@@ -94,7 +94,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   useDocumentTitle(
     isLoading 
       ? 'Carregando Dashboard... | MyMetricHUB'
-      : `Dashboard ${selectedTable === 'coffeemais' ? 'CoffeeMais' : selectedTable === 'constance' ? 'Constance' : selectedTable} | MyMetricHUB`
+      : `Dashboard ${selectedTable === 'coffeemais' ? 'CoffeeMais' : selectedTable === 'constance' ? 'Constance' : selectedTable === 'gringa' ? 'Gringa' : selectedTable === 'bocarosa' ? 'Bocarosa' : selectedTable} | MyMetricHUB`
   )
 
   useEffect(() => {
@@ -437,7 +437,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   onTableChange={setSelectedTable}
                   availableTables={
                     user?.tablename === 'all' 
-                      ? ['coffeemais', 'constance']
+                      ? ['coffeemais', 'constance', 'gringa', 'bocarosa']
                       : [user?.tablename || 'coffeemais']
                   }
                 />

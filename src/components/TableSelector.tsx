@@ -13,23 +13,29 @@ const TableSelector = ({ currentTable, onTableChange, availableTables = [] }: Ta
   // Tabelas padrão se não houver disponíveis
   const tables = availableTables.length > 0 ? availableTables : [
     'coffeemais',
-    'constance'
+    'constance',
+    'gringa',
+    'bocarosa'
   ]
 
   const getTableDisplayName = (tableName: string) => {
     const displayNames: { [key: string]: string } = {
       'coffeemais': 'CoffeeMais',
-      'constance': 'Constance'
+      'constance': 'Constance',
+      'gringa': 'Gringa',
+      'bocarosa': 'Bocarosa'
     }
     return displayNames[tableName] || tableName
   }
 
   const getTableDescription = (tableName: string) => {
     const descriptions: { [key: string]: string } = {
-      'coffeemais': 'Café e bebidas',
-      'constance': 'Construção civil'
+      'coffeemais': '',
+      'constance': '',
+      'gringa': '',
+      'bocarosa': ''
     }
-    return descriptions[tableName] || 'Dados da tabela'
+    return descriptions[tableName] || ''
   }
 
   return (
@@ -42,7 +48,6 @@ const TableSelector = ({ currentTable, onTableChange, availableTables = [] }: Ta
           <Database className="w-4 h-4 text-gray-500 flex-shrink-0" />
           <div className="text-left min-w-0 flex-1">
             <div className="font-medium text-gray-900 truncate">{getTableDisplayName(currentTable)}</div>
-            <div className="text-xs text-gray-500 truncate hidden sm:block">{getTableDescription(currentTable)}</div>
           </div>
         </div>
         <svg
@@ -70,7 +75,6 @@ const TableSelector = ({ currentTable, onTableChange, availableTables = [] }: Ta
                 }`}
               >
                 <div className="font-medium">{getTableDisplayName(table)}</div>
-                <div className="text-xs text-gray-500 mt-0.5 sm:mt-1">{getTableDescription(table)}</div>
               </button>
             ))}
           </div>

@@ -147,6 +147,26 @@ def get_basic_metrics():
                 "period": f"{start_date} a {end_date}",
                 "table_name": table_name
             }
+        elif table_name == 'gringa':
+            metrics_data = {
+                "total_sales": 75000,
+                "total_orders": 750,
+                "average_order_value": 100.0,
+                "customer_count": 300,
+                "growth_rate": 15.2,
+                "period": f"{start_date} a {end_date}",
+                "table_name": table_name
+            }
+        elif table_name == 'bocarosa':
+            metrics_data = {
+                "total_sales": 95000,
+                "total_orders": 950,
+                "average_order_value": 100.0,
+                "customer_count": 380,
+                "growth_rate": 18.7,
+                "period": f"{start_date} a {end_date}",
+                "table_name": table_name
+            }
         else:
             metrics_data = {
                 "total_sales": 50000,
