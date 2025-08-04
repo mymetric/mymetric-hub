@@ -1,0 +1,140 @@
+const API_BASE_URL = 'https://api.mymetric.app'
+
+interface LoginData {
+  email: string
+  password: string
+}
+
+interface LoginResponse {
+  access_token: string
+  token_type: string
+}
+
+interface ProfileResponse {
+  email: string
+  admin: boolean
+  access_control: string
+  tablename: string
+}
+
+interface MetricsRequest {
+  start_date: string
+  end_date: string
+  table_name: string
+}
+
+interface MetricsDataItem {
+  Data: string
+  Cluster: string
+  Investimento: number
+  Cliques: number
+  Sessoes: number
+  Adicoes_ao_Carrinho: number
+  Pedidos: number
+  Receita: number
+  Pedidos_Pagos: number
+  Receita_Paga: number
+  Novos_Clientes: number
+  Receita_Novos_Clientes: number
+}
+
+interface MetricsResponse {
+  data: MetricsDataItem[]
+}
+
+export const api = {
+  async login(loginData: LoginData): Promise<LoginResponse> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(loginData),
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const data = await response.json()
+      return data
+    } catch (error) {
+      console.error('Login error:', error)
+      throw new Error('Erro ao conectar com o servidor. Verifique se a API está rodando.')
+    }
+  },
+
+  async getProfile(token: string): Promise<ProfileResponse> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/profile`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const data = await response.json()
+      return data
+    } catch (error) {
+      console.error('Profile fetch error:', error)
+      throw new Error('Erro ao buscar perfil do usuário.')
+    }
+  },
+
+  async getMetrics(token: string, metricsData: MetricsRequest): Promise<MetricsResponse> {
+    try {
+      console.log('🌐 API Request:', {
+        url: `${API_BASE_URL}/metrics/basic-data`,
+        method: 'POST',
+        body: metricsData
+      })
+
+      const response = await fetch(`${API_BASE_URL}/metrics/basic-data`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(metricsData),
+      })
+
+      console.log('📡 Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('📦 API Response data:', data)
+      return data
+    } catch (error) {
+      console.error('❌ Metrics fetch error:', error)
+      throw new Error('Erro ao buscar métricas.')
+    }
+  },
+
+  async validateToken(token: string): Promise<boolean> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/validate-token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+
+      return response.ok
+    } catch (error) {
+      console.error('Token validation error:', error)
+      return false
+    }
+  }
+} 
