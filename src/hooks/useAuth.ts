@@ -77,14 +77,16 @@ export const useAuth = () => {
     
     if (token) {
       try {
-        // Temporariamente usando dados mock
+        // Buscar dados do perfil da API
+        const profile = await api.getProfile(token)
+        
         const newAuthData: AuthData = {
           isAuthenticated: true,
           user: {
-            email: username,
-            admin: false,
-            access_control: 'read',
-            tablename: 'coffeemais',
+            email: profile.email,
+            admin: profile.admin,
+            access_control: profile.access_control,
+            tablename: profile.tablename,
             username,
             lastLogin: new Date().toISOString()
           }

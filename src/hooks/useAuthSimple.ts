@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { api } from '../services/api'
 
 interface AuthData {
   isAuthenticated: boolean
@@ -44,23 +45,47 @@ export const useAuthSimple = () => {
     const token = localStorage.getItem('auth-token')
     
     if (token) {
-      // Criar dados básicos sem fazer chamada para API
-      const newAuthData: AuthData = {
-        isAuthenticated: true,
-        user: {
-          email: username,
-          admin: false,
-          access_control: 'read',
-          tablename: 'user_metrics',
-          username,
-          lastLogin: new Date().toISOString()
+      try {
+        // Buscar dados do perfil da API
+        console.log('📡 SIMPLE AUTH - Fetching profile from API...')
+        const profile = await api.getProfile(token)
+        
+        const newAuthData: AuthData = {
+          isAuthenticated: true,
+          user: {
+            email: profile.email,
+            admin: profile.admin,
+            access_control: profile.access_control,
+            tablename: profile.tablename,
+            username,
+            lastLogin: new Date().toISOString()
+          }
         }
+        
+        console.log('💾 SIMPLE AUTH - Setting auth data:', newAuthData)
+        setAuthData(newAuthData)
+        localStorage.setItem('mymetric-auth', JSON.stringify(newAuthData))
+        console.log('✅ SIMPLE AUTH - Data saved to localStorage')
+      } catch (error) {
+        console.error('❌ SIMPLE AUTH - Error fetching profile:', error)
+        // Fallback para dados básicos se não conseguir buscar o perfil
+        const newAuthData: AuthData = {
+          isAuthenticated: true,
+          user: {
+            email: username,
+            admin: false,
+            access_control: 'read',
+            tablename: 'user_metrics',
+            username,
+            lastLogin: new Date().toISOString()
+          }
+        }
+        
+        console.log('💾 SIMPLE AUTH - Using fallback data:', newAuthData)
+        setAuthData(newAuthData)
+        localStorage.setItem('mymetric-auth', JSON.stringify(newAuthData))
+        console.log('✅ SIMPLE AUTH - Fallback data saved to localStorage')
       }
-      
-      console.log('💾 SIMPLE AUTH - Setting auth data:', newAuthData)
-      setAuthData(newAuthData)
-      localStorage.setItem('mymetric-auth', JSON.stringify(newAuthData))
-      console.log('✅ SIMPLE AUTH - Data saved to localStorage')
     } else {
       console.error('❌ SIMPLE AUTH - No token found for login')
     }
