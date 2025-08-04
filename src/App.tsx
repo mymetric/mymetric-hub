@@ -37,7 +37,6 @@ function App() {
           <LoginScreen onLogin={handleLogin} />
         </div>
       )}
-
     </div>
   )
 }

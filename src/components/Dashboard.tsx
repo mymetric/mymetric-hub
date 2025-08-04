@@ -1,27 +1,11 @@
 import { useState, useEffect } from 'react'
 import { 
-  TrendingUp, 
-  Users, 
-  ShoppingCart, 
-  DollarSign, 
-  Calendar,
   BarChart3,
   PieChart,
-  Activity,
   ArrowUpRight,
   ArrowDownRight,
   LogOut,
   User,
-  Eye,
-  CreditCard,
-  Target,
-  LineChart,
-  UserPlus,
-  Monitor,
-  Wallet,
-  Zap,
-  TrendingDown,
-  UserCheck,
   Globe,
   Coins,
   Sparkles,
@@ -29,9 +13,9 @@ import {
   Users2,
   CheckCircle,
   ShoppingBag,
-  Percent,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  DollarSign
 } from 'lucide-react'
 import { api } from '../services/api'
 import Logo from './Logo'
@@ -41,6 +25,7 @@ import SortableHeader from './SortableHeader'
 import DebugMetrics from './DebugMetrics'
 import TimelineChart from './TimelineChart'
 import MetricsCarousel from './MetricsCarousel'
+import ConversionFunnel from './ConversionFunnel'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 interface User {
@@ -80,6 +65,30 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const [showAllRecords, setShowAllRecords] = useState(false)
   const [activeTab, setActiveTab] = useState<string>('visao-geral')
   const [filtersCollapsed, setFiltersCollapsed] = useState(true)
+
+  // Função para calcular datas dos últimos 30 dias
+  const getLast30Days = () => {
+    const endDate = new Date()
+    const startDate = new Date()
+    startDate.setDate(endDate.getDate() - 30)
+    
+    return {
+      start: startDate.toISOString().split('T')[0],
+      end: endDate.toISOString().split('T')[0]
+    }
+  }
+
+  // Função para lidar com mudança de aba
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab)
+    
+    // Se for a aba do funil de conversão, definir período padrão de 30 dias
+    if (tab === 'funil-conversao') {
+      const last30Days = getLast30Days()
+      setStartDate(last30Days.start)
+      setEndDate(last30Days.end)
+    }
+  }
 
   // Título dinâmico baseado no estado do dashboard
   useDocumentTitle(
@@ -155,7 +164,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
   const avgOrderValue = totals.pedidos > 0 ? totals.receita / totals.pedidos : 0
   const conversionRate = totals.sessoes > 0 ? (totals.pedidos / totals.sessoes) * 100 : 0
-  const cartConversionRate = totals.adicoesCarrinho > 0 ? (totals.pedidos / totals.adicoesCarrinho) * 100 : 0
+
   const revenuePerSession = totals.sessoes > 0 ? totals.receita / totals.sessoes : 0
   const newCustomerRate = totals.pedidos > 0 ? (totals.novosClientes / totals.pedidos) * 100 : 0
   // Taxa de adição ao carrinho - limitando a um máximo de 100% por sessão
@@ -449,19 +458,32 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <nav className="flex space-x-8">
-            <button
-              onClick={() => setActiveTab('visao-geral')}
-              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'visao-geral'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <BarChart3 className="w-4 h-4" />
-                Visão Geral
-              </div>
-            </button>
+                          <button
+                onClick={() => handleTabChange('visao-geral')}
+                className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  activeTab === 'visao-geral'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4" />
+                  Visão Geral
+                </div>
+              </button>
+                          <button
+                onClick={() => handleTabChange('funil-conversao')}
+                className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  activeTab === 'funil-conversao'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4" />
+                  Funil de Conversão
+                </div>
+              </button>
           </nav>
         </div>
       </div>
@@ -595,24 +617,29 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
               </div>
               
               {/* Cluster Filter Card */}
-              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-                <label className="block text-sm font-semibold text-gray-700 mb-3">
-                  Cluster
-                </label>
-                <div className="relative">
-                  <PieChart className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500" />
-                  <select
-                    value={selectedCluster}
-                    onChange={(e) => setSelectedCluster(e.target.value)}
-                    className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                  >
-                    <option value="Todos">Todos os clusters</option>
-                    {clusters.map(cluster => (
-                      <option key={cluster} value={cluster}>{cluster}</option>
-                    ))}
-                  </select>
+              {activeTab !== 'funil-conversao' && (
+                <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                  <label className="block text-sm font-semibold text-gray-700 mb-3">
+                    Cluster
+                  </label>
+                  <div className="relative">
+                    <PieChart className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <select
+                      value={selectedCluster}
+                      onChange={(e) => {
+                        console.log('🔍 Dashboard - Mobile Cluster changed to:', e.target.value)
+                        setSelectedCluster(e.target.value)
+                      }}
+                      className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                    >
+                      <option value="Todos">Todos os clusters</option>
+                      {clusters.map(cluster => (
+                        <option key={cluster} value={cluster}>{cluster}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Desktop Layout - Horizontal */}
@@ -630,24 +657,29 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
               </div>
               
               {/* Cluster Filter */}
-              <div className="flex-1">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Cluster
-                </label>
-                <div className="relative">
-                  <PieChart className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500" />
-                  <select
-                    value={selectedCluster}
-                    onChange={(e) => setSelectedCluster(e.target.value)}
-                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                  >
-                    <option value="Todos">Todos os clusters</option>
-                    {clusters.map(cluster => (
-                      <option key={cluster} value={cluster}>{cluster}</option>
-                    ))}
-                  </select>
+              {activeTab !== 'funil-conversao' && (
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Cluster
+                  </label>
+                  <div className="relative">
+                    <PieChart className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <select
+                      value={selectedCluster}
+                      onChange={(e) => {
+                        console.log('🔍 Dashboard - Desktop Cluster changed to:', e.target.value)
+                        setSelectedCluster(e.target.value)
+                      }}
+                      className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                    >
+                      <option value="Todos">Todos os clusters</option>
+                      {clusters.map(cluster => (
+                        <option key={cluster} value={cluster}>{cluster}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
@@ -913,6 +945,16 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
               </>
             )}
           </>
+        )}
+
+        {/* Funil de Conversão Tab */}
+        {activeTab === 'funil-conversao' && (
+          <ConversionFunnel 
+            selectedTable={selectedTable}
+            startDate={startDate}
+            endDate={endDate}
+            selectedCluster={selectedCluster}
+          />
         )}
       </main>
       <DebugMetrics 

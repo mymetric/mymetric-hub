@@ -21,6 +21,7 @@ interface MetricsRequest {
   start_date: string
   end_date: string
   table_name: string
+  cluster?: string
 }
 
 interface MetricsDataItem {
@@ -135,6 +136,41 @@ export const api = {
     } catch (error) {
       console.error('Token validation error:', error)
       return false
+    }
+  },
+
+  async getFunnelData(token: string, metricsData: MetricsRequest): Promise<any> {
+    try {
+      console.log('🌐 Funnel API Request:', {
+        url: `${API_BASE_URL}/metrics/daily-metrics`,
+        method: 'POST',
+        body: metricsData,
+        cluster: metricsData.cluster || 'Todos'
+      })
+
+      const response = await fetch(`${API_BASE_URL}/metrics/daily-metrics`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(metricsData),
+      })
+
+      console.log('📡 Funnel Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Funnel API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('📦 Funnel API Response data:', data)
+      return data
+    } catch (error) {
+      console.error('❌ Funnel fetch error:', error)
+      throw new Error('Erro ao buscar dados do funil.')
     }
   }
 } 
