@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
 import { BarChart3, Users, ShoppingCart, CreditCard, CheckCircle, TrendingUp, TrendingDown, ArrowDown, Calendar } from 'lucide-react'
 import { api } from '../services/api'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
-import { DotProps } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 interface FunnelDataItem {
   Data: string
@@ -38,11 +37,7 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, selectedCluster }
   // Estado para série selecionada no dropdown
   const [selectedSeries, setSelectedSeries] = useState<string>('Visualização → Pedido')
 
-  // Obter a série atualmente selecionada
-  const getCurrentSeries = () => {
-    const series = Object.keys(visibleSeries).find(key => visibleSeries[key as keyof typeof visibleSeries])
-    return series || 'Visualização → Pedido'
-  }
+
 
   // Atualizar série selecionada
   const handleSeriesChange = (seriesName: string) => {
@@ -361,36 +356,7 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, selectedCluster }
   }
   const seriesStats = getSeriesStats()
 
-  // Detectar etapas com outliers
-  const getFunnelStepsWithOutliers = () => {
-    const stepsWithOutliers: Record<string, boolean> = {}
-    
-    // Mapear nomes das etapas para as séries correspondentes
-    const stepToSeriesMap: Record<string, SeriesKey> = {
-      'Visualizações de Página de Produto': 'Visualização → Pedido',
-      'Adicionar ao Carrinho': 'Visualização → Carrinho',
-      'Iniciar Checkout': 'Carrinho → Checkout',
-      'Adicionar Informações de Frete': 'Checkout → Frete',
-      'Adicionar Informações de Pagamento': 'Frete → Pagamento',
-      'Pedidos': 'Visualização → Pedido'
-    }
-    
-    funnelSteps.forEach((step) => {
-      const seriesKey = stepToSeriesMap[step.name]
-      if (seriesKey && seriesStats[seriesKey]) {
-        const { mean, std } = seriesStats[seriesKey]
-        const hasOutliers = chartData.some((item) => {
-          const value = item[seriesKey]
-          return typeof value === 'number' && (value > mean + 2 * std || value < mean - 2 * std)
-        })
-        stepsWithOutliers[step.name] = hasOutliers
-      }
-    })
-    
-    return stepsWithOutliers
-  }
-  
-  const stepsWithOutliers = getFunnelStepsWithOutliers()
+
 
   // Função para customizar o dot destacando outliers
   const getDot = (seriesKey: SeriesKey, color: string) => (props: any) => {
@@ -427,7 +393,7 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, selectedCluster }
         
         <div className="flex flex-col items-center space-y-3">
           {funnelSteps.map((step, index) => {
-            const Icon = step.icon
+
             const isLast = index === funnelSteps.length - 1
             
             return (
@@ -435,23 +401,15 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, selectedCluster }
                 {/* Etapa do Funil */}
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-3">
-                    <div className={`w-8 h-8 ${step.bgColor} rounded-lg flex items-center justify-center relative`}>
+                    <div className={`w-8 h-8 ${step.bgColor} rounded-lg flex items-center justify-center`}>
                       <step.icon className={`w-4 h-4 ${step.iconColor}`} />
-                      {stepsWithOutliers[step.name] && (
-                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></div>
-                      )}
                     </div>
                     <div>
                       <h4 className="font-semibold text-gray-900 text-sm">{step.name}</h4>
                       <p className="text-xs text-gray-500">Etapa {index + 1} de {funnelSteps.length}</p>
                     </div>
                   </div>
-                  {stepsWithOutliers[step.name] && (
-                    <div className="flex items-center gap-1 px-2 py-1 bg-red-50 border border-red-200 rounded-full">
-                      <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                      <span className="text-xs font-medium text-red-700">Outliers</span>
-                    </div>
-                  )}
+
                   <div className="text-right">
                     <div className="text-xl font-bold text-gray-900">{formatNumber(step.value)}</div>
                     <div className="text-xs text-gray-500">{formatPercentage(step.percentage)}</div>
@@ -528,25 +486,7 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, selectedCluster }
           )}
         </div>
 
-        {/* Explicação dos Outliers */}
-        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
-              <span className="text-white text-xs font-bold">!</span>
-            </div>
-            <h4 className="text-sm font-semibold text-blue-800">Outliers Detectados</h4>
-          </div>
-          <div className="flex items-center gap-6 text-xs text-blue-700">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-blue-400 rounded-full"></div>
-              <span>Valor acima de 2 desvios padrão (positivo)</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-slate-500 rounded-full"></div>
-              <span>Valor abaixo de 2 desvios padrão (negativo)</span>
-            </div>
-          </div>
-        </div>
+
         
         {/* Controles das Séries */}
         <div className="mb-6 p-6 bg-gradient-to-r from-slate-50 to-blue-50 rounded-xl border border-slate-100">
