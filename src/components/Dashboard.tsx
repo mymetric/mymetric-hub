@@ -170,8 +170,13 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   //   }
   // }, [onLogout])
 
-  // Calcular totais e médias
-  const totals = metrics.reduce((acc, item) => ({
+  // Filtrar dados por cluster
+  const filteredMetrics = selectedCluster === 'Todos' 
+    ? metrics 
+    : metrics.filter(item => item.Cluster === selectedCluster)
+
+  // Calcular totais e médias baseados nos dados filtrados
+  const totals = filteredMetrics.reduce((acc, item) => ({
     receita: acc.receita + item.Receita,
     pedidos: acc.pedidos + item.Pedidos,
     sessoes: acc.sessoes + item.Sessoes,
@@ -203,28 +208,51 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   // Taxa de adição ao carrinho - limitando a um máximo de 100% por sessão
   const addToCartRate = totals.sessoes > 0 ? Math.min((totals.adicoesCarrinho / totals.sessoes) * 100, 100) : 0
 
-  // Preparar dados para a timeline
-  const timelineData = metrics
+  // Preparar dados para a timeline baseados nos dados filtrados
+  const timelineData = filteredMetrics
     .reduce((acc, item) => {
       const existingDate = acc.find(d => d.date === item.Data)
       if (existingDate) {
         existingDate.sessions += item.Sessoes
         existingDate.revenue += item.Receita
+        existingDate.clicks += item.Cliques
+        existingDate.addToCart += item.Adicoes_ao_Carrinho
+        existingDate.orders += item.Pedidos
+        existingDate.newCustomers += item.Novos_Clientes
+        existingDate.paidOrders += item.Pedidos_Pagos
+        existingDate.paidRevenue += item.Receita_Paga
+        existingDate.newCustomerRevenue += item.Receita_Novos_Clientes
+        existingDate.investment += item.Investimento
       } else {
         acc.push({
           date: item.Data,
           sessions: item.Sessoes,
-          revenue: item.Receita
+          revenue: item.Receita,
+          clicks: item.Cliques,
+          addToCart: item.Adicoes_ao_Carrinho,
+          orders: item.Pedidos,
+          newCustomers: item.Novos_Clientes,
+          paidOrders: item.Pedidos_Pagos,
+          paidRevenue: item.Receita_Paga,
+          newCustomerRevenue: item.Receita_Novos_Clientes,
+          investment: item.Investimento
         })
       }
       return acc
-    }, [] as { date: string; sessions: number; revenue: number }[])
+    }, [] as { 
+      date: string; 
+      sessions: number; 
+      revenue: number;
+      clicks: number;
+      addToCart: number;
+      orders: number;
+      newCustomers: number;
+      paidOrders: number;
+      paidRevenue: number;
+      newCustomerRevenue: number;
+      investment: number;
+    }[])
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-
-  // Filtrar dados por cluster
-  const filteredMetrics = selectedCluster === 'Todos' 
-    ? metrics 
-    : metrics.filter(item => item.Cluster === selectedCluster)
 
   // Obter clusters únicos
   const clusters = [...new Set(metrics.map(item => item.Cluster))]
@@ -986,7 +1014,6 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
             selectedTable={selectedTable}
             startDate={startDate}
             endDate={endDate}
-            selectedCluster={selectedCluster}
           />
         )}
       </main>

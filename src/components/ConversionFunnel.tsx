@@ -17,10 +17,9 @@ interface ConversionFunnelProps {
   selectedTable: string
   startDate: string
   endDate: string
-  selectedCluster: string
 }
 
-const ConversionFunnel = ({ selectedTable, startDate, endDate, selectedCluster }: ConversionFunnelProps) => {
+const ConversionFunnel = ({ selectedTable, startDate, endDate }: ConversionFunnelProps) => {
   const [funnelData, setFunnelData] = useState<FunnelDataItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -34,21 +33,12 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, selectedCluster }
     'Visualização → Pedido': true
   })
 
-  // Estado para série selecionada no dropdown
-  const [selectedSeries, setSelectedSeries] = useState<string>('Visualização → Pedido')
-
-
-
-  // Atualizar série selecionada
-  const handleSeriesChange = (seriesName: string) => {
-    setSelectedSeries(seriesName)
-    setVisibleSeries(prev => {
-      const newVisibleSeries = { ...prev }
-      Object.keys(newVisibleSeries).forEach(key => {
-        newVisibleSeries[key as keyof typeof prev] = key === seriesName
-      })
-      return newVisibleSeries
-    })
+  // Função para alternar série selecionada
+  const toggleSeries = (seriesName: string) => {
+    setVisibleSeries(prev => ({
+      ...prev,
+      [seriesName]: !prev[seriesName as keyof typeof prev]
+    }))
   }
 
   useEffect(() => {
@@ -66,24 +56,15 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, selectedCluster }
         const requestData = {
           start_date: startDate,
           end_date: endDate,
-          table_name: selectedTable,
-          ...(selectedCluster !== 'Todos' && { cluster: selectedCluster })
+          table_name: selectedTable
         }
 
-        console.log('🔍 ConversionFunnel - selectedCluster:', selectedCluster)
         console.log('🔍 ConversionFunnel - requestData:', requestData)
 
         const response = await api.getFunnelData(token, requestData)
 
         console.log('🔍 ConversionFunnel - response.data:', response.data)
         console.log('🔍 ConversionFunnel - data length:', response.data?.length || 0)
-        
-        // Verificar se os dados contêm o cluster correto
-        if (selectedCluster !== 'Todos' && response.data) {
-          const hasClusterData = response.data.some((item: any) => item.Cluster === selectedCluster)
-          console.log('🔍 ConversionFunnel - hasClusterData:', hasClusterData)
-          console.log('🔍 ConversionFunnel - available clusters:', [...new Set(response.data.map((item: any) => item.Cluster))])
-        }
         
         setFunnelData(response.data || [])
       } catch (err) {
@@ -95,7 +76,7 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, selectedCluster }
     }
 
     fetchFunnelData()
-  }, [selectedTable, startDate, endDate, selectedCluster])
+  }, [selectedTable, startDate, endDate])
 
   // Calcular totais
   const totals = funnelData.reduce((acc, item) => ({
@@ -236,18 +217,6 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, selectedCluster }
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <div className="bg-white rounded-xl shadow-lg p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-              <BarChart3 className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900">Funil de Conversão</h2>
-              <p className="text-sm text-gray-600">Análise detalhada do funil de conversão</p>
-            </div>
-          </div>
-        </div>
-        
         <div className="bg-white rounded-xl shadow-lg p-12 text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className="text-gray-600">Carregando dados do funil...</p>
@@ -259,18 +228,6 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, selectedCluster }
   if (error) {
     return (
       <div className="space-y-6">
-        <div className="bg-white rounded-xl shadow-lg p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-              <BarChart3 className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900">Funil de Conversão</h2>
-              <p className="text-sm text-gray-600">Análise detalhada do funil de conversão</p>
-            </div>
-          </div>
-        </div>
-        
         <div className="bg-white rounded-xl shadow-lg p-12 text-center">
           <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <TrendingDown className="w-8 h-8 text-red-600" />
@@ -285,18 +242,6 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, selectedCluster }
   if (funnelData.length === 0) {
     return (
       <div className="space-y-6">
-        <div className="bg-white rounded-xl shadow-lg p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-              <BarChart3 className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900">Funil de Conversão</h2>
-              <p className="text-sm text-gray-600">Análise detalhada do funil de conversão</p>
-            </div>
-          </div>
-        </div>
-        
         <div className="bg-white rounded-xl shadow-lg p-12 text-center">
           <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <BarChart3 className="w-8 h-8 text-gray-400" />
@@ -384,11 +329,6 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, selectedCluster }
       <div className="bg-white rounded-xl shadow-lg p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-900">Funil de Conversão</h3>
-          {selectedCluster !== 'Todos' && (
-            <div className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
-              Cluster: {selectedCluster}
-            </div>
-          )}
         </div>
         
         <div className="flex flex-col items-center space-y-3">
@@ -479,11 +419,6 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, selectedCluster }
             </div>
             <h3 className="text-lg font-semibold text-gray-900">Timeline das Taxas de Conversão</h3>
           </div>
-          {selectedCluster !== 'Todos' && (
-            <div className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
-              Cluster: {selectedCluster}
-            </div>
-          )}
         </div>
 
 
@@ -492,31 +427,46 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, selectedCluster }
         <div className="mb-6 p-6 bg-gradient-to-r from-slate-50 to-blue-50 rounded-xl border border-slate-100">
           <h4 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-            Selecionar Métrica
+            Selecionar Métricas para Comparar
           </h4>
-          <div className="max-w-md">
-            <div className="relative">
-              <select
-                value={selectedSeries}
-                onChange={(e) => handleSeriesChange(e.target.value)}
-                className="w-full pl-4 pr-10 py-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white appearance-none cursor-pointer"
-              >
-                {Object.keys(visibleSeries).map((seriesName) => (
-                  <option key={seriesName} value={seriesName}>
-                    {seriesName}
-                  </option>
-                ))}
-              </select>
-              <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </div>
-            </div>
-            <p className="text-xs text-gray-600 mt-2">
-              Selecione uma métrica para visualizar na timeline
-            </p>
+          <div className="flex flex-wrap gap-2">
+            {Object.keys(visibleSeries).map((seriesName) => {
+              const isSelected = visibleSeries[seriesName as keyof typeof visibleSeries]
+              const getSeriesColor = (name: string) => {
+                switch (name) {
+                  case 'Visualização → Carrinho': return '#3b82f6'
+                  case 'Carrinho → Checkout': return '#1d4ed8'
+                  case 'Checkout → Frete': return '#6366f1'
+                  case 'Frete → Pagamento': return '#475569'
+                  case 'Pagamento → Pedido': return '#1e40af'
+                  case 'Checkout → Pedido': return '#334155'
+                  case 'Visualização → Pedido': return '#0f172a'
+                  default: return '#6b7280'
+                }
+              }
+              
+              return (
+                <button
+                  key={seriesName}
+                  onClick={() => toggleSeries(seriesName)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                    isSelected
+                      ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
+                      : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
+                  }`}
+                >
+                  <div 
+                    className="w-3 h-3 rounded-full" 
+                    style={{ backgroundColor: getSeriesColor(seriesName) }}
+                  ></div>
+                  <span>{seriesName}</span>
+                </button>
+              )
+            })}
           </div>
+          <p className="text-xs text-gray-600 mt-3">
+            Clique nas métricas para selecionar/deselecionar. Compare múltiplas taxas de conversão simultaneamente.
+          </p>
         </div>
         
         <div className="h-80">
