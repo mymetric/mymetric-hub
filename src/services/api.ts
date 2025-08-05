@@ -135,26 +135,27 @@ export const api = {
     }
   },
 
-  async validateToken(token: string): Promise<boolean> {
-    try {
-      const response = await fetch(`${API_BASE_URL}/validate-token`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      })
+  // Função de validação de token removida - não é mais usada para logout
+  // async validateToken(token: string): Promise<boolean> {
+  //   try {
+  //     const response = await fetch(`${API_BASE_URL}/validate-token`, {
+  //       method: 'POST',
+  //       headers: {
+  //         'Content-Type': 'application/json',
+  //         'Authorization': `Bearer ${token}`,
+  //       },
+  //     })
 
-      if (!response.ok) {
-        handleAuthError(response.status)
-      }
+  //     if (!response.ok) {
+  //       handleAuthError(response.status)
+  //     }
 
-      return response.ok
-    } catch (error) {
-      console.error('Token validation error:', error)
-      return false
-    }
-  },
+  //     return response.ok
+  //   } catch (error) {
+  //     console.error('Token validation error:', error)
+  //     return false
+  //   }
+  // },
 
   async getFunnelData(token: string, metricsData: MetricsRequest): Promise<any> {
     try {

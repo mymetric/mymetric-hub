@@ -11,13 +11,7 @@ const TestAuth = () => {
       return
     }
 
-    try {
-      setTestResult('🔄 Testing token validation...')
-      const isValid = await api.validateToken(token)
-      setTestResult(isValid ? '✅ Token is valid' : '❌ Token is invalid')
-    } catch (error) {
-      setTestResult(`❌ Error: ${error}`)
-    }
+    setTestResult('✅ Token validation disabled - token exists in storage')
   }
 
   const testProfileFetch = async () => {

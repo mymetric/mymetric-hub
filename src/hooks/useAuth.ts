@@ -31,46 +31,10 @@ export const useAuth = () => {
     
     return { isAuthenticated: false }
   })
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(false)
 
-  useEffect(() => {
-    const validateAuth = async () => {
-      const token = localStorage.getItem('auth-token')
-      const storedAuth = localStorage.getItem('mymetric-auth')
-      
-      if (token && storedAuth) {
-        try {
-          // Validar token com a API
-          const isValid = await api.validateToken(token)
-          
-          if (isValid) {
-            // Token válido, restaurar dados do usuário
-            const parsedAuth = JSON.parse(storedAuth)
-            setAuthData(parsedAuth)
-          } else {
-            // Token inválido, limpar dados
-            localStorage.removeItem('auth-token')
-            localStorage.removeItem('mymetric-auth')
-            setAuthData({ isAuthenticated: false })
-          }
-        } catch (error) {
-          console.error('Token validation error:', error)
-          localStorage.removeItem('auth-token')
-          localStorage.removeItem('mymetric-auth')
-          setAuthData({ isAuthenticated: false })
-        }
-      } else {
-        // Sem token ou dados armazenados, limpar estado
-        localStorage.removeItem('auth-token')
-        localStorage.removeItem('mymetric-auth')
-        setAuthData({ isAuthenticated: false })
-      }
-      
-      setIsLoading(false)
-    }
-
-    validateAuth()
-  }, [])
+  // Removida a verificação automática de token no useEffect
+  // Agora o token só será validado quando necessário
 
   const login = async (username: string) => {
     const token = localStorage.getItem('auth-token')
