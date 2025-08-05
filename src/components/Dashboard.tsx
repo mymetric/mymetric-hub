@@ -498,7 +498,54 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   onTableChange={setSelectedTable}
                   availableTables={
                     user?.tablename === 'all' 
-                      ? ['coffeemais', 'constance', 'gringa', 'bocarosa']
+                      ? [
+                          '3dfila',
+                          'gringa',
+                          'orthocrin',
+                          'meurodape',
+                          'coffeemais',
+                          'universomaschio',
+                          'oculosshop',
+                          'evoke',
+                          'hotbuttered',
+                          'use',
+                          'wtennis',
+                          'constance',
+                          'jcdecor',
+                          'parededepapel',
+                          'bemcolar',
+                          'poesiamuda',
+                          'caramujo',
+                          'europa',
+                          'leveros',
+                          'abcdaconstrucao',
+                          'kaisan',
+                          'endogen',
+                          'bocarosa',
+                          'mymetric',
+                          'buildgrowth',
+                          'alvisi',
+                          'coroasparavelorio',
+                          'coroinhasportoalegre',
+                          'coroinhasbrasilia',
+                          'coroinhascampinas',
+                          'coroinhascuritiba',
+                          'coroinhasbelohorizonte',
+                          'coroinhasgoiania',
+                          'coroinhasrecife',
+                          'coroinhasriodejaneiro',
+                          'coroinhassaopaulo',
+                          'lacoscorporativos',
+                          'exitlag',
+                          'havaianas',
+                          'linus',
+                          'iwannasleep',
+                          'asos',
+                          'safeweb',
+                          'queimadiaria',
+                          'augym',
+                          'waz'
+                        ]
                       : [user?.tablename || 'coffeemais']
                   }
                 />
