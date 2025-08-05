@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { 
   BarChart3,
   PieChart,
@@ -65,6 +65,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const [showAllRecords, setShowAllRecords] = useState(false)
   const [activeTab, setActiveTab] = useState<string>('visao-geral')
   const [filtersCollapsed, setFiltersCollapsed] = useState(true)
+  const tokenCheckInterval = useRef<NodeJS.Timeout | null>(null)
 
   // Função para calcular datas dos últimos 30 dias
   const getLast30Days = () => {
@@ -136,6 +137,38 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
     fetchMetrics()
   }, [user, selectedTable, startDate, endDate])
+
+  // Verificação periódica do token (a cada 5 minutos)
+  useEffect(() => {
+    const checkToken = async () => {
+      const token = localStorage.getItem('auth-token')
+      if (token) {
+        try {
+          const isValid = await api.validateToken(token)
+          if (!isValid) {
+            console.log('🔐 Token inválido detectado na verificação periódica, deslogando...')
+            onLogout()
+          }
+        } catch (error) {
+          console.error('❌ Erro na verificação periódica do token:', error)
+          onLogout()
+        }
+      }
+    }
+
+    // Verificar imediatamente
+    checkToken()
+
+    // Configurar verificação a cada 5 minutos
+    tokenCheckInterval.current = setInterval(checkToken, 5 * 60 * 1000)
+
+    // Cleanup
+    return () => {
+      if (tokenCheckInterval.current) {
+        clearInterval(tokenCheckInterval.current)
+      }
+    }
+  }, [onLogout])
 
   // Calcular totais e médias
   const totals = metrics.reduce((acc, item) => ({

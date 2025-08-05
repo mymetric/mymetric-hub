@@ -1,5 +1,16 @@
 const API_BASE_URL = 'https://api.mymetric.app'
 
+// Função para verificar se é um erro de autenticação e deslogar se necessário
+const handleAuthError = (status: number) => {
+  if (status === 401) {
+    console.log('🔐 Token inválido detectado, deslogando usuário...')
+    localStorage.removeItem('auth-token')
+    localStorage.removeItem('mymetric-auth')
+    // Redirecionar para a página de login
+    window.location.href = '/'
+  }
+}
+
 interface LoginData {
   email: string
   password: string
@@ -77,6 +88,7 @@ export const api = {
       })
 
       if (!response.ok) {
+        handleAuthError(response.status)
         throw new Error(`HTTP error! status: ${response.status}`)
       }
 
@@ -108,6 +120,7 @@ export const api = {
       console.log('📡 Response status:', response.status, response.statusText)
 
       if (!response.ok) {
+        handleAuthError(response.status)
         const errorText = await response.text()
         console.error('❌ API Error:', errorText)
         throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
@@ -131,6 +144,10 @@ export const api = {
           'Authorization': `Bearer ${token}`,
         },
       })
+
+      if (!response.ok) {
+        handleAuthError(response.status)
+      }
 
       return response.ok
     } catch (error) {
@@ -160,6 +177,7 @@ export const api = {
       console.log('📡 Funnel Response status:', response.status, response.statusText)
 
       if (!response.ok) {
+        handleAuthError(response.status)
         const errorText = await response.text()
         console.error('❌ Funnel API Error:', errorText)
         throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)

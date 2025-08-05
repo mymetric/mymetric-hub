@@ -40,8 +40,8 @@ export const useAuth = () => {
       
       if (token && storedAuth) {
         try {
-          // Temporariamente assumindo que o token é válido
-          const isValid = true // await api.validateToken(token)
+          // Validar token com a API
+          const isValid = await api.validateToken(token)
           
           if (isValid) {
             // Token válido, restaurar dados do usuário
