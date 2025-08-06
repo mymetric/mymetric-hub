@@ -36,6 +36,14 @@ interface MetricsRequest {
   attribution_model?: string
 }
 
+interface OrdersRequest {
+  start_date: string
+  end_date: string
+  table_name: string
+  traffic_category: string
+  limit?: number
+}
+
 interface MetricsDataItem {
   Data: string
   Cluster: string
@@ -191,6 +199,42 @@ export const api = {
     } catch (error) {
       console.error('❌ Funnel fetch error:', error)
       throw new Error('Erro ao buscar dados do funil.')
+    }
+  },
+
+  async getOrders(token: string, ordersData: OrdersRequest, signal?: AbortSignal): Promise<any> {
+    try {
+      console.log('🌐 Orders API Request:', {
+        url: `${API_BASE_URL}/metrics/orders`,
+        method: 'POST',
+        body: ordersData
+      })
+
+      const response = await fetch(`${API_BASE_URL}/metrics/orders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(ordersData),
+        signal, // Adicionar signal para cancelamento
+      })
+
+      console.log('📡 Orders Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        handleAuthError(response.status)
+        const errorText = await response.text()
+        console.error('❌ Orders API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('📦 Orders API Response data:', data)
+      return data
+    } catch (error) {
+      console.error('❌ Orders fetch error:', error)
+      throw new Error('Erro ao buscar pedidos.')
     }
   }
 } 

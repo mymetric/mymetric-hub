@@ -16,7 +16,9 @@ import {
   ChevronDown,
   ChevronUp,
   DollarSign,
-  Target
+  Target,
+  Download,
+  Eye
 } from 'lucide-react'
 import { api } from '../services/api'
 import Logo from './Logo'
@@ -27,6 +29,7 @@ import DebugMetrics from './DebugMetrics'
 import TimelineChart from './TimelineChart'
 import MetricsCarousel from './MetricsCarousel'
 import ConversionFunnel from './ConversionFunnel'
+import OrdersExpanded from './OrdersExpanded'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 interface User {
@@ -67,6 +70,19 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const [activeTab, setActiveTab] = useState<string>('visao-geral')
   const [filtersCollapsed, setFiltersCollapsed] = useState(true)
   const [attributionModel, setAttributionModel] = useState<string>('Último Clique Não Direto')
+  const [expandedOrders, setExpandedOrders] = useState<{
+    isOpen: boolean
+    trafficCategory: string
+  }>({
+    isOpen: false,
+    trafficCategory: ''
+  })
+  
+  // Estado para controlar pedidos baixados
+  const [downloadedOrders, setDownloadedOrders] = useState<Set<string>>(new Set())
+  
+  // Estado para controlar downloads em andamento
+  const [downloadingOrders, setDownloadingOrders] = useState<Set<string>>(new Set())
   // const tokenCheckInterval = useRef<NodeJS.Timeout | null>(null)
 
   // Função para calcular datas dos últimos 30 dias
@@ -139,6 +155,10 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     }
 
     fetchMetrics()
+    
+    // Limpar cache de pedidos quando mudar tabela ou datas
+    setDownloadedOrders(new Set())
+    setDownloadingOrders(new Set())
   }, [user, selectedTable, startDate, endDate, attributionModel])
 
   // Verificação periódica do token removida - não é mais necessária
@@ -408,6 +428,74 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       setSortField(field)
       setSortDirection('asc')
     }
+  }
+
+  // Função para baixar pedidos
+  const handleDownloadOrders = async (trafficCategory: string) => {
+    const cacheKey = `${selectedTable}-${trafficCategory}-${startDate}-${endDate}`
+    
+    // Se já está baixando, não fazer nada
+    if (downloadingOrders.has(cacheKey)) {
+      return
+    }
+    
+    // Se já foi baixado, apenas abrir o modal
+    if (downloadedOrders.has(cacheKey)) {
+      handleExpandOrders(trafficCategory)
+      return
+    }
+    
+    try {
+      // Marcar como baixando
+      setDownloadingOrders(prev => new Set(prev).add(cacheKey))
+      
+      const token = localStorage.getItem('auth-token')
+      if (!token) {
+        throw new Error('Token de autenticação não encontrado')
+      }
+      
+      // Fazer a requisição para baixar os dados
+      await api.getOrders(token, {
+        start_date: startDate,
+        end_date: endDate,
+        table_name: selectedTable,
+        traffic_category: trafficCategory,
+        limit: 100
+      })
+      
+      // Marcar como baixado
+      setDownloadedOrders(prev => new Set(prev).add(cacheKey))
+      
+      // Abrir o modal automaticamente após o download
+      handleExpandOrders(trafficCategory)
+      
+    } catch (error) {
+      console.error('Erro ao baixar pedidos:', error)
+      // Em caso de erro, não marcar como baixado
+    } finally {
+      // Remover do estado de download
+      setDownloadingOrders(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(cacheKey)
+        return newSet
+      })
+    }
+  }
+
+  // Função para expandir pedidos (agora só abre o modal)
+  const handleExpandOrders = (trafficCategory: string) => {
+    setExpandedOrders({
+      isOpen: true,
+      trafficCategory
+    })
+  }
+
+  // Função para fechar pedidos expandidos
+  const handleCloseOrders = () => {
+    setExpandedOrders({
+      isOpen: false,
+      trafficCategory: ''
+    })
   }
 
   const MetricCard = ({ 
@@ -1076,7 +1164,42 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{formatNumber(totals.sessoes)}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{formatNumber(totals.adicoesCarrinho)}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{formatNumber(totals.pedidos)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                <div className="flex items-center gap-2">
+                                  <span>{formatNumber(totals.pedidos)}</span>
+                                  {totals.pedidos > 0 && (() => {
+                                    const cacheKey = `${selectedTable}-${cluster}-${startDate}-${endDate}`
+                                    const isDownloading = downloadingOrders.has(cacheKey)
+                                    const isDownloaded = downloadedOrders.has(cacheKey)
+                                    
+                                    return (
+                                      <button
+                                        onClick={() => handleDownloadOrders(cluster)}
+                                        disabled={isDownloading}
+                                        className="p-1 hover:bg-blue-100 rounded transition-colors group relative disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title={
+                                          isDownloading 
+                                            ? 'Baixando pedidos...' 
+                                            : isDownloaded 
+                                              ? `Ver ${formatNumber(totals.pedidos)} pedido${totals.pedidos !== 1 ? 's' : ''} baixados`
+                                              : `Baixar ${formatNumber(totals.pedidos)} pedido${totals.pedidos !== 1 ? 's' : ''}`
+                                        }
+                                      >
+                                        {isDownloading ? (
+                                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+                                        ) : isDownloaded ? (
+                                          <Eye className="w-3 h-3 text-green-600 group-hover:text-green-700" />
+                                        ) : (
+                                          <Download className="w-3 h-3 text-blue-600 group-hover:text-blue-700" />
+                                        )}
+                                        {isDownloaded && (
+                                          <div className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full"></div>
+                                        )}
+                                      </button>
+                                    )
+                                  })()}
+                                </div>
+                              </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">{formatCurrency(totals.receita)}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">{formatCurrency(totals.receitaPaga)}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">{formatNumber(totals.novosClientes)}</td>
@@ -1136,6 +1259,16 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         selectedTable={selectedTable}
         isLoading={isLoading}
         isTableLoading={isTableLoading}
+      />
+
+      {/* Orders Expanded Modal */}
+      <OrdersExpanded
+        isOpen={expandedOrders.isOpen}
+        onClose={handleCloseOrders}
+        trafficCategory={expandedOrders.trafficCategory}
+        startDate={startDate}
+        endDate={endDate}
+        tableName={selectedTable}
       />
     </div>
   )
