@@ -64,7 +64,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const [startDate, setStartDate] = useState<string>('2025-07-27')
   const [endDate, setEndDate] = useState<string>('2025-08-03')
   const [selectedCluster, setSelectedCluster] = useState<string>('Todos')
-  const [selectedTable, setSelectedTable] = useState<string>(user?.tablename || 'coffeemais')
+  const [selectedTable, setSelectedTable] = useState<string>(user?.tablename || '')
   const [sortField, setSortField] = useState<string>('receita')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [showAllRecords, setShowAllRecords] = useState(false)
@@ -140,7 +140,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   useDocumentTitle(
     isLoading 
       ? 'Carregando Dashboard... | MyMetricHUB'
-      : `Dashboard ${selectedTable === 'coffeemais' ? 'CoffeeMais' : selectedTable === 'constance' ? 'Constance' : selectedTable === 'gringa' ? 'Gringa' : selectedTable === 'bocarosa' ? 'Bocarosa' : selectedTable} | MyMetricHUB`
+      : `Dashboard ${selectedTable} | MyMetricHUB`
   )
 
   useEffect(() => {
@@ -766,11 +766,11 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 <TableSelector
                   currentTable={selectedTable}
                   onTableChange={setSelectedTable}
-                  useCSV={user?.access_control === 'all'} // Usar CSV apenas para usuários com acesso total
+                  useCSV={user?.access_control === 'all' || user?.tablename === 'all'} // Usar CSV para usuários com acesso total
                   availableTables={
-                    user?.access_control === 'all' 
+                    user?.access_control === 'all' || user?.tablename === 'all'
                       ? [] // Deixar vazio para usar apenas o CSV via useClientList
-                      : [user?.tablename || 'coffeemais']
+                      : [user?.tablename || '']
                   }
                 />
               </div>

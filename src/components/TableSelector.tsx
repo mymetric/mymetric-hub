@@ -12,13 +12,15 @@ interface TableSelectorProps {
 const TableSelector = ({ currentTable, onTableChange, availableTables = [], useCSV = true }: TableSelectorProps) => {
   const [isOpen, setIsOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const { clients, isLoading, error } = useClientList()
+  
+  // Só executar o hook se useCSV for true
+  const { clients, isLoading, error } = useClientList(useCSV)
 
   // Usar clientes do CSV ou fallback para availableTables ou lista padrão
   const tables = useMemo(() => {
     // Se não deve usar CSV, usar apenas availableTables
     if (!useCSV) {
-      return availableTables.length > 0 ? availableTables : ['coffeemais']
+      return availableTables.length > 0 ? availableTables : []
     }
     
     // Se deve usar CSV, seguir a lógica normal
@@ -28,20 +30,12 @@ const TableSelector = ({ currentTable, onTableChange, availableTables = [], useC
     if (availableTables.length > 0) {
       return availableTables
     }
-    // Lista padrão como último fallback
-    return [
-      '3dfila', 'gringa', 'orthocrin', 'meurodape', 'coffeemais',
-      'universomaschio', 'oculosshop', 'evoke', 'hotbuttered', 'use',
-      'wtennis', 'constance', 'jcdecor', 'parededepapel', 'bemcolar',
-      'poesiamuda', 'caramujo', 'europa', 'leveros', 'abcdaconstrucao',
-      'kaisan', 'endogen', 'bocarosa', 'mymetric', 'buildgrowth',
-      'alvisi', 'coroasparavelorio', 'coroinhasportoalegre', 'coroinhasbrasilia',
-      'coroinhascampinas', 'coroinhascuritiba', 'coroinhasbelohorizonte',
-      'coroinhasgoiania', 'coroinhasrecife', 'coroinhasriodejaneiro',
-      'coroinhassaopaulo', 'lacoscorporativos', 'exitlag', 'havaianas',
-      'linus', 'iwannasleep', 'asos', 'safeweb', 'queimadiaria', 'augym', 'waz'
-    ]
+    // Em caso de erro no CSV, retornar array vazio
+    return []
   }, [clients, availableTables, useCSV])
+
+  // Determinar se está carregando baseado no useCSV
+  const isActuallyLoading = useCSV ? isLoading : false
 
   // Mostrar apenas o slug (sem nomes amigáveis)
   const getTableDisplayName = (tableName: string) => {
@@ -73,12 +67,12 @@ const TableSelector = ({ currentTable, onTableChange, availableTables = [], useC
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center justify-between px-2 sm:px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-500 focus:border-gray-500 bg-white hover:bg-gray-50 transition-colors min-w-[120px] sm:min-w-[200px]"
-        disabled={isLoading}
+        disabled={isActuallyLoading}
       >
         <div className="flex items-center gap-2 sm:gap-3">
           <Database className="w-4 h-4 text-gray-500 flex-shrink-0" />
           <div className="text-left min-w-0 flex-1">
-            {isLoading ? (
+            {isActuallyLoading ? (
               <div className="flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
                 <span className="text-gray-500">Carregando...</span>
@@ -88,7 +82,7 @@ const TableSelector = ({ currentTable, onTableChange, availableTables = [], useC
             )}
           </div>
         </div>
-        {!isLoading && (
+        {!isActuallyLoading && (
           <svg
             className={`w-4 h-4 text-gray-500 transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`}
             fill="none"
@@ -127,7 +121,7 @@ const TableSelector = ({ currentTable, onTableChange, availableTables = [], useC
           
           {/* Lista de tabelas */}
           <div className="py-1 sm:py-2 max-h-60 overflow-y-auto">
-            {isLoading ? (
+            {isActuallyLoading ? (
               <div className="px-3 sm:px-4 py-2.5 sm:py-3 text-sm text-gray-500 text-center">
                 <div className="flex items-center justify-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin" />

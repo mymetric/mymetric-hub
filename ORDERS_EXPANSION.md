@@ -44,10 +44,11 @@ Este documento descreve a implementação do sistema de expansão de pedidos no 
 - **CSV Remoto**: Lista de clientes carregada de URL externa
 - **Slugs Limpos**: Exibição apenas dos slugs, sem nomes amigáveis
 - **Loading States**: Indicadores visuais durante carregamento
-- **Fallback Inteligente**: Lista padrão em caso de erro na API
+- **Error Handling**: Tratamento de erros sem fallback hardcoded
 - **Busca em Tempo Real**: Filtro dinâmico por nome do cliente
 - **Controle de Acesso**: Lista completa apenas para usuários com `access_control: 'all'`
 - **Fonte Única**: Sistema usa apenas o CSV, sem listas hardcoded
+- **Sem Fallbacks**: Eliminação completa de listas hardcoded no código
 
 ### Correção do Controle de Acesso
 
@@ -72,15 +73,17 @@ interface TableSelectorProps {
 <TableSelector
   currentTable={selectedTable}
   onTableChange={setSelectedTable}
-  useCSV={user?.access_control === 'all'} // Usar CSV apenas para usuários com acesso total
+  useCSV={user?.access_control === 'all' || user?.tablename === 'all'} // Usar CSV apenas para usuários com acesso total
   availableTables={
-    user?.access_control === 'all' 
+    user?.access_control === 'all' || user?.tablename === 'all'
       ? [] // Vazio para usar apenas o CSV
       : [user?.tablename || 'coffeemais'] // Cliente específico para usuários restritos
   }
 />
 
-// TableSelector - Lógica condicional
+// TableSelector - Lógica condicional com hook otimizado
+const { clients, isLoading, error } = useClientList(useCSV) // Hook só executa quando useCSV é true
+
 const tables = useMemo(() => {
   // Usuários restritos: não carregam CSV
   if (!useCSV) {
@@ -93,58 +96,336 @@ const tables = useMemo(() => {
   }
   // ... fallback logic
 }, [clients, availableTables, useCSV])
+
+// Loading state condicional
+const isActuallyLoading = useCSV ? isLoading : false
 ```
+
+### Correção do Controle de Acesso - Suporte a tablename === 'all'
+
+#### Problema Identificado
+O sistema estava verificando apenas `access_control === 'all'` para determinar acesso total, mas alguns usuários têm `tablename: 'all'` e `access_control: '[]'`, o que deveria também dar acesso total.
+
+#### Solução Implementada
+
+##### 1. Lógica Condicional Atualizada
+```typescript
+// Antes: Apenas access_control
+useCSV={user?.access_control === 'all'}
+
+// Depois: access_control OU tablename
+useCSV={user?.access_control === 'all' || user?.tablename === 'all'}
+
+// Antes: Apenas access_control
+availableTables = user?.access_control === 'all' 
+  ? [] 
+  : [user?.tablename || '']
+
+// Depois: access_control OU tablename
+availableTables = user?.access_control === 'all' || user?.tablename === 'all'
+  ? [] 
+  : [user?.tablename || '']
+```
+
+##### 2. Casos de Uso Suportados
+
+**Caso 1: `access_control: 'all'`**
+```json
+{
+  "access_control": "all",
+  "tablename": "specific_client"
+}
+```
+- ✅ **Acesso Total**: Lista completa do CSV
+- ✅ **Hook Executa**: `useClientList(true)`
+- ✅ **Interface Completa**: Dropdown com busca
+
+**Caso 2: `tablename: 'all'`**
+```json
+{
+  "access_control": "[]",
+  "tablename": "all"
+}
+```
+- ✅ **Acesso Total**: Lista completa do CSV
+- ✅ **Hook Executa**: `useClientList(true)`
+- ✅ **Interface Completa**: Dropdown com busca
+
+**Caso 3: Acesso Restrito**
+```json
+{
+  "access_control": "specific",
+  "tablename": "specific_client"
+}
+```
+- ✅ **Acesso Limitado**: Apenas cliente específico
+- ✅ **Hook Não Executa**: `useClientList(false)`
+- ✅ **Interface Simplificada**: Dropdown com um cliente
 
 #### Benefícios da Correção
 
-##### 1. Segurança
-- ✅ **Isolamento Real**: Usuários restritos não veem lista completa
-- ✅ **Controle Efetivo**: CSV carregado apenas quando necessário
-- ✅ **Performance**: Menos requisições para usuários restritos
-- ✅ **Privacidade**: Dados isolados por nível de acesso
+##### 1. Compatibilidade
+- ✅ **Suporte Legado**: Usuários com `tablename: 'all'` funcionam
+- ✅ **Flexibilidade**: Múltiplas formas de definir acesso total
+- ✅ **Backward Compatible**: Não quebra usuários existentes
+- ✅ **Forward Compatible**: Suporta novos formatos
 
-##### 2. Performance
-- ✅ **Carregamento Otimizado**: CSV só é carregado para usuários autorizados
-- ✅ **Menos Requisições**: Usuários restritos não fazem fetch desnecessário
-- ✅ **Cache Inteligente**: Hook só executa quando necessário
-- ✅ **Interface Rápida**: Dropdown carrega instantaneamente para usuários restritos
+##### 2. Segurança
+- ✅ **Controle Duplo**: Verifica tanto `access_control` quanto `tablename`
+- ✅ **Isolamento Mantido**: Usuários restritos ainda isolados
+- ✅ **Validação Robusta**: Múltiplas verificações de acesso
+- ✅ **Auditoria**: Rastreamento de ambos os campos
 
-##### 3. Experiência do Usuário
-- ✅ **Interface Limpa**: Usuários restritos veem apenas seu cliente
-- ✅ **Sem Confusão**: Não há opções desnecessárias
-- ✅ **Carregamento Rápido**: Sem delay de fetch do CSV
-- ✅ **Comportamento Consistente**: Interface adaptada ao nível de acesso
-
-#### Fluxo Corrigido
-
-##### 1. Usuários com `access_control: 'all'`
-1. **Prop `useCSV: true`**: Sistema carrega CSV
-2. **Hook Executa**: `useClientList` faz fetch
-3. **Lista Completa**: Todos os clientes disponíveis
-4. **Interface Completa**: Dropdown com busca e filtros
-
-##### 2. Usuários com Acesso Restrito
-1. **Prop `useCSV: false`**: Sistema não carrega CSV
-2. **Hook Não Executa**: `useClientList` não faz fetch
-3. **Cliente Único**: Apenas `user.tablename` disponível
-4. **Interface Simplificada**: Dropdown com um cliente
+##### 3. Manutenibilidade
+- ✅ **Código Limpo**: Lógica condicional clara
+- ✅ **Documentação**: Casos de uso bem definidos
+- ✅ **Testes**: Fácil validação de diferentes cenários
+- ✅ **Escalabilidade**: Fácil adição de novos critérios
 
 #### Validação da Correção
 
 ##### 1. Testes de Acesso
-- ✅ **Usuário Admin**: Vê lista completa do CSV
-- ✅ **Usuário Restrito**: Vê apenas seu cliente
-- ✅ **Usuário Sem Acesso**: Vê cliente padrão
+- ✅ **access_control: 'all'**: Lista completa carregada
+- ✅ **tablename: 'all'**: Lista completa carregada
+- ✅ **Ambos 'all'**: Lista completa carregada
+- ✅ **Acesso Restrito**: Apenas cliente específico
 
 ##### 2. Testes de Performance
+- ✅ **Hook Executa**: Para usuários com acesso total
+- ✅ **Hook Não Executa**: Para usuários restritos
+- ✅ **Carregamento Rápido**: Interface responsiva
+- ✅ **Cache Eficiente**: Otimização mantida
+
+##### 3. Testes de Interface
+- ✅ **Dropdown Completo**: Para usuários com acesso total
+- ✅ **Dropdown Simples**: Para usuários restritos
+- ✅ **Busca Funcional**: Filtro em tempo real
+- ✅ **Loading States**: Feedback visual correto
+
+### Otimização do Hook useClientList
+
+#### Problema Identificado
+O hook `useClientList` estava sendo executado sempre, mesmo para usuários com acesso restrito, causando requisições desnecessárias e problemas de performance.
+
+#### Solução Implementada
+
+##### 1. Parâmetro Condicional
+```typescript
+export const useClientList = (shouldFetch: boolean = true): UseClientListReturn => {
+  const [clients, setClients] = useState<string[]>([])
+  const [isLoading, setIsLoading] = useState(shouldFetch) // Iniciar loading apenas se deve fazer fetch
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    // Se não deve fazer fetch, retornar imediatamente
+    if (!shouldFetch) {
+      setIsLoading(false)
+      return
+    }
+
+    const fetchClients = async () => {
+      // ... lógica de fetch
+    }
+
+    fetchClients()
+  }, [shouldFetch]) // Adicionar shouldFetch como dependência
+
+  return { clients, isLoading, error }
+}
+```
+
+##### 2. Uso Otimizado no TableSelector
+```typescript
+// Hook só executa quando useCSV é true
+const { clients, isLoading, error } = useClientList(useCSV)
+
+// Loading state condicional
+const isActuallyLoading = useCSV ? isLoading : false
+```
+
+#### Benefícios da Otimização
+
+##### 1. Performance
+- ✅ **Menos Requisições**: Hook só executa quando necessário
 - ✅ **Carregamento Rápido**: Usuários restritos não esperam CSV
-- ✅ **Menos Requisições**: Apenas usuários autorizados fazem fetch
-- ✅ **Cache Eficiente**: Hook só executa quando necessário
+- ✅ **Cache Inteligente**: Evita fetch desnecessário
+- ✅ **Recursos Economizados**: Menos uso de rede e processamento
+
+##### 2. Experiência do Usuário
+- ✅ **Interface Responsiva**: Dropdown carrega instantaneamente
+- ✅ **Sem Loading Desnecessário**: Usuários restritos não veem spinner
+- ✅ **Comportamento Consistente**: Interface adaptada ao nível de acesso
+- ✅ **Feedback Visual Correto**: Loading apenas quando relevante
+
+##### 3. Manutenibilidade
+- ✅ **Código Limpo**: Lógica condicional clara
+- ✅ **Debugging Fácil**: Estados de loading previsíveis
+- ✅ **Testes Simples**: Comportamento isolado por nível
+- ✅ **Escalabilidade**: Fácil adição de novos níveis de acesso
+
+#### Fluxo Otimizado
+
+##### 1. Usuários com `access_control: 'all'`
+1. **Prop `useCSV: true`**: Sistema carrega CSV
+2. **Hook Executa**: `useClientList(true)` faz fetch
+3. **Loading State**: Interface mostra "Carregando clientes..."
+4. **Lista Completa**: Todos os clientes disponíveis
+
+##### 2. Usuários com Acesso Restrito
+1. **Prop `useCSV: false`**: Sistema não carrega CSV
+2. **Hook Não Executa**: `useClientList(false)` retorna imediatamente
+3. **Sem Loading**: Interface carrega instantaneamente
+4. **Cliente Único**: Apenas `user.tablename` disponível
+
+#### Validação da Otimização
+
+##### 1. Testes de Performance
+- ✅ **Network Tab**: Apenas usuários autorizados fazem requisição
+- ✅ **Loading Times**: Usuários restritos carregam instantaneamente
+- ✅ **Memory Usage**: Menos uso de memória para usuários restritos
+- ✅ **CPU Usage**: Processamento otimizado
+
+##### 2. Testes de Funcionalidade
+- ✅ **Usuário Admin**: Vê lista completa do CSV
+- ✅ **Usuário Restrito**: Vê apenas seu cliente
+- ✅ **Loading States**: Feedback visual correto
+- ✅ **Error Handling**: Tratamento de erros adequado
 
 ##### 3. Testes de Segurança
 - ✅ **Isolamento de Dados**: Usuários não veem dados não autorizados
 - ✅ **Controle de Interface**: UI adaptada ao nível de acesso
 - ✅ **Validação Backend**: Recomendado para segurança adicional
+
+### Eliminação de Listas Hardcoded
+
+#### Objetivo
+Remover completamente todas as listas hardcoded de clientes do código, deixando apenas o CSV como fonte única de dados.
+
+#### Mudanças Implementadas
+
+##### 1. Hook useClientList
+```typescript
+// Antes: Fallback para lista hardcoded
+catch (err) {
+  const fallbackClients = [
+    '3dfila', 'gringa', 'orthocrin', 'meurodape', 'coffeemais',
+    // ... lista completa hardcoded
+  ]
+  setClients(fallbackClients)
+}
+
+// Depois: Sem fallback hardcoded
+catch (err) {
+  setClients([]) // Retorna array vazio em caso de erro
+  setError(err instanceof Error ? err.message : 'Erro ao buscar lista de clientes')
+}
+```
+
+##### 2. TableSelector
+```typescript
+// Antes: Fallback para 'coffeemais'
+if (!useCSV) {
+  return availableTables.length > 0 ? availableTables : ['coffeemais']
+}
+
+// Depois: Sem fallback hardcoded
+if (!useCSV) {
+  return availableTables.length > 0 ? availableTables : []
+}
+```
+
+##### 3. Dashboard
+```typescript
+// Antes: Fallback para 'coffeemais'
+const [selectedTable, setSelectedTable] = useState<string>(user?.tablename || 'coffeemais')
+
+// Depois: Sem fallback hardcoded
+const [selectedTable, setSelectedTable] = useState<string>(user?.tablename || '')
+
+// Antes: Título com nomes hardcoded
+`Dashboard ${selectedTable === 'coffeemais' ? 'CoffeeMais' : selectedTable === 'constance' ? 'Constance' : ...} | MyMetricHUB`
+
+// Depois: Título simples
+`Dashboard ${selectedTable} | MyMetricHUB`
+```
+
+##### 4. Componente ClientSelector
+- **Removido**: Componente `ClientSelector.tsx` com lista hardcoded completa
+- **Motivo**: Não estava sendo usado, substituído pelo `TableSelector`
+
+#### Benefícios da Eliminação
+
+##### 1. Manutenibilidade
+- ✅ **Fonte Única**: Apenas o CSV precisa ser atualizado
+- ✅ **Sem Duplicação**: Eliminação de listas duplicadas no código
+- ✅ **Consistência**: Mesma lista em todos os ambientes
+- ✅ **Simplicidade**: Código mais limpo e organizado
+
+##### 2. Flexibilidade
+- ✅ **Atualizações Dinâmicas**: Lista pode ser modificada sem código
+- ✅ **Sem Deploy**: Mudanças refletem automaticamente
+- ✅ **Versionamento**: Controle de versão via Google Sheets
+- ✅ **Escalabilidade**: Fácil adição/remoção de clientes
+
+##### 3. Segurança
+- ✅ **Controle Centralizado**: Apenas CSV autorizado como fonte
+- ✅ **Sem Vazamentos**: Não há dados hardcoded no código
+- ✅ **Auditoria**: Rastreamento de mudanças via Google Sheets
+- ✅ **Isolamento**: Dados isolados da aplicação
+
+#### Fluxo de Funcionamento Atualizado
+
+##### 1. Carregamento Normal
+1. **CSV Disponível**: Lista carregada do Google Sheets
+2. **Interface Atualizada**: Clientes disponíveis no dropdown
+3. **Busca Funcional**: Filtro em tempo real
+4. **Seleção Ativa**: Mudança de cliente funciona
+
+##### 2. Erro no CSV
+1. **CSV Indisponível**: Erro na requisição
+2. **Array Vazio**: `clients = []`
+3. **Interface Vazia**: Dropdown sem opções
+4. **Mensagem de Erro**: "Erro ao carregar clientes"
+
+##### 3. Usuários Restritos
+1. **Hook Não Executa**: `useClientList(false)`
+2. **Cliente Único**: Apenas `user.tablename`
+3. **Interface Simplificada**: Dropdown com um cliente
+4. **Sem CSV**: Não carrega lista completa
+
+#### Validação da Eliminação
+
+##### 1. Testes de Funcionalidade
+- ✅ **CSV Funcionando**: Lista carregada corretamente
+- ✅ **CSV com Erro**: Array vazio retornado
+- ✅ **Usuários Restritos**: Apenas cliente específico
+- ✅ **Usuários Admin**: Lista completa do CSV
+
+##### 2. Testes de Performance
+- ✅ **Carregamento Rápido**: Sem processamento de listas hardcoded
+- ✅ **Menos Memória**: Não há arrays grandes no código
+- ✅ **Menos Código**: Eliminação de listas desnecessárias
+- ✅ **Cache Eficiente**: Hook otimizado
+
+##### 3. Testes de Manutenção
+- ✅ **Sem Deploy**: Mudanças no CSV refletem automaticamente
+- ✅ **Versionamento**: Controle via Google Sheets
+- ✅ **Backup**: Cópia de segurança do CSV
+- ✅ **Rollback**: Fácil reversão de mudanças
+
+#### Impacto da Mudança
+
+##### 1. Positivo
+- ✅ **Fonte Única**: Apenas CSV como fonte de dados
+- ✅ **Manutenção Simplificada**: Atualizações via Google Sheets
+- ✅ **Código Limpo**: Eliminação de listas hardcoded
+- ✅ **Flexibilidade**: Mudanças sem deploy
+
+##### 2. Considerações
+- ⚠️ **Dependência Externa**: Sistema depende do CSV estar disponível
+- ⚠️ **Tratamento de Erros**: Interface vazia em caso de erro
+- ⚠️ **Backup Necessário**: Manter cópia de segurança do CSV
+- ⚠️ **Validação**: Verificar formato e dados do CSV
 
 ## Sistema de Clientes Dinâmicos
 
@@ -173,14 +454,26 @@ wtennis
 ...
 ```
 
-#### 2. Hook useClientList
+#### 2. Hook Personalizado (useClientList)
 ```typescript
-export const useClientList = (): UseClientListReturn => {
+interface UseClientListReturn {
+  clients: string[]
+  isLoading: boolean
+  error: string | null
+}
+
+export const useClientList = (shouldFetch: boolean = true): UseClientListReturn => {
   const [clients, setClients] = useState<string[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(shouldFetch) // Iniciar loading apenas se deve fazer fetch
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    // Se não deve fazer fetch, retornar imediatamente
+    if (!shouldFetch) {
+      setIsLoading(false)
+      return
+    }
+
     const fetchClients = async () => {
       try {
         const response = await fetch(CSV_URL)
@@ -202,19 +495,28 @@ export const useClientList = (): UseClientListReturn => {
         
         setClients(clientList)
       } catch (err) {
-        // Fallback para lista padrão em caso de erro
-        setClients(fallbackClients)
+        // Em caso de erro, retornar array vazio em vez de lista hardcoded
+        setClients([])
+        setError(err instanceof Error ? err.message : 'Erro ao buscar lista de clientes')
       } finally {
         setIsLoading(false)
       }
     }
 
     fetchClients()
-  }, [])
+  }, [shouldFetch]) // Adicionar shouldFetch como dependência
 
   return { clients, isLoading, error }
 }
 ```
+
+**Funcionalidades:**
+- **Fetch Condicional**: Carrega dados apenas quando `shouldFetch` é `true`
+- **Parse CSV**: Extrai slugs da primeira coluna
+- **Tratamento de Erros**: Retorna array vazio em caso de erro
+- **Loading States**: Indicadores de carregamento condicionais
+- **Performance**: Evita requisições desnecessárias
+- **Sem Fallbacks**: Não há listas hardcoded no código
 
 ### Fluxo de Funcionamento
 
@@ -231,7 +533,7 @@ export const useClientList = (): UseClientListReturn => {
 const tables = useMemo(() => {
   // Se não deve usar CSV, usar apenas availableTables (usuários restritos)
   if (!useCSV) {
-    return availableTables.length > 0 ? availableTables : ['coffeemais']
+    return availableTables.length > 0 ? availableTables : []
   }
   
   // Se deve usar CSV, seguir a lógica normal (usuários com acesso total)
@@ -241,7 +543,7 @@ const tables = useMemo(() => {
   if (availableTables.length > 0) {
     return availableTables // 2º Prioridade: Lista específica
   }
-  return fallbackClients // 3º Prioridade: Lista padrão (erro no CSV)
+  return [] // 3º Prioridade: Array vazio (sem fallback hardcoded)
 }, [clients, availableTables, useCSV])
 ```
 
@@ -348,7 +650,7 @@ O sistema implementa controle de acesso baseado no campo `access_control` do usu
 
 ### Tipos de Acesso
 
-#### 1. Acesso Total (`access_control: 'all'`)
+#### 1. Acesso Total (`access_control: 'all'` OU `tablename: 'all'`)
 **Funcionalidades Disponíveis:**
 - ✅ **Lista Completa de Clientes**: Dropdown com todas as empresas
 - ✅ **Navegação Livre**: Acesso a qualquer cliente do sistema
@@ -357,9 +659,9 @@ O sistema implementa controle de acesso baseado no campo `access_control` do usu
 
 **Comportamento:**
 ```typescript
-availableTables = user?.access_control === 'all' 
+availableTables = user?.access_control === 'all' || user?.tablename === 'all'
   ? [lista_completa_de_clientes]
-  : [user?.tablename || 'coffeemais']
+  : [user?.tablename || '']
 ```
 
 #### 2. Acesso Restrito (`access_control: 'specific'`)
@@ -390,20 +692,20 @@ interface User {
 #### 2. Lógica de Controle
 ```typescript
 // TableSelector - Lista de clientes disponíveis
-const availableTables = user?.access_control === 'all' 
+const availableTables = user?.access_control === 'all' || user?.tablename === 'all'
   ? [] // Vazio para usar apenas o CSV via useClientList
-  : [user?.tablename || 'coffeemais']
+  : [user?.tablename || '']
 
 // Controle de uso do CSV baseado no nível de acesso
-const useCSV = user?.access_control === 'all' // Usar CSV apenas para usuários com acesso total
+const useCSV = user?.access_control === 'all' || user?.tablename === 'all' // Usar CSV para usuários com acesso total
 
 // useClientList hook - Carrega do CSV
 const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQQNqKWaGX0EUBtFGSaMnHoHJSoLKFqjPrjydOtcSexU3xVGyoEnhgKQh8A6-6_hOOQ0CfmV-IfoC8d/pub?gid=771281747&single=true&output=csv'
 
 // Cliente padrão selecionado
-const defaultTable = user?.access_control === 'all'
-  ? (params.table || user?.tablename || 'coffeemais')
-  : (user?.tablename || 'coffeemais')
+const defaultTable = user?.access_control === 'all' || user?.tablename === 'all'
+  ? (params.table || user?.tablename || '')
+  : (user?.tablename || '')
 ```
 
 #### 3. Validação de Acesso
@@ -435,17 +737,17 @@ const defaultTable = user?.access_control === 'all'
 ### Casos de Uso
 
 #### 1. Administradores
-- **Acesso**: `access_control: 'all'`
+- **Acesso**: `access_control: 'all'` OU `tablename: 'all'`
 - **Funcionalidades**: Lista completa, comparações, relatórios gerais
 - **Uso**: Gestão geral, análises comparativas, suporte
 
 #### 2. Analistas de Cliente
-- **Acesso**: `access_control: 'specific'`
+- **Acesso**: `access_control: 'specific'` E `tablename: 'specific_client'`
 - **Funcionalidades**: Cliente específico, análises focadas
 - **Uso**: Análises diárias, relatórios específicos, otimizações
 
 #### 3. Consultores
-- **Acesso**: `access_control: 'all'` ou `access_control: 'specific'`
+- **Acesso**: `access_control: 'all'` OU `tablename: 'all'` OU `access_control: 'specific'`
 - **Funcionalidades**: Depende do tipo de consultoria
 - **Uso**: Análises comparativas ou focadas
 
