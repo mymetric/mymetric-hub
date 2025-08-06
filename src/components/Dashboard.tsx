@@ -766,56 +766,10 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 <TableSelector
                   currentTable={selectedTable}
                   onTableChange={setSelectedTable}
+                  useCSV={user?.access_control === 'all'} // Usar CSV apenas para usuários com acesso total
                   availableTables={
                     user?.access_control === 'all' 
-                      ? [
-                          '3dfila',
-                          'gringa',
-                          'orthocrin',
-                          'meurodape',
-                          'coffeemais',
-                          'universomaschio',
-                          'oculosshop',
-                          'evoke',
-                          'hotbuttered',
-                          'use',
-                          'wtennis',
-                          'constance',
-                          'jcdecor',
-                          'parededepapel',
-                          'bemcolar',
-                          'poesiamuda',
-                          'caramujo',
-                          'europa',
-                          'leveros',
-                          'abcdaconstrucao',
-                          'kaisan',
-                          'endogen',
-                          'bocarosa',
-                          'mymetric',
-                          'buildgrowth',
-                          'alvisi',
-                          'coroasparavelorio',
-                          'coroinhasportoalegre',
-                          'coroinhasbrasilia',
-                          'coroinhascampinas',
-                          'coroinhascuritiba',
-                          'coroinhasbelohorizonte',
-                          'coroinhasgoiania',
-                          'coroinhasrecife',
-                          'coroinhasriodejaneiro',
-                          'coroinhassaopaulo',
-                          'lacoscorporativos',
-                          'exitlag',
-                          'havaianas',
-                          'linus',
-                          'iwannasleep',
-                          'asos',
-                          'safeweb',
-                          'queimadiaria',
-                          'augym',
-                          'waz'
-                        ]
+                      ? [] // Deixar vazio para usar apenas o CSV via useClientList
                       : [user?.tablename || 'coffeemais']
                   }
                 />

@@ -6,15 +6,22 @@ interface TableSelectorProps {
   currentTable: string
   onTableChange: (table: string) => void
   availableTables?: string[]
+  useCSV?: boolean // Nova prop para controlar se deve usar CSV
 }
 
-const TableSelector = ({ currentTable, onTableChange, availableTables = [] }: TableSelectorProps) => {
+const TableSelector = ({ currentTable, onTableChange, availableTables = [], useCSV = true }: TableSelectorProps) => {
   const [isOpen, setIsOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const { clients, isLoading, error } = useClientList()
 
   // Usar clientes do CSV ou fallback para availableTables ou lista padrão
   const tables = useMemo(() => {
+    // Se não deve usar CSV, usar apenas availableTables
+    if (!useCSV) {
+      return availableTables.length > 0 ? availableTables : ['coffeemais']
+    }
+    
+    // Se deve usar CSV, seguir a lógica normal
     if (clients.length > 0) {
       return clients
     }
@@ -34,7 +41,7 @@ const TableSelector = ({ currentTable, onTableChange, availableTables = [] }: Ta
       'coroinhassaopaulo', 'lacoscorporativos', 'exitlag', 'havaianas',
       'linus', 'iwannasleep', 'asos', 'safeweb', 'queimadiaria', 'augym', 'waz'
     ]
-  }, [clients, availableTables])
+  }, [clients, availableTables, useCSV])
 
   // Mostrar apenas o slug (sem nomes amigáveis)
   const getTableDisplayName = (tableName: string) => {

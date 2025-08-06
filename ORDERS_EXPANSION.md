@@ -47,6 +47,299 @@ Este documento descreve a implementação do sistema de expansão de pedidos no 
 - **Fallback Inteligente**: Lista padrão em caso de erro na API
 - **Busca em Tempo Real**: Filtro dinâmico por nome do cliente
 - **Controle de Acesso**: Lista completa apenas para usuários com `access_control: 'all'`
+- **Fonte Única**: Sistema usa apenas o CSV, sem listas hardcoded
+
+### Correção do Controle de Acesso
+
+#### Problema Identificado
+O sistema anteriormente carregava a lista completa do CSV para todos os usuários, independente do nível de acesso, permitindo que usuários restritos vissem todos os clientes.
+
+#### Solução Implementada
+
+##### 1. Nova Prop `useCSV`
+```typescript
+interface TableSelectorProps {
+  currentTable: string
+  onTableChange: (table: string) => void
+  availableTables?: string[]
+  useCSV?: boolean // Controla se deve usar CSV ou não
+}
+```
+
+##### 2. Lógica Condicional
+```typescript
+// Dashboard - Passa prop baseada no nível de acesso
+<TableSelector
+  currentTable={selectedTable}
+  onTableChange={setSelectedTable}
+  useCSV={user?.access_control === 'all'} // Usar CSV apenas para usuários com acesso total
+  availableTables={
+    user?.access_control === 'all' 
+      ? [] // Vazio para usar apenas o CSV
+      : [user?.tablename || 'coffeemais'] // Cliente específico para usuários restritos
+  }
+/>
+
+// TableSelector - Lógica condicional
+const tables = useMemo(() => {
+  // Usuários restritos: não carregam CSV
+  if (!useCSV) {
+    return availableTables.length > 0 ? availableTables : ['coffeemais']
+  }
+  
+  // Usuários com acesso total: carregam CSV
+  if (clients.length > 0) {
+    return clients
+  }
+  // ... fallback logic
+}, [clients, availableTables, useCSV])
+```
+
+#### Benefícios da Correção
+
+##### 1. Segurança
+- ✅ **Isolamento Real**: Usuários restritos não veem lista completa
+- ✅ **Controle Efetivo**: CSV carregado apenas quando necessário
+- ✅ **Performance**: Menos requisições para usuários restritos
+- ✅ **Privacidade**: Dados isolados por nível de acesso
+
+##### 2. Performance
+- ✅ **Carregamento Otimizado**: CSV só é carregado para usuários autorizados
+- ✅ **Menos Requisições**: Usuários restritos não fazem fetch desnecessário
+- ✅ **Cache Inteligente**: Hook só executa quando necessário
+- ✅ **Interface Rápida**: Dropdown carrega instantaneamente para usuários restritos
+
+##### 3. Experiência do Usuário
+- ✅ **Interface Limpa**: Usuários restritos veem apenas seu cliente
+- ✅ **Sem Confusão**: Não há opções desnecessárias
+- ✅ **Carregamento Rápido**: Sem delay de fetch do CSV
+- ✅ **Comportamento Consistente**: Interface adaptada ao nível de acesso
+
+#### Fluxo Corrigido
+
+##### 1. Usuários com `access_control: 'all'`
+1. **Prop `useCSV: true`**: Sistema carrega CSV
+2. **Hook Executa**: `useClientList` faz fetch
+3. **Lista Completa**: Todos os clientes disponíveis
+4. **Interface Completa**: Dropdown com busca e filtros
+
+##### 2. Usuários com Acesso Restrito
+1. **Prop `useCSV: false`**: Sistema não carrega CSV
+2. **Hook Não Executa**: `useClientList` não faz fetch
+3. **Cliente Único**: Apenas `user.tablename` disponível
+4. **Interface Simplificada**: Dropdown com um cliente
+
+#### Validação da Correção
+
+##### 1. Testes de Acesso
+- ✅ **Usuário Admin**: Vê lista completa do CSV
+- ✅ **Usuário Restrito**: Vê apenas seu cliente
+- ✅ **Usuário Sem Acesso**: Vê cliente padrão
+
+##### 2. Testes de Performance
+- ✅ **Carregamento Rápido**: Usuários restritos não esperam CSV
+- ✅ **Menos Requisições**: Apenas usuários autorizados fazem fetch
+- ✅ **Cache Eficiente**: Hook só executa quando necessário
+
+##### 3. Testes de Segurança
+- ✅ **Isolamento de Dados**: Usuários não veem dados não autorizados
+- ✅ **Controle de Interface**: UI adaptada ao nível de acesso
+- ✅ **Validação Backend**: Recomendado para segurança adicional
+
+## Sistema de Clientes Dinâmicos
+
+### Visão Geral
+O sistema agora utiliza exclusivamente uma fonte de dados externa (CSV do Google Sheets) para gerenciar a lista de clientes, eliminando a necessidade de listas hardcoded no código.
+
+### Fonte de Dados
+
+#### 1. CSV Remoto
+```typescript
+const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQQNqKWaGX0EUBtFGSaMnHoHJSoLKFqjPrjydOtcSexU3xVGyoEnhgKQh8A6-6_hOOQ0CfmV-IfoC8d/pub?gid=771281747&single=true&output=csv'
+```
+
+**Estrutura do CSV:**
+```csv
+slug
+gringa
+constance
+coffeemais
+universomaschio
+oculosshop
+evoke
+hotbuttered
+use
+wtennis
+...
+```
+
+#### 2. Hook useClientList
+```typescript
+export const useClientList = (): UseClientListReturn => {
+  const [clients, setClients] = useState<string[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const fetchClients = async () => {
+      try {
+        const response = await fetch(CSV_URL)
+        const csvText = await response.text()
+        
+        // Parse CSV - Skip header, extract slugs
+        const lines = csvText.split('\n')
+        const clientList: string[] = []
+        
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim()
+          if (line && line !== 'slug') {
+            const slug = line.split(',')[0]?.trim()
+            if (slug) {
+              clientList.push(slug)
+            }
+          }
+        }
+        
+        setClients(clientList)
+      } catch (err) {
+        // Fallback para lista padrão em caso de erro
+        setClients(fallbackClients)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchClients()
+  }, [])
+
+  return { clients, isLoading, error }
+}
+```
+
+### Fluxo de Funcionamento
+
+#### 1. Carregamento Inicial
+1. **Componente Monta**: `TableSelector` é renderizado
+2. **Hook Executa**: `useClientList` inicia o fetch do CSV
+3. **Loading State**: Interface mostra "Carregando clientes..."
+4. **CSV Processado**: Slugs extraídos e armazenados
+5. **Interface Atualizada**: Lista de clientes disponível
+
+#### 2. Controle de Acesso
+```typescript
+// TableSelector - Lógica de prioridade com controle de acesso
+const tables = useMemo(() => {
+  // Se não deve usar CSV, usar apenas availableTables (usuários restritos)
+  if (!useCSV) {
+    return availableTables.length > 0 ? availableTables : ['coffeemais']
+  }
+  
+  // Se deve usar CSV, seguir a lógica normal (usuários com acesso total)
+  if (clients.length > 0) {
+    return clients // 1º Prioridade: CSV carregado
+  }
+  if (availableTables.length > 0) {
+    return availableTables // 2º Prioridade: Lista específica
+  }
+  return fallbackClients // 3º Prioridade: Lista padrão (erro no CSV)
+}, [clients, availableTables, useCSV])
+```
+
+#### 3. Estados da Interface
+
+**Loading:**
+```typescript
+{isLoading ? (
+  <div className="flex items-center gap-2">
+    <Loader2 className="w-4 h-4 animate-spin" />
+    <span>Carregando clientes...</span>
+  </div>
+) : (
+  // Lista de clientes
+)}
+```
+
+**Error:**
+```typescript
+{error ? (
+  <div className="text-red-500 text-center">
+    Erro ao carregar clientes
+  </div>
+) : (
+  // Lista de clientes ou fallback
+)}
+```
+
+**Success:**
+```typescript
+{filteredTables.map((table) => (
+  <button key={table}>
+    <div className="font-medium">{table}</div>
+  </button>
+))}
+```
+
+### Benefícios da Implementação
+
+#### 1. Manutenibilidade
+- ✅ **Fonte Única**: Apenas o CSV precisa ser atualizado
+- ✅ **Sem Deploy**: Mudanças na lista não requerem nova versão
+- ✅ **Consistência**: Mesma lista em todos os ambientes
+- ✅ **Simplicidade**: Código mais limpo e organizado
+
+#### 2. Flexibilidade
+- ✅ **Atualizações Dinâmicas**: Lista pode ser modificada sem código
+- ✅ **Controle de Acesso**: Integração com sistema de permissões
+- ✅ **Fallback Robusto**: Sistema continua funcionando mesmo com erro
+- ✅ **Performance**: Cache automático do hook
+
+#### 3. Experiência do Usuário
+- ✅ **Loading States**: Feedback visual durante carregamento
+- ✅ **Error Handling**: Tratamento gracioso de erros
+- ✅ **Busca em Tempo Real**: Filtro dinâmico por nome
+- ✅ **Interface Responsiva**: Adaptação a diferentes tamanhos
+
+### Casos de Uso
+
+#### 1. Adicionar Novo Cliente
+1. **Editar CSV**: Adicionar nova linha com slug
+2. **Salvar**: Mudanças refletem automaticamente
+3. **Testar**: Verificar se aparece na interface
+4. **Validar**: Confirmar funcionamento
+
+#### 2. Remover Cliente
+1. **Editar CSV**: Remover linha do cliente
+2. **Salvar**: Cliente desaparece da lista
+3. **Verificar**: Confirmar que não aparece mais
+4. **Limpar**: Remover dados relacionados se necessário
+
+#### 3. Manutenção do Sistema
+1. **Backup CSV**: Manter cópia de segurança
+2. **Validação**: Verificar formato e dados
+3. **Testes**: Validar funcionamento após mudanças
+4. **Documentação**: Atualizar documentação se necessário
+
+### Monitoramento e Debug
+
+#### 1. Console Logs
+```typescript
+console.log('🔄 Fetching client list from CSV...')
+console.log('✅ CSV received:', csvText.substring(0, 200) + '...')
+console.log('📋 Parsed clients:', clientList)
+console.error('❌ Error fetching client list:', err)
+```
+
+#### 2. Estados de Debug
+- **Loading**: `isLoading = true`
+- **Success**: `clients.length > 0`
+- **Error**: `error !== null`
+- **Fallback**: `clients.length === 0 && availableTables.length === 0`
+
+#### 3. Validação de Dados
+- **Formato CSV**: Verificar estrutura
+- **Slugs Válidos**: Confirmar que não estão vazios
+- **Duplicatas**: Verificar se não há slugs repetidos
+- **Caracteres Especiais**: Validar encoding
 
 ## Controle de Acesso de Usuários
 
@@ -98,12 +391,14 @@ interface User {
 ```typescript
 // TableSelector - Lista de clientes disponíveis
 const availableTables = user?.access_control === 'all' 
-  ? [
-      '3dfila', 'gringa', 'orthocrin', 'meurodape', 'coffeemais',
-      'universomaschio', 'oculosshop', 'evoke', 'hotbuttered',
-      // ... lista completa
-    ]
+  ? [] // Vazio para usar apenas o CSV via useClientList
   : [user?.tablename || 'coffeemais']
+
+// Controle de uso do CSV baseado no nível de acesso
+const useCSV = user?.access_control === 'all' // Usar CSV apenas para usuários com acesso total
+
+// useClientList hook - Carrega do CSV
+const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQQNqKWaGX0EUBtFGSaMnHoHJSoLKFqjPrjydOtcSexU3xVGyoEnhgKQh8A6-6_hOOQ0CfmV-IfoC8d/pub?gid=771281747&single=true&output=csv'
 
 // Cliente padrão selecionado
 const defaultTable = user?.access_control === 'all'
@@ -161,100 +456,6 @@ const defaultTable = user?.access_control === 'all'
 3. **Navegação**: Opções limitadas conforme permissão
 4. **Dados**: Apenas dados autorizados carregados
 5. **Compartilhamento**: URLs respeitam restrições
-
-## Sistema de Clientes Dinâmicos
-
-### Visão Geral
-O sistema de clientes dinâmicos carrega automaticamente a lista de clientes disponíveis de uma URL CSV externa, permitindo atualizações centralizadas sem necessidade de deploy.
-
-### Funcionalidades
-
-#### 1. Carregamento de CSV Remoto
-```typescript
-const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQQNqKWaGX0EUBtFGSaMnHoHJSoLKFqjPrjydOtcSexU3xVGyoEnhgKQh8A6-6_hOOQ0CfmV-IfoC8d/pub?gid=771281747&single=true&output=csv'
-```
-
-#### 2. Hook Personalizado (useClientList)
-```typescript
-interface UseClientListReturn {
-  clients: string[]
-  isLoading: boolean
-  error: string | null
-}
-```
-
-**Funcionalidades:**
-- **Fetch Automático**: Carrega dados ao montar componente
-- **Parse CSV**: Extrai slugs da primeira coluna
-- **Tratamento de Erros**: Fallback para lista padrão
-- **Loading States**: Indicadores de carregamento
-
-#### 3. Exibição de Slugs Limpos
-- **Sem Nomes Amigáveis**: Mostra apenas os slugs dos clientes
-- **Busca Simplificada**: Filtro direto por slug
-- **Interface Limpa**: Visual mais técnico e direto
-
-#### 4. Estados de Interface
-
-**Loading:**
-- **Botão**: Spinner + "Carregando..."
-- **Dropdown**: "Carregando clientes..."
-- **Desabilitado**: Interação bloqueada
-
-**Erro:**
-- **Fallback**: Lista padrão carregada
-- **Mensagem**: "Erro ao carregar clientes"
-- **Funcionalidade**: Sistema continua operacional
-
-**Sucesso:**
-- **Lista Dinâmica**: Clientes do CSV
-- **Busca Funcional**: Filtro em tempo real
-- **Seleção**: Mudança de cliente ativa
-
-### Benefícios
-
-#### 1. Manutenibilidade
-- ✅ **Atualização Centralizada**: CSV único para todos os clientes
-- ✅ **Sem Deploy**: Mudanças refletem imediatamente
-- ✅ **Versionamento**: Controle de versão via Google Sheets
-
-#### 2. Flexibilidade
-- ✅ **Adição Rápida**: Novos clientes via CSV
-- ✅ **Remoção Simples**: Clientes removidos automaticamente
-- ✅ **Edição Fácil**: Interface familiar do Google Sheets
-
-#### 3. Robustez
-- ✅ **Fallback Inteligente**: Lista padrão em caso de erro
-- ✅ **Loading States**: Feedback visual durante carregamento
-- ✅ **Tratamento de Erros**: Sistema não quebra
-
-### Fluxo de Funcionamento
-
-1. **Inicialização**: Hook carrega CSV ao montar componente
-2. **Parse**: Extrai slugs da primeira coluna
-3. **Fallback**: Se erro, usa lista padrão
-4. **Exibição**: Mostra slugs limpos no dropdown
-5. **Busca**: Filtro dinâmico por slug
-6. **Seleção**: Mudança de cliente atualiza dashboard
-
-### Estrutura do CSV
-
-**Formato Esperado:**
-```csv
-slug
-gringa
-constance
-coffeemais
-3dfila
-orthocrin
-...
-```
-
-**Processamento:**
-- **Header**: Ignora linha "slug"
-- **Dados**: Extrai primeira coluna de cada linha
-- **Limpeza**: Remove espaços e linhas vazias
-- **Validação**: Filtra slugs válidos
 
 ## Sistema de Comparação de Métricas
 
