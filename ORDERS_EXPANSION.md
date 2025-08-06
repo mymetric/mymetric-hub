@@ -27,11 +27,111 @@ Este documento descreve a implementação do sistema de expansão de pedidos no 
 - **4-1s**: "Finalizando..."
 - **0s**: "Aguarde..."
 
-### 3. Interface de Usuário
+### 3. Comparativo Real de Métricas
+- **Dados Históricos**: Busca automática de dados do período anterior
+- **Comparação Real**: Crescimento calculado com dados reais, não simulados
+- **Período Dinâmico**: Calcula período anterior baseado no período selecionado
+- **Indicadores Visuais**: Mostra crescimento/queda com cores e ícones
+- **Loading States**: Indicador "Comparando..." durante carregamento de dados históricos
+
+### 4. Interface de Usuário
 - **Botão Dinâmico**: Muda entre download, loading e visualização
 - **Indicadores Visuais**: Spinner, timer e mensagens de status
 - **Tooltip Informativo**: Mostra tempo decorrido e status atual
 - **Layout Responsivo**: Adapta-se a diferentes tamanhos de tela
+
+## Sistema de Comparação de Métricas
+
+### Visão Geral
+O sistema de comparação de métricas substitui os valores fictícios por dados reais do período anterior, proporcionando insights verdadeiros sobre o crescimento ou queda das métricas.
+
+### Funcionalidades
+
+#### 1. Cálculo de Período Anterior
+```typescript
+const getPreviousPeriod = () => {
+  const start = new Date(startDate)
+  const end = new Date(endDate)
+  const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
+  
+  const previousEnd = new Date(start)
+  previousEnd.setDate(previousEnd.getDate() - 1)
+  const previousStart = new Date(previousEnd)
+  previousStart.setDate(previousStart.getDate() - daysDiff + 1)
+  
+  return {
+    start: previousStart.toISOString().split('T')[0],
+    end: previousEnd.toISOString().split('T')[0]
+  }
+}
+```
+
+#### 2. Busca de Dados Históricos
+- **Requisição Paralela**: Dados históricos buscados simultaneamente aos dados atuais
+- **Tratamento de Erros**: Falha na busca histórica não afeta dados principais
+- **Cache Inteligente**: Dados históricos atualizados quando filtros mudam
+
+#### 3. Cálculo de Crescimento Real
+```typescript
+const calculateGrowth = (current: number, previous: number) => {
+  if (previous === 0) {
+    return current > 0 ? 100 : 0 // Crescimento de 100% se não havia dados
+  }
+  if (current === 0) {
+    return previous > 0 ? -100 : 0 // Queda de 100% se havia dados
+  }
+  return ((current - previous) / previous) * 100
+}
+```
+
+#### 4. Métricas Comparadas
+- **Sessões**: Comparação direta de volume de tráfego
+- **Pedidos Pagos**: Evolução de conversões pagas
+- **Receita Paga**: Crescimento de receita efetiva
+- **Ticket Médio**: Variação do valor médio por pedido
+- **Taxa de Conversão**: Evolução da eficiência de conversão
+- **Taxa de Adição ao Carrinho**: Mudança no engajamento
+- **Receita por Sessão**: Eficiência monetária por visita
+- **Taxa de Novos Clientes**: Evolução da aquisição
+
+### Estados Visuais
+
+#### 1. Carregamento
+- **Indicador**: Spinner + "Comparando..."
+- **Cor**: Azul
+- **Posição**: Canto superior direito do card
+
+#### 2. Crescimento Positivo
+- **Ícone**: Seta para cima (↗️)
+- **Cor**: Verde
+- **Formato**: "+X.X%"
+
+#### 3. Queda Negativa
+- **Ícone**: Seta para baixo (↘️)
+- **Cor**: Vermelho
+- **Formato**: "-X.X%"
+
+#### 4. Sem Mudança
+- **Ícone**: Nenhum
+- **Cor**: Cinza
+- **Formato**: "0.0%"
+
+### Benefícios
+
+#### 1. Insights Reais
+- ✅ **Dados Verdadeiros**: Comparação com período real, não simulado
+- ✅ **Tendências Reais**: Identificação de padrões de crescimento/queda
+- ✅ **Performance Real**: Avaliação precisa de campanhas e estratégias
+
+#### 2. Flexibilidade
+- ✅ **Período Dinâmico**: Funciona com qualquer período selecionado
+- ✅ **Filtros Consistentes**: Mesmos filtros aplicados ao período anterior
+- ✅ **Atualização Automática**: Dados atualizados quando filtros mudam
+
+#### 3. Experiência do Usuário
+- ✅ **Feedback Visual**: Indicadores claros de crescimento/queda
+- ✅ **Loading States**: Feedback durante carregamento de dados
+- ✅ **Tratamento de Erros**: Interface não quebra se dados históricos falharem
 
 ## Arquitetura Técnica
 

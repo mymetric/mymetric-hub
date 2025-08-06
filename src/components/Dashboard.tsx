@@ -70,6 +70,10 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const [activeTab, setActiveTab] = useState<string>('visao-geral')
   const [filtersCollapsed, setFiltersCollapsed] = useState(true)
   const [attributionModel, setAttributionModel] = useState<string>('Último Clique Não Direto')
+  
+  // Estados para dados históricos
+  const [previousMetrics, setPreviousMetrics] = useState<MetricsDataItem[]>([])
+  const [isLoadingPrevious, setIsLoadingPrevious] = useState(false)
   const [expandedOrders, setExpandedOrders] = useState<{
     isOpen: boolean
     trafficCategory: string
@@ -102,6 +106,23 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     }
   }
 
+  // Função para calcular período anterior
+  const getPreviousPeriod = () => {
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
+    
+    const previousEnd = new Date(start)
+    previousEnd.setDate(previousEnd.getDate() - 1)
+    const previousStart = new Date(previousEnd)
+    previousStart.setDate(previousStart.getDate() - daysDiff + 1)
+    
+    return {
+      start: previousStart.toISOString().split('T')[0],
+      end: previousEnd.toISOString().split('T')[0]
+    }
+  }
+
   // Função para lidar com mudança de aba
   const handleTabChange = (tab: string) => {
     setActiveTab(tab)
@@ -129,6 +150,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
         console.log('🔄 Fetching metrics for table:', selectedTable)
         setIsTableLoading(true)
+        setIsLoadingPrevious(true)
+        
         const requestEndDate = endDate
         const requestStartDate = startDate
 
@@ -138,6 +161,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
           table_name: selectedTable
         })
 
+        // Buscar dados do período atual
         const response = await api.getMetrics(token, {
           start_date: requestStartDate,
           end_date: requestEndDate,
@@ -149,13 +173,36 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         console.log('📈 Data length:', response.data?.length || 0)
 
         setMetrics(response.data || [])
+        
+        // Buscar dados do período anterior para comparação
+        const previousPeriod = getPreviousPeriod()
+        console.log('📊 Fetching previous period:', previousPeriod)
+        
+        try {
+          const previousResponse = await api.getMetrics(token, {
+            start_date: previousPeriod.start,
+            end_date: previousPeriod.end,
+            table_name: selectedTable,
+            attribution_model: attributionModel
+          })
+          
+          console.log('✅ Previous period response:', previousResponse)
+          setPreviousMetrics(previousResponse.data || [])
+        } catch (previousError) {
+          console.error('❌ Error fetching previous metrics:', previousError)
+          setPreviousMetrics([])
+        }
+        
         setIsLoading(false)
         setIsTableLoading(false)
+        setIsLoadingPrevious(false)
       } catch (error) {
         console.error('❌ Error fetching metrics:', error)
         setIsLoading(false)
         setIsTableLoading(false)
+        setIsLoadingPrevious(false)
         setMetrics([])
+        setPreviousMetrics([])
       }
     }
 
@@ -236,6 +283,31 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     cliques: 0
   })
 
+  // Calcular totais do período anterior
+  const previousTotals = previousMetrics.reduce((acc, item) => ({
+    receita: acc.receita + item.Receita,
+    pedidos: acc.pedidos + item.Pedidos,
+    sessoes: acc.sessoes + item.Sessoes,
+    novosClientes: acc.novosClientes + item.Novos_Clientes,
+    adicoesCarrinho: acc.adicoesCarrinho + item.Adicoes_ao_Carrinho,
+    receitaPaga: acc.receitaPaga + item.Receita_Paga,
+    pedidosPagos: acc.pedidosPagos + item.Pedidos_Pagos,
+    receitaNovosClientes: acc.receitaNovosClientes + item.Receita_Novos_Clientes,
+    investimento: acc.investimento + item.Investimento,
+    cliques: acc.cliques + item.Cliques
+  }), {
+    receita: 0,
+    pedidos: 0,
+    sessoes: 0,
+    novosClientes: 0,
+    adicoesCarrinho: 0,
+    receitaPaga: 0,
+    pedidosPagos: 0,
+    receitaNovosClientes: 0,
+    investimento: 0,
+    cliques: 0
+  })
+
   const avgOrderValue = totals.pedidos > 0 ? totals.receita / totals.pedidos : 0
   const conversionRate = totals.sessoes > 0 ? (totals.pedidos / totals.sessoes) * 100 : 0
 
@@ -243,6 +315,13 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const newCustomerRate = totals.pedidos > 0 ? (totals.novosClientes / totals.pedidos) * 100 : 0
   // Taxa de adição ao carrinho - limitando a um máximo de 100% por sessão
   const addToCartRate = totals.sessoes > 0 ? Math.min((totals.adicoesCarrinho / totals.sessoes) * 100, 100) : 0
+
+  // Métricas do período anterior
+  const previousAvgOrderValue = previousTotals.pedidos > 0 ? previousTotals.receita / previousTotals.pedidos : 0
+  const previousConversionRate = previousTotals.sessoes > 0 ? (previousTotals.pedidos / previousTotals.sessoes) * 100 : 0
+  const previousRevenuePerSession = previousTotals.sessoes > 0 ? previousTotals.receita / previousTotals.sessoes : 0
+  const previousNewCustomerRate = previousTotals.pedidos > 0 ? (previousTotals.novosClientes / previousTotals.pedidos) * 100 : 0
+  const previousAddToCartRate = previousTotals.sessoes > 0 ? Math.min((previousTotals.adicoesCarrinho / previousTotals.sessoes) * 100, 100) : 0
 
   // Preparar dados para a timeline baseados nos dados filtrados
   const timelineData = filteredMetrics
@@ -429,7 +508,12 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
   // Calcular crescimento (simulado)
   const calculateGrowth = (current: number, previous: number) => {
-    if (previous === 0 || current === 0) return 0
+    if (previous === 0) {
+      return current > 0 ? 100 : 0 // Se não havia dados antes e agora há, crescimento de 100%
+    }
+    if (current === 0) {
+      return previous > 0 ? -100 : 0 // Se havia dados antes e agora não há, queda de 100%
+    }
     return ((current - previous) / previous) * 100
   }
 
@@ -627,7 +711,12 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
           <div className={`p-2.5 rounded-lg ${colorClasses[color as keyof typeof colorClasses]} text-gray-700`}>
             <Icon className="w-5 h-5" />
           </div>
-          {growth !== undefined && growth !== 0 && (
+          {isLoadingPrevious ? (
+            <div className="flex items-center gap-1">
+              <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+              <span className="text-xs text-gray-500">Comparando...</span>
+            </div>
+          ) : growth !== undefined && growth !== 0 && (
             <div className="flex items-center gap-1">
               {growth > 0 ? (
                 <ArrowUpRight className="w-4 h-4 text-green-600" />
@@ -787,21 +876,21 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   title: "Sessões",
                   value: totals.sessoes,
                   icon: Globe,
-                  growth: calculateGrowth(totals.sessoes, totals.sessoes * 0.92),
+                  growth: calculateGrowth(totals.sessoes, previousTotals.sessoes),
                   color: "blue"
                 },
                 {
                   title: "Pedidos Pagos",
                   value: totals.pedidosPagos,
                   icon: CheckCircle,
-                  growth: calculateGrowth(totals.pedidosPagos, totals.pedidosPagos * 0.95),
+                  growth: calculateGrowth(totals.pedidosPagos, previousTotals.pedidosPagos),
                   color: "green"
                 },
                 {
                   title: "Receita Paga",
                   value: totals.receitaPaga,
                   icon: Coins,
-                  growth: calculateGrowth(totals.receitaPaga, totals.receitaPaga * 0.9),
+                  growth: calculateGrowth(totals.receitaPaga, previousTotals.receitaPaga),
                   format: "currency",
                   color: "purple"
                 },
@@ -811,7 +900,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   icon: DollarSign,
                   format: "currency",
                   color: "orange",
-                  growth: calculateGrowth(avgOrderValue, avgOrderValue * 0.93)
+                  growth: calculateGrowth(avgOrderValue, previousAvgOrderValue)
                 },
                 {
                   title: "Taxa de Conversão",
@@ -819,7 +908,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   icon: Sparkles,
                   format: "percentage",
                   color: "red",
-                  growth: calculateGrowth(conversionRate, conversionRate * 0.85)
+                  growth: calculateGrowth(conversionRate, previousConversionRate)
                 },
                 {
                   title: "Taxa de Adição ao Carrinho",
@@ -827,7 +916,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   icon: ShoppingBag,
                   format: "percentage",
                   color: "blue",
-                  growth: calculateGrowth(addToCartRate, addToCartRate * 0.87)
+                  growth: calculateGrowth(addToCartRate, previousAddToCartRate)
                 },
                 {
                   title: "Receita por Sessão",
@@ -835,7 +924,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   icon: ArrowUpCircle,
                   format: "currency",
                   color: "green",
-                  growth: calculateGrowth(revenuePerSession, revenuePerSession * 0.88)
+                  growth: calculateGrowth(revenuePerSession, previousRevenuePerSession)
                 },
                 {
                   title: "Taxa de Novos Clientes",
@@ -843,7 +932,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   icon: Users2,
                   format: "percentage",
                   color: "purple",
-                  growth: calculateGrowth(newCustomerRate, newCustomerRate * 0.92)
+                  growth: calculateGrowth(newCustomerRate, previousNewCustomerRate)
                 }
               ]}
             />
@@ -1004,21 +1093,21 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       title="Sessões"
                       value={totals.sessoes}
                       icon={Globe}
-                      growth={calculateGrowth(totals.sessoes, totals.sessoes * 0.92)}
+                      growth={calculateGrowth(totals.sessoes, previousTotals.sessoes)}
                       color="blue"
                     />
                     <MetricCard
                       title="Pedidos Pagos"
                       value={totals.pedidosPagos}
                       icon={CheckCircle}
-                      growth={calculateGrowth(totals.pedidosPagos, totals.pedidosPagos * 0.95)}
+                      growth={calculateGrowth(totals.pedidosPagos, previousTotals.pedidosPagos)}
                       color="green"
                     />
                     <MetricCard
                       title="Receita Paga"
                       value={totals.receitaPaga}
                       icon={Coins}
-                      growth={calculateGrowth(totals.receitaPaga, totals.receitaPaga * 0.9)}
+                      growth={calculateGrowth(totals.receitaPaga, previousTotals.receitaPaga)}
                       format="currency"
                       color="purple"
                     />
@@ -1028,7 +1117,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       icon={DollarSign}
                       format="currency"
                       color="orange"
-                      growth={calculateGrowth(avgOrderValue, avgOrderValue * 0.93)}
+                      growth={calculateGrowth(avgOrderValue, previousAvgOrderValue)}
                     />
                   </div>
 
@@ -1040,7 +1129,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       icon={Sparkles}
                       format="percentage"
                       color="red"
-                      growth={calculateGrowth(conversionRate, conversionRate * 0.85)}
+                      growth={calculateGrowth(conversionRate, previousConversionRate)}
                     />
                     <MetricCard
                       title="Taxa de Adição ao Carrinho"
@@ -1048,7 +1137,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       icon={ShoppingBag}
                       format="percentage"
                       color="blue"
-                      growth={calculateGrowth(addToCartRate, addToCartRate * 0.87)}
+                      growth={calculateGrowth(addToCartRate, previousAddToCartRate)}
                     />
                     <MetricCard
                       title="Receita por Sessão"
@@ -1056,7 +1145,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       icon={ArrowUpCircle}
                       format="currency"
                       color="green"
-                      growth={calculateGrowth(revenuePerSession, revenuePerSession * 0.88)}
+                      growth={calculateGrowth(revenuePerSession, previousRevenuePerSession)}
                     />
                     <MetricCard
                       title="Taxa de Novos Clientes"
@@ -1064,7 +1153,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       icon={Users2}
                       format="percentage"
                       color="purple"
-                      growth={calculateGrowth(newCustomerRate, newCustomerRate * 0.92)}
+                      growth={calculateGrowth(newCustomerRate, previousNewCustomerRate)}
                     />
                   </div>
                 </div>
