@@ -83,6 +83,11 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   
   // Estado para controlar downloads em andamento
   const [downloadingOrders, setDownloadingOrders] = useState<Set<string>>(new Set())
+  
+  // Estados para timer de download
+  const [downloadStartTimes, setDownloadStartTimes] = useState<Map<string, number>>(new Map())
+  const [downloadMessages, setDownloadMessages] = useState<Map<string, string>>(new Map())
+  
   // const tokenCheckInterval = useRef<NodeJS.Timeout | null>(null)
 
   // Função para calcular datas dos últimos 30 dias
@@ -192,6 +197,14 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   //     }
   //   }
   // }, [onLogout])
+
+  // Limpar estados de timer quando filtros mudarem
+  useEffect(() => {
+    setDownloadingOrders(new Set())
+    setDownloadedOrders(new Set())
+    setDownloadStartTimes(new Map())
+    setDownloadMessages(new Map())
+  }, [selectedTable, startDate, endDate, attributionModel])
 
   // Filtrar dados por cluster
   const filteredMetrics = selectedCluster === 'Todos' 
@@ -446,8 +459,46 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     }
     
     try {
-      // Marcar como baixando
+      // Marcar como baixando e iniciar timer
       setDownloadingOrders(prev => new Set(prev).add(cacheKey))
+      setDownloadStartTimes(prev => new Map(prev).set(cacheKey, Date.now()))
+      setDownloadMessages(prev => new Map(prev).set(cacheKey, 'Iniciando download...'))
+      
+      // Iniciar timer decrescente (60 segundos)
+      let timeLeft = 60
+      const timerInterval = setInterval(() => {
+        timeLeft--
+        
+        // Atualizar mensagens baseadas no tempo restante
+        setDownloadMessages(prev => {
+          const newMessages = new Map(prev)
+          let message = 'Baixando pedidos...'
+          
+          if (timeLeft >= 50) {
+            message = 'Iniciando download...'
+          } else if (timeLeft >= 40) {
+            message = 'Processando dados...'
+          } else if (timeLeft >= 20) {
+            message = 'Analisando atribuições...'
+          } else if (timeLeft >= 10) {
+            message = 'Finalizando download...'
+          } else if (timeLeft >= 5) {
+            message = 'Quase pronto...'
+          } else if (timeLeft > 0) {
+            message = 'Finalizando...'
+          } else {
+            message = 'Aguarde...'
+          }
+          
+          newMessages.set(cacheKey, message)
+          return newMessages
+        })
+        
+        // Parar timer quando chegar a 0
+        if (timeLeft <= 0) {
+          clearInterval(timerInterval)
+        }
+      }, 1000)
       
       const token = localStorage.getItem('auth-token')
       if (!token) {
@@ -474,8 +525,23 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       // Fazer a requisição para baixar os dados
       await api.getOrders(token, requestParams)
       
+      // Limpar timer
+      clearInterval(timerInterval)
+      
       // Marcar como baixado
       setDownloadedOrders(prev => new Set(prev).add(cacheKey))
+      
+      // Limpar estados de timer
+      setDownloadStartTimes(prev => {
+        const newStartTimes = new Map(prev)
+        newStartTimes.delete(cacheKey)
+        return newStartTimes
+      })
+      setDownloadMessages(prev => {
+        const newMessages = new Map(prev)
+        newMessages.delete(cacheKey)
+        return newMessages
+      })
       
       // Abrir o modal automaticamente após o download
       handleExpandOrders(trafficCategory)
@@ -489,6 +555,18 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         const newSet = new Set(prev)
         newSet.delete(cacheKey)
         return newSet
+      })
+      
+      // Limpar estados de timer em caso de erro
+      setDownloadStartTimes(prev => {
+        const newStartTimes = new Map(prev)
+        newStartTimes.delete(cacheKey)
+        return newStartTimes
+      })
+      setDownloadMessages(prev => {
+        const newMessages = new Map(prev)
+        newMessages.delete(cacheKey)
+        return newMessages
       })
     }
   }
@@ -1182,31 +1260,45 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                                     const cacheKey = `${selectedTable}-${cluster}-${startDate}-${endDate}-${attributionModel}`
                                     const isDownloading = downloadingOrders.has(cacheKey)
                                     const isDownloaded = downloadedOrders.has(cacheKey)
+                                    const downloadMessage = downloadMessages.get(cacheKey) || ''
+                                    const startTime = downloadStartTimes.get(cacheKey) || 0
+                                    const elapsedSeconds = startTime > 0 ? Math.floor((Date.now() - startTime) / 1000) : 0
+                                    const timeLeft = Math.max(0, 60 - elapsedSeconds)
                                     
                                     return (
-                                      <button
-                                        onClick={() => handleDownloadOrders(cluster)}
-                                        disabled={isDownloading}
-                                        className="p-1 hover:bg-blue-100 rounded transition-colors group relative disabled:opacity-50 disabled:cursor-not-allowed"
-                                        title={
-                                          isDownloading 
-                                            ? 'Baixando pedidos...' 
-                                            : isDownloaded 
-                                              ? `Ver ${formatNumber(totals.pedidos)} pedido${totals.pedidos !== 1 ? 's' : ''} baixados`
-                                              : `Baixar ${formatNumber(totals.pedidos)} pedido${totals.pedidos !== 1 ? 's' : ''}`
-                                        }
-                                      >
-                                        {isDownloading ? (
-                                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
-                                        ) : isDownloaded ? (
-                                          <Eye className="w-3 h-3 text-green-600 group-hover:text-green-700" />
-                                        ) : (
-                                          <Download className="w-3 h-3 text-blue-600 group-hover:text-blue-700" />
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          onClick={() => handleDownloadOrders(cluster)}
+                                          disabled={isDownloading}
+                                          className="p-1 hover:bg-blue-100 rounded transition-colors group relative disabled:opacity-50 disabled:cursor-not-allowed"
+                                          title={
+                                            isDownloading 
+                                              ? `${downloadMessage} (${timeLeft}s restantes)` 
+                                              : isDownloaded 
+                                                ? `Ver ${formatNumber(totals.pedidos)} pedido${totals.pedidos !== 1 ? 's' : ''} baixados`
+                                                : `Baixar ${formatNumber(totals.pedidos)} pedido${totals.pedidos !== 1 ? 's' : ''}`
+                                          }
+                                        >
+                                          {isDownloading ? (
+                                            <div className="flex items-center gap-1">
+                                              <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+                                              <span className="text-xs text-blue-600 font-medium">{timeLeft}s</span>
+                                            </div>
+                                          ) : isDownloaded ? (
+                                            <Eye className="w-3 h-3 text-green-600 group-hover:text-green-700" />
+                                          ) : (
+                                            <Download className="w-3 h-3 text-blue-600 group-hover:text-blue-700" />
+                                          )}
+                                          {isDownloaded && (
+                                            <div className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full"></div>
+                                          )}
+                                        </button>
+                                        {isDownloading && (
+                                          <div className="text-xs text-gray-500 max-w-24 truncate">
+                                            {downloadMessage}
+                                          </div>
                                         )}
-                                        {isDownloaded && (
-                                          <div className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full"></div>
-                                        )}
-                                      </button>
+                                      </div>
                                     )
                                   })()}
                                 </div>

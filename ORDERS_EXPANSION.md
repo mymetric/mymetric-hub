@@ -1,352 +1,194 @@
-# Funcionalidade de Expansão de Pedidos
+# Sistema de Expansão de Pedidos - MyMetricHUB
 
 ## Visão Geral
 
-A funcionalidade de expansão de pedidos permite que os usuários visualizem os pedidos individuais de cada linha da tabela de visão geral. Quando um usuário clica no ícone de olho (👁️) na coluna "Pedidos", um modal é aberto mostrando todos os pedidos detalhados daquele cluster/categoria de tráfego.
+Este documento descreve a implementação do sistema de expansão de pedidos no dashboard do MyMetricHUB, permitindo que os usuários visualizem detalhes individuais dos pedidos diretamente na interface.
 
-## Como Funciona
+## Funcionalidades Principais
 
-### 1. Interface do Usuário
-- Na tabela de visão geral, cada linha tem uma coluna "Pedidos"
-- Quando há pedidos (valor > 0), um ícone de download aparece ao lado do número
-- **Primeiro**: Clique no ícone de download para baixar os pedidos
-- **Depois**: O ícone muda para olho (verde) indicando que os dados estão prontos
-- **Visualizar**: Clique no ícone de olho para abrir o modal com os detalhes
+### 1. Download e Visualização de Pedidos
+- **Download First, Then View**: Sistema de download em background seguido de visualização
+- **Cache Inteligente**: Armazenamento local de pedidos baixados com duração de 5 minutos
+- **Cancelamento de Requisições**: Uso de `AbortController` para cancelar requisições em andamento
+- **Timer de Progresso**: Sistema de timer para gerenciar expectativa do cliente durante downloads longos
 
-### 2. API Endpoint
-A funcionalidade utiliza o endpoint:
+### 2. Sistema de Timer de Download
+- **Contador Decrescente**: Timer visual mostrando tempo restante (60s → 0s)
+- **Mensagens de Progresso**: Feedback dinâmico baseado no tempo restante
+- **Estados Visuais**: Diferentes indicadores para cada fase do download
+- **Limpeza Automática**: Estados limpos quando filtros mudam
+
+#### Mensagens de Progresso por Tempo Restante:
+- **60-50s**: "Iniciando download..."
+- **49-40s**: "Processando dados..."
+- **39-20s**: "Analisando atribuições..."
+- **19-10s**: "Finalizando download..."
+- **9-5s**: "Quase pronto..."
+- **4-1s**: "Finalizando..."
+- **0s**: "Aguarde..."
+
+### 3. Interface de Usuário
+- **Botão Dinâmico**: Muda entre download, loading e visualização
+- **Indicadores Visuais**: Spinner, timer e mensagens de status
+- **Tooltip Informativo**: Mostra tempo decorrido e status atual
+- **Layout Responsivo**: Adapta-se a diferentes tamanhos de tela
+
+## Arquitetura Técnica
+
+### Componentes Principais
+
+#### 1. Dashboard.tsx
+**Responsabilidades:**
+- Gerenciamento de estado de download
+- Controle de cache de pedidos
+- Interface de botões de download
+- Sistema de timer e mensagens
+
+**Estados Principais:**
+```typescript
+const [downloadingOrders, setDownloadingOrders] = useState<Set<string>>(new Set())
+const [downloadedOrders, setDownloadedOrders] = useState<Set<string>>(new Set())
+const [downloadStartTimes, setDownloadStartTimes] = useState<Map<string, number>>(new Map())
+const [downloadMessages, setDownloadMessages] = useState<Map<string, string>>(new Map())
 ```
+
+**Funções Principais:**
+- `handleDownloadOrders()`: Gerencia download com timer
+- `handleExpandOrders()`: Abre modal de visualização
+- `handleCloseOrders()`: Fecha modal
+
+#### 2. OrdersExpanded.tsx
+**Responsabilidades:**
+- Modal de detalhes dos pedidos
+- Cache local de dados
+- Formatação de datas robusta
+- Exibição de atribuições múltiplas
+
+**Funcionalidades:**
+- **Cache Local**: Map com duração de 5 minutos
+- **Formatação de Data**: Suporte a múltiplos formatos
+- **Atribuições**: Último Clique Não Direto, Primeiro Clique, Primeiro Lead
+- **Filtro de Diferenças**: Mostra apenas pedidos com atribuições diferentes
+
+### 3. API Integration (api.ts)
+**Endpoint Principal:**
+```typescript
 POST /metrics/orders
 ```
 
-**Parâmetros:**
-- `start_date`: Data de início (YYYY-MM-DD)
-- `end_date`: Data de fim (YYYY-MM-DD)
-- `table_name`: Nome da tabela
-- `traffic_category`: Categoria de tráfego (cluster) - **Último Clique Não Direto**
-- `fs_traffic_category`: Categoria de tráfego (cluster) - **Primeiro Clique**
-- `limit`: Limite de pedidos (padrão: 100)
+**Parâmetros Dinâmicos:**
+- `traffic_category`: Para modelo "Último Clique Não Direto"
+- `fs_traffic_category`: Para modelo "Primeiro Clique"
 
-**Exemplo de requisição - Último Clique Não Direto:**
-```bash
-curl --request POST \
-  --url http://localhost:8000/metrics/orders \
-  --header 'Authorization: Bearer YOUR_TOKEN' \
-  --header 'Content-Type: application/json' \
-  --data '{
-    "start_date": "2025-08-02",
-    "end_date": "2025-08-02",
-    "table_name": "gringa",
-    "traffic_category": "🟢 Google Ads",
-    "limit": 100
-  }'
-```
-
-**Exemplo de requisição - Primeiro Clique:**
-```bash
-curl --request POST \
-  --url http://localhost:8000/metrics/orders \
-  --header 'Authorization: Bearer YOUR_TOKEN' \
-  --header 'Content-Type: application/json' \
-  --data '{
-    "start_date": "2025-08-02",
-    "end_date": "2025-08-02",
-    "table_name": "gringa",
-    "fs_traffic_category": "🟢 Google Ads",
-    "limit": 100
-  }'
-```
-
-### 3. Resposta da API
-A API retorna um array de pedidos com a seguinte estrutura:
-```json
-{
-  "data": [
-    {
-      "Horario": "2025-08-02T10:30:00Z",
-      "ID_da_Transacao": "#42965",
-      "Primeiro_Nome": "keila valerio",
-      "Status": "paid",
-      "Receita": 6811.76,
-      "Canal": "web",
-      "Categoria_de_Trafico": "🟢 Google Ads",
-      "Origem": "google",
-      "Midia": "cpc",
-      "Campanha": "google_cpc_compradoras_pmax_BR",
-      "Conteudo": "(not set)",
-      "Pagina_de_Entrada": "https://gringa.com.br/",
-      "Parametros_de_URL": "utm_source=google&utm_medium=cpc&utm_campaign=google_cpc_compradoras_pmax_BR&gad_source=1&gad_campaignid=17434584383&gbraid=0AAAAACLgR6WoVVPLRvysSRquh27ojpTp6&gclid=EAIaIQobChMI0Nv5x4jtjgMVrEBIAB2OYDCJEAAYASAAEgL97vD_BwE",
-      "Categoria_de_Trafico_Primeiro_Clique": "🟢 Google Ads",
-      "Origem_Primeiro_Clique": "google",
-      "Midia_Primeiro_Clique": "cpc",
-      "Campanha_Primeiro_Clique": "google_cpc_compradoras_pmax_BR",
-      "Conteudo_Primeiro_Clique": "(not set)",
-      "Pagina_de_Entrada_Primeiro_Clique": "https://gringa.com.br/",
-      "Parametros_de_URL_Primeiro_Clique": "utm_source=google&utm_medium=cpc&utm_campaign=google_cpc_compradoras_pmax_BR&gad_source=1&gad_campaignid=17434584383&gbraid=0AAAAACLgR6WoVVPLRvysSRquh27ojpTp6&gclid=EAIaIQobChMI_Jqo0-PsjgMVoKzuAR0oJwm9EAAYASAAEgKFxvD_BwE",
-      "Categoria_de_Trafico_Primeiro_Lead": "",
-      "Origem_Primeiro_Lead": "",
-      "Midia_Primeiro_Lead": "",
-      "Campanha_Primeiro_Lead": "",
-      "Conteudo_Primeiro_Lead": "",
-      "Pagina_de_Entrada_Primeiro_Lead": "",
-      "Parametros_de_URL_Primeiro_Lead": ""
-    }
-  ]
+**Estrutura de Resposta:**
+```typescript
+interface Order {
+  Horario: string
+  ID_da_Transacao: string
+  Primeiro_Nome: string
+  Status: string
+  Receita: number
+  // Campos de atribuição
+  Categoria_de_Trafico: string
+  Origem: string
+  Midia: string
+  Campanha: string
+  // Campos de Primeiro Clique
+  Categoria_de_Trafico_Primeiro_Clique: string
+  // Campos de Primeiro Lead
+  Categoria_de_Trafico_Primeiro_Lead: string
+  // ... outros campos
 }
 ```
 
-## Componentes Implementados
+## Fluxo de Funcionamento
 
-### 1. OrdersExpanded.tsx
-Componente modal que exibe os pedidos expandidos com:
-- Lista de pedidos com detalhes
-- Informações do cliente
-- Itens de cada pedido
-- Status e valores
-- Loading states e tratamento de erros
-- **Sistema de cache** para melhor performance
-- **Carregamento em background** sem bloquear interface
-- **Cancelamento de requisições** para evitar race conditions
-- **Botão de refresh** para atualização manual
+### 1. Download de Pedidos
+```
+Usuário clica no ícone de download
+↓
+Sistema inicia timer e mostra "Iniciando download..."
+↓
+API call com parâmetros baseados no modelo de atribuição
+↓
+Timer atualiza mensagens conforme tempo decorrido
+↓
+Dados recebidos → Cache salvo → Modal abre automaticamente
+```
 
-### 2. Modificações no Dashboard.tsx
-- Adicionado estado para controlar o modal
-- **Sistema de download primeiro**: Estado para controlar pedidos baixados
-- **Estados de download**: Controle de downloads em andamento
-- **Função de download**: Baixa dados antes de exibir
-- **Botão dinâmico**: Download → Loading → Olho (verde)
-- **Suporte a modelos de atribuição**: Último Clique Não Direto vs Primeiro Clique
-- **Parâmetros dinâmicos**: Usa `traffic_category` ou `fs_traffic_category` conforme modelo
-- Integração com o componente OrdersExpanded
-- **Tooltip dinâmico** baseado no estado (baixar/ver)
-- **Indicador visual** no botão (download/loading/olho)
-- **Cache limpo** quando mudar tabela, datas ou modelo de atribuição
+### 2. Visualização de Pedidos
+```
+Modal abre com dados do cache
+↓
+Se cache expirado, nova requisição em background
+↓
+Dados formatados e exibidos com atribuições múltiplas
+↓
+Filtro opcional para diferenças de atribuição
+```
 
-### 3. Modificações no api.ts
-- Nova interface `OrdersRequest` com suporte a ambos os parâmetros
-- Nova função `getOrders()` para fazer a requisição à API
-- **Suporte a AbortController** para cancelamento de requisições
-- **Parâmetros opcionais**: `traffic_category` e `fs_traffic_category`
+### 3. Sistema de Cache
+```
+Cache Key: `${table}-${cluster}-${startDate}-${endDate}-${attributionModel}`
+↓
+Duração: 5 minutos
+↓
+Limpeza automática quando filtros mudam
+```
 
-## Estados do Modal
+## Melhorias de UX
 
-### Loading Inicial
-- Spinner de carregamento
-- Mensagem "Carregando pedidos..."
-- Aviso de que pode levar alguns segundos
+### 1. Feedback Visual
+- **Spinner animado** durante download
+- **Timer decrescente** mostrando tempo restante (60s → 0s)
+- **Mensagens contextuais** baseadas no progresso
+- **Indicadores de status** (download, pronto, erro)
 
-### Loading em Background
-- Indicador sutil "Atualizando..."
-- Dados anteriores permanecem visíveis
-- Não bloqueia a interface
+### 2. Performance
+- **Download em background** não bloqueia interface
+- **Cache inteligente** evita requisições desnecessárias
+- **Cancelamento de requisições** previne race conditions
+- **Limpeza automática** de estados obsoletos
 
-### Erro
-- Ícone de erro
-- Mensagem de erro específica
-- Botão "Tentar novamente"
-- Possibilidade de retry
+### 3. Acessibilidade
+- **Tooltips informativos** com status atual
+- **Estados desabilitados** durante operações
+- **Feedback textual** além de indicadores visuais
+- **Navegação por teclado** suportada
 
-### Vazio
-- Ícone de pacote vazio
-- Mensagem "Nenhum pedido encontrado"
-- Contexto sobre o filtro aplicado
+## Terminologia
 
-### Sucesso
-- Lista de pedidos com detalhes
-- Contador de pedidos encontrados
-- Informações completas de cada pedido
-- Botão de refresh no header
+### Modelos de Atribuição
+- **"Último Clique Não Direto"**: Atribuição baseada no último clique não direto
+- **"Primeiro Clique"**: Atribuição baseada no primeiro clique da jornada
 
-## Funcionalidades do Modal
-
-### Informações Exibidas
-- **ID da Transação** (número do pedido)
-- **Status** (com cores diferenciadas: paid, pending, cancelled, refunded)
-- **Receita** (valor total do pedido)
-- **Data/Hora** (formatação inteligente com fallback para múltiplos campos)
-- **Nome do Cliente** (primeiro nome)
-- **Canal** (web, mobile, etc.)
-
-#### 🔄 Último Clique Não Direto (Atribuição Atual)
-- **Categoria de Tráfego** (emoji + nome)
-- **Origem** (google, facebook, etc.)
-- **Mídia** (cpc, cpm, etc.)
-- **Campanha** (nome específico)
-- **Conteúdo** (conteúdo do anúncio)
-- **Página de Entrada** (com link clicável)
-
-#### 🎯 Primeiro Clique
-- **Categoria de Tráfego** (primeira interação)
-- **Origem** (primeira fonte)
-- **Mídia** (primeiro tipo de anúncio)
-- **Campanha** (primeira campanha)
-- **Conteúdo** (primeiro conteúdo)
-- **Página de Entrada** (primeira página)
-
-#### 📞 Primeiro Lead (se disponível)
-- **Categoria de Tráfego** (primeiro lead)
-- **Origem** (fonte do lead)
-- **Mídia** (tipo do lead)
-- **Campanha** (campanha do lead)
-- **Conteúdo** (conteúdo do lead)
-- **Página de Entrada** (página do lead)
-
-#### 📊 Comparação de Atribuição
-- **Comparação visual** entre primeiro e último clique
-- **Indicador de diferença** quando fontes são diferentes
-- **Layout lado a lado** para fácil comparação
-
-- **Parâmetros da URL** (UTM parameters em formato legível)
-
-### Campos de Data Suportados
-O sistema tenta automaticamente os seguintes campos de data:
-1. `Horario` (campo principal)
-2. `Data` (campo alternativo)
-3. `created_at` (formato padrão)
-4. `data_criacao` (formato brasileiro)
-5. `timestamp` (timestamp Unix)
-6. `data_pedido` (campo específico)
-7. `data_transacao` (campo específico)
-
-### Formatação
-- **Moeda brasileira** (R$)
-- **Data e hora** no formato brasileiro (DD/MM/AAAA HH:MM)
-- **Números formatados** com separadores de milhares
-- **Tratamento robusto de datas**: Suporta múltiplos formatos (ISO, brasileiro, simples)
-- **Fallback inteligente**: Se um campo de data estiver vazio, tenta outros campos
-- **Debug automático**: Logs no console para identificar campos de data disponíveis
-
-### Interatividade
-- Hover effects nos cards de pedidos
-- Botão de fechar no header
-- **Scroll interno otimizado** para muitos pedidos
-- **Indicador visual** quando há mais de 5 pedidos para rolar
-- **Scroll suave** para melhor experiência
-- **Filtro de atribuição diferente**: Checkbox para mostrar apenas pedidos com atribuições diferentes
-- **Contador dinâmico**: Mostra quantos pedidos têm atribuição diferente
-- Responsivo para mobile
-
-## Status dos Pedidos
-
-Os status são coloridos automaticamente:
-- **Paid/Pago**: Verde
-- **Pending/Pendente**: Amarelo
-- **Cancelled/Cancelado**: Vermelho
-- **Refunded/Reembolsado**: Laranja
-- **Outros/Inválido**: Cinza
-
-## Informações de Tráfego - Atribuição Completa
-
-Cada pedido agora exibe informações completas de atribuição, independente do filtro da API:
-
-### 🔄 Último Clique Não Direto (Atribuição Atual)
-- **Categoria de Tráfego**: Emoji + nome (ex: 🟢 Google Ads)
-- **Origem**: Fonte do tráfego (google, facebook, etc.)
-- **Mídia**: Tipo de anúncio (cpc, cpm, etc.)
+### Campos de Dados
+- **Categoria de Tráfego**: Canal principal (Google Ads, Facebook, etc.)
+- **Origem**: Fonte específica do tráfego
+- **Mídia**: Tipo de mídia (cpc, cpm, orgânico, etc.)
 - **Campanha**: Nome da campanha específica
-- **Conteúdo**: Conteúdo do anúncio
-- **Página de Entrada**: URL da página de conversão
 
-### 🎯 Primeiro Clique
-- **Categoria de Tráfego**: Primeira interação do usuário
-- **Origem**: Primeira fonte de tráfego
-- **Mídia**: Primeiro tipo de anúncio visto
-- **Campanha**: Primeira campanha que gerou interesse
-- **Conteúdo**: Primeiro conteúdo visualizado
-- **Página de Entrada**: Primeira página visitada
+## Considerações Técnicas
 
-### 📞 Primeiro Lead (quando disponível)
-- **Categoria de Tráfego**: Fonte do primeiro lead
-- **Origem**: Origem do lead
-- **Mídia**: Tipo de anúncio que gerou o lead
-- **Campanha**: Campanha que capturou o lead
-- **Conteúdo**: Conteúdo que gerou o lead
-- **Página de Entrada**: Página onde o lead foi capturado
+### 1. Performance
+- Downloads assíncronos não bloqueiam UI
+- Cache reduz carga no servidor
+- Timer otimizado com setInterval
 
-### 📊 Comparação Visual
-- **Layout lado a lado**: Comparação direta entre primeiro clique e último clique não direto
-- **Indicador de diferença**: Alerta quando as fontes são diferentes
-- **Gradiente visual**: Diferenciação por cores (azul/verde)
-- **Análise rápida**: Identificação visual de mudanças de atribuição
+### 2. Robustez
+- Tratamento de erros em todas as operações
+- Fallbacks para dados inválidos
+- Limpeza automática de recursos
 
-### 🔍 Filtro de Atribuição Diferente
-- **Checkbox no header**: "Apenas atribuições diferentes"
-- **Filtro inteligente**: Mostra apenas pedidos onde primeiro ≠ último clique
-- **Contador dinâmico**: "X de Y" quando filtro está ativo
-- **Mensagem específica**: Quando não há pedidos com atribuição diferente
-- **Análise de jornada**: Identifica mudanças de fonte de tráfego
+### 3. Manutenibilidade
+- Código modular e bem documentado
+- Estados centralizados e consistentes
+- Interfaces TypeScript bem definidas
 
-## Responsividade e Scroll
+## Próximas Melhorias
 
-O modal é totalmente responsivo e otimizado para scroll:
-- **Desktop**: Modal grande com scroll interno otimizado
-- **Mobile**: Modal que ocupa quase toda a tela
-- **Scroll interno**: Área de conteúdo com scroll independente
-- **Indicador visual**: Mostra quando há mais de 5 pedidos para rolar
-- **Scroll suave**: Transições suaves durante a rolagem
-- **Header fixo**: Header permanece visível durante o scroll
-- **Adaptação automática**: Conteúdo se adapta ao tamanho da tela
-
-## Performance e Otimizações
-
-### Sistema de Cache
-- Cache de 5 minutos para dados já carregados
-- **Cache por modelo de atribuição**: Diferentes caches para Último Clique Não Direto vs Primeiro Clique
-- Evita requisições desnecessárias
-- Melhora significativamente a velocidade de carregamento
-
-### Carregamento em Background
-- Dados são carregados sem bloquear a interface
-- Indicador sutil de atualização
-- Usuário pode interagir enquanto dados carregam
-
-### Cancelamento de Requisições
-- AbortController para cancelar requisições antigas
-- Evita race conditions
-- Melhora performance em mudanças rápidas de filtros
-
-### Otimizações de UX
-- **Sistema de download primeiro**: Evita carregamento lento no modal
-- **Estados visuais claros**: Download → Loading → Pronto
-- **Tooltip dinâmico**: Informações específicas para cada estado
-- **Indicador visual**: Cores e ícones diferentes para cada estado
-- **Botão de refresh**: Para atualização manual no modal
-- **Cache inteligente**: Dados persistidos entre sessões
-- **Limpeza automática**: Cache limpo ao mudar filtros
-
-## Segurança
-
-- Token de autenticação obrigatório
-- Validação de parâmetros
-- Tratamento de erros de API
-- Logout automático em caso de token inválido
-
-## Uso
-
-1. Acesse a aba "Visão Geral" no dashboard
-2. Selecione as datas desejadas
-3. Na tabela, procure uma linha com pedidos > 0
-4. **Primeiro**: Clique no ícone de download (⬇️) na coluna "Pedidos"
-5. **Aguarde**: O ícone mostra loading enquanto baixa os dados
-6. **Depois**: O ícone muda para olho verde (👁️) indicando dados prontos
-7. **Visualizar**: Clique no ícone de olho para abrir o modal
-8. **Filtrar (opcional)**: Marque "Apenas atribuições diferentes" para ver pedidos com jornadas diferentes
-9. **Resultado**: Visualize os detalhes dos pedidos no modal
-10. Feche o modal clicando no X ou fora dele
-
-## Estados do Botão
-
-### 1. Download (⬇️)
-- **Cor**: Azul
-- **Ação**: Baixar pedidos
-- **Tooltip**: "Baixar X pedidos"
-
-### 2. Loading (🔄)
-- **Cor**: Azul com spinner
-- **Ação**: Nenhuma (desabilitado)
-- **Tooltip**: "Baixando pedidos..."
-
-### 3. Pronto (👁️)
-- **Cor**: Verde com indicador
-- **Ação**: Abrir modal
-- **Tooltip**: "Ver X pedidos baixados" 
+1. **Progress Bar**: Barra de progresso visual
+2. **Retry Mechanism**: Tentativas automáticas em caso de falha
+3. **Batch Downloads**: Download de múltiplos clusters simultaneamente
+4. **Export Options**: Exportação de dados para CSV/Excel
+5. **Real-time Updates**: Atualizações em tempo real via WebSocket 
