@@ -23,10 +23,11 @@ POST /metrics/orders
 - `start_date`: Data de início (YYYY-MM-DD)
 - `end_date`: Data de fim (YYYY-MM-DD)
 - `table_name`: Nome da tabela
-- `traffic_category`: Categoria de tráfego (cluster)
+- `traffic_category`: Categoria de tráfego (cluster) - **Último Clique Não Direto**
+- `fs_traffic_category`: Categoria de tráfego (cluster) - **Primeiro Clique**
 - `limit`: Limite de pedidos (padrão: 100)
 
-**Exemplo de requisição:**
+**Exemplo de requisição - Último Clique Não Direto:**
 ```bash
 curl --request POST \
   --url http://localhost:8000/metrics/orders \
@@ -37,6 +38,21 @@ curl --request POST \
     "end_date": "2025-08-02",
     "table_name": "gringa",
     "traffic_category": "🟢 Google Ads",
+    "limit": 100
+  }'
+```
+
+**Exemplo de requisição - Primeiro Clique:**
+```bash
+curl --request POST \
+  --url http://localhost:8000/metrics/orders \
+  --header 'Authorization: Bearer YOUR_TOKEN' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "start_date": "2025-08-02",
+    "end_date": "2025-08-02",
+    "table_name": "gringa",
+    "fs_traffic_category": "🟢 Google Ads",
     "limit": 100
   }'
 ```
@@ -99,15 +115,18 @@ Componente modal que exibe os pedidos expandidos com:
 - **Estados de download**: Controle de downloads em andamento
 - **Função de download**: Baixa dados antes de exibir
 - **Botão dinâmico**: Download → Loading → Olho (verde)
+- **Suporte a modelos de atribuição**: Último Clique Não Direto vs Primeiro Clique
+- **Parâmetros dinâmicos**: Usa `traffic_category` ou `fs_traffic_category` conforme modelo
 - Integração com o componente OrdersExpanded
 - **Tooltip dinâmico** baseado no estado (baixar/ver)
 - **Indicador visual** no botão (download/loading/olho)
-- **Cache limpo** quando mudar tabela ou datas
+- **Cache limpo** quando mudar tabela, datas ou modelo de atribuição
 
 ### 3. Modificações no api.ts
-- Nova interface `OrdersRequest`
+- Nova interface `OrdersRequest` com suporte a ambos os parâmetros
 - Nova função `getOrders()` para fazer a requisição à API
 - **Suporte a AbortController** para cancelamento de requisições
+- **Parâmetros opcionais**: `traffic_category` e `fs_traffic_category`
 
 ## Estados do Modal
 
@@ -147,13 +166,36 @@ Componente modal que exibe os pedidos expandidos com:
 - **Data/Hora** (formatação inteligente com fallback para múltiplos campos)
 - **Nome do Cliente** (primeiro nome)
 - **Canal** (web, mobile, etc.)
-- **Informações de Tráfego**:
-  - Categoria de Tráfego
-  - Origem (google, facebook, etc.)
-  - Mídia (cpc, cpm, etc.)
-  - Campanha
-  - Conteúdo
-  - Página de Entrada (com link clicável)
+
+#### 🔄 Último Clique Não Direto (Atribuição Atual)
+- **Categoria de Tráfego** (emoji + nome)
+- **Origem** (google, facebook, etc.)
+- **Mídia** (cpc, cpm, etc.)
+- **Campanha** (nome específico)
+- **Conteúdo** (conteúdo do anúncio)
+- **Página de Entrada** (com link clicável)
+
+#### 🎯 Primeiro Clique
+- **Categoria de Tráfego** (primeira interação)
+- **Origem** (primeira fonte)
+- **Mídia** (primeiro tipo de anúncio)
+- **Campanha** (primeira campanha)
+- **Conteúdo** (primeiro conteúdo)
+- **Página de Entrada** (primeira página)
+
+#### 📞 Primeiro Lead (se disponível)
+- **Categoria de Tráfego** (primeiro lead)
+- **Origem** (fonte do lead)
+- **Mídia** (tipo do lead)
+- **Campanha** (campanha do lead)
+- **Conteúdo** (conteúdo do lead)
+- **Página de Entrada** (página do lead)
+
+#### 📊 Comparação de Atribuição
+- **Comparação visual** entre primeiro e último clique
+- **Indicador de diferença** quando fontes são diferentes
+- **Layout lado a lado** para fácil comparação
+
 - **Parâmetros da URL** (UTM parameters em formato legível)
 
 ### Campos de Data Suportados
@@ -178,8 +220,10 @@ O sistema tenta automaticamente os seguintes campos de data:
 - Hover effects nos cards de pedidos
 - Botão de fechar no header
 - **Scroll interno otimizado** para muitos pedidos
-- **Indicador visual** quando há mais de 5 pedidos
+- **Indicador visual** quando há mais de 5 pedidos para rolar
 - **Scroll suave** para melhor experiência
+- **Filtro de atribuição diferente**: Checkbox para mostrar apenas pedidos com atribuições diferentes
+- **Contador dinâmico**: Mostra quantos pedidos têm atribuição diferente
 - Responsivo para mobile
 
 ## Status dos Pedidos
@@ -191,16 +235,46 @@ Os status são coloridos automaticamente:
 - **Refunded/Reembolsado**: Laranja
 - **Outros/Inválido**: Cinza
 
-## Informações de Tráfego
+## Informações de Tráfego - Atribuição Completa
 
-Cada pedido inclui informações detalhadas de tráfego:
+Cada pedido agora exibe informações completas de atribuição, independente do filtro da API:
+
+### 🔄 Último Clique Não Direto (Atribuição Atual)
 - **Categoria de Tráfego**: Emoji + nome (ex: 🟢 Google Ads)
 - **Origem**: Fonte do tráfego (google, facebook, etc.)
 - **Mídia**: Tipo de anúncio (cpc, cpm, etc.)
 - **Campanha**: Nome da campanha específica
 - **Conteúdo**: Conteúdo do anúncio
-- **Página de Entrada**: URL da primeira página visitada
-- **Parâmetros da URL**: UTM parameters completos
+- **Página de Entrada**: URL da página de conversão
+
+### 🎯 Primeiro Clique
+- **Categoria de Tráfego**: Primeira interação do usuário
+- **Origem**: Primeira fonte de tráfego
+- **Mídia**: Primeiro tipo de anúncio visto
+- **Campanha**: Primeira campanha que gerou interesse
+- **Conteúdo**: Primeiro conteúdo visualizado
+- **Página de Entrada**: Primeira página visitada
+
+### 📞 Primeiro Lead (quando disponível)
+- **Categoria de Tráfego**: Fonte do primeiro lead
+- **Origem**: Origem do lead
+- **Mídia**: Tipo de anúncio que gerou o lead
+- **Campanha**: Campanha que capturou o lead
+- **Conteúdo**: Conteúdo que gerou o lead
+- **Página de Entrada**: Página onde o lead foi capturado
+
+### 📊 Comparação Visual
+- **Layout lado a lado**: Comparação direta entre primeiro clique e último clique não direto
+- **Indicador de diferença**: Alerta quando as fontes são diferentes
+- **Gradiente visual**: Diferenciação por cores (azul/verde)
+- **Análise rápida**: Identificação visual de mudanças de atribuição
+
+### 🔍 Filtro de Atribuição Diferente
+- **Checkbox no header**: "Apenas atribuições diferentes"
+- **Filtro inteligente**: Mostra apenas pedidos onde primeiro ≠ último clique
+- **Contador dinâmico**: "X de Y" quando filtro está ativo
+- **Mensagem específica**: Quando não há pedidos com atribuição diferente
+- **Análise de jornada**: Identifica mudanças de fonte de tráfego
 
 ## Responsividade e Scroll
 
@@ -217,6 +291,7 @@ O modal é totalmente responsivo e otimizado para scroll:
 
 ### Sistema de Cache
 - Cache de 5 minutos para dados já carregados
+- **Cache por modelo de atribuição**: Diferentes caches para Último Clique Não Direto vs Primeiro Clique
 - Evita requisições desnecessárias
 - Melhora significativamente a velocidade de carregamento
 
@@ -255,8 +330,9 @@ O modal é totalmente responsivo e otimizado para scroll:
 5. **Aguarde**: O ícone mostra loading enquanto baixa os dados
 6. **Depois**: O ícone muda para olho verde (👁️) indicando dados prontos
 7. **Visualizar**: Clique no ícone de olho para abrir o modal
-8. **Resultado**: Visualize os detalhes dos pedidos no modal
-9. Feche o modal clicando no X ou fora dele
+8. **Filtrar (opcional)**: Marque "Apenas atribuições diferentes" para ver pedidos com jornadas diferentes
+9. **Resultado**: Visualize os detalhes dos pedidos no modal
+10. Feche o modal clicando no X ou fora dele
 
 ## Estados do Botão
 

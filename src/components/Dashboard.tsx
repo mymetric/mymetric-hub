@@ -156,7 +156,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
     fetchMetrics()
     
-    // Limpar cache de pedidos quando mudar tabela ou datas
+    // Limpar cache de pedidos quando mudar tabela, datas ou modelo de atribuição
     setDownloadedOrders(new Set())
     setDownloadingOrders(new Set())
   }, [user, selectedTable, startDate, endDate, attributionModel])
@@ -432,7 +432,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
   // Função para baixar pedidos
   const handleDownloadOrders = async (trafficCategory: string) => {
-    const cacheKey = `${selectedTable}-${trafficCategory}-${startDate}-${endDate}`
+    const cacheKey = `${selectedTable}-${trafficCategory}-${startDate}-${endDate}-${attributionModel}`
     
     // Se já está baixando, não fazer nada
     if (downloadingOrders.has(cacheKey)) {
@@ -454,14 +454,25 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         throw new Error('Token de autenticação não encontrado')
       }
       
-      // Fazer a requisição para baixar os dados
-      await api.getOrders(token, {
+      // Preparar parâmetros baseados no modelo de atribuição
+      const requestParams: any = {
         start_date: startDate,
         end_date: endDate,
         table_name: selectedTable,
-        traffic_category: trafficCategory,
         limit: 100
-      })
+      }
+      
+      // Usar parâmetro correto baseado no modelo de atribuição
+      if (attributionModel === 'Primeiro Clique') {
+        requestParams.fs_traffic_category = trafficCategory
+      } else {
+        requestParams.traffic_category = trafficCategory
+      }
+      
+      console.log('🔄 Baixando pedidos com parâmetros:', requestParams)
+      
+      // Fazer a requisição para baixar os dados
+      await api.getOrders(token, requestParams)
       
       // Marcar como baixado
       setDownloadedOrders(prev => new Set(prev).add(cacheKey))
@@ -1168,7 +1179,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                                 <div className="flex items-center gap-2">
                                   <span>{formatNumber(totals.pedidos)}</span>
                                   {totals.pedidos > 0 && (() => {
-                                    const cacheKey = `${selectedTable}-${cluster}-${startDate}-${endDate}`
+                                    const cacheKey = `${selectedTable}-${cluster}-${startDate}-${endDate}-${attributionModel}`
                                     const isDownloading = downloadingOrders.has(cacheKey)
                                     const isDownloaded = downloadedOrders.has(cacheKey)
                                     
@@ -1269,6 +1280,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         startDate={startDate}
         endDate={endDate}
         tableName={selectedTable}
+        attributionModel={attributionModel}
       />
     </div>
   )

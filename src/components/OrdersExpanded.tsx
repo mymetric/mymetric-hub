@@ -39,6 +39,7 @@ interface OrdersExpandedProps {
   startDate: string
   endDate: string
   tableName: string
+  attributionModel: string
 }
 
 // Cache para armazenar pedidos já carregados
@@ -56,17 +57,19 @@ const OrdersExpanded = ({
   trafficCategory, 
   startDate, 
   endDate, 
-  tableName 
+  tableName,
+  attributionModel
 }: OrdersExpandedProps) => {
   const [orders, setOrders] = useState<Order[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isInitialLoad, setIsInitialLoad] = useState(true)
+  const [showOnlyDifferentAttribution, setShowOnlyDifferentAttribution] = useState(false)
   const abortControllerRef = useRef<AbortController | null>(null)
 
   // Gerar chave única para o cache
   const getCacheKey = () => {
-    return `${tableName}-${trafficCategory}-${startDate}-${endDate}`
+    return `${tableName}-${trafficCategory}-${startDate}-${endDate}-${attributionModel}`
   }
 
   useEffect(() => {
@@ -98,7 +101,7 @@ const OrdersExpanded = ({
         abortControllerRef.current.abort()
       }
     }
-  }, [isOpen, trafficCategory, startDate, endDate, tableName])
+  }, [isOpen, trafficCategory, startDate, endDate, tableName, attributionModel])
 
   const loadOrders = async () => {
     const cacheKey = getCacheKey()
@@ -144,13 +147,24 @@ const OrdersExpanded = ({
         throw new Error('Token de autenticação não encontrado')
       }
 
-      const response = await api.getOrders(token, {
+      // Preparar parâmetros baseados no modelo de atribuição
+      const requestParams: any = {
         start_date: startDate,
         end_date: endDate,
         table_name: tableName,
-        traffic_category: trafficCategory,
         limit: 100
-      }, abortControllerRef.current.signal)
+      }
+      
+      // Usar parâmetro correto baseado no modelo de atribuição
+      if (attributionModel === 'Primeiro Clique') {
+        requestParams.fs_traffic_category = trafficCategory
+      } else {
+        requestParams.traffic_category = trafficCategory
+      }
+      
+      console.log('🔄 OrdersExpanded - Baixando pedidos com parâmetros:', requestParams)
+      
+      const response = await api.getOrders(token, requestParams, abortControllerRef.current.signal)
 
       const newOrders = response.data || []
       
@@ -338,6 +352,23 @@ const OrdersExpanded = ({
     return 'Data não informada'
   }
 
+  const hasDifferentAttribution = (order: Order) => {
+    const lastClick = order.Categoria_de_Trafico
+    const firstClick = order.Categoria_de_Trafico_Primeiro_Clique
+    
+    // Se algum dos campos estiver vazio, considerar como igual
+    if (!lastClick || !firstClick || 
+        lastClick.trim() === '' || firstClick.trim() === '') {
+      return false
+    }
+    
+    return lastClick !== firstClick
+  }
+
+  const filteredOrders = showOnlyDifferentAttribution 
+    ? orders.filter(hasDifferentAttribution)
+    : orders
+
   if (!isOpen) return null
 
   return (
@@ -359,6 +390,23 @@ const OrdersExpanded = ({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Filtro de Atribuição Diferente */}
+            <div className="flex items-center gap-2 mr-4">
+              <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showOnlyDifferentAttribution}
+                  onChange={(e) => setShowOnlyDifferentAttribution(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                />
+                <span className="whitespace-nowrap">Apenas atribuições diferentes</span>
+              </label>
+              {showOnlyDifferentAttribution && (
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                  {filteredOrders.length} de {orders.length}
+                </span>
+              )}
+            </div>
             <button
               onClick={handleRetry}
               disabled={isLoading}
@@ -403,15 +451,20 @@ const OrdersExpanded = ({
                 </button>
               </div>
             </div>
-          ) : orders.length === 0 ? (
+          ) : filteredOrders.length === 0 ? (
             <div className="flex items-center justify-center p-12">
               <div className="text-center">
                 <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <Package className="w-6 h-6 text-gray-400" />
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Nenhum pedido encontrado</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  {showOnlyDifferentAttribution ? 'Nenhum pedido com atribuição diferente' : 'Nenhum pedido encontrado'}
+                </h3>
                 <p className="text-gray-600">
-                  Não foram encontrados pedidos para {trafficCategory} no período selecionado.
+                  {showOnlyDifferentAttribution 
+                    ? `Todos os ${orders.length} pedidos têm a mesma atribuição entre primeiro e último clique.`
+                    : `Não foram encontrados pedidos para ${trafficCategory} no período selecionado.`
+                  }
                 </p>
               </div>
             </div>
@@ -419,7 +472,12 @@ const OrdersExpanded = ({
                           <div className="p-6">
                 <div className="mb-4 flex items-center justify-between">
                   <p className="text-sm text-gray-600">
-                    {orders.length} pedido{orders.length !== 1 ? 's' : ''} encontrado{orders.length !== 1 ? 's' : ''}
+                    {filteredOrders.length} pedido{filteredOrders.length !== 1 ? 's' : ''} encontrado{filteredOrders.length !== 1 ? 's' : ''}
+                    {showOnlyDifferentAttribution && orders.length !== filteredOrders.length && (
+                      <span className="text-gray-500 ml-1">
+                        (de {orders.length} total)
+                      </span>
+                    )}
                   </p>
                   <div className="flex items-center gap-3">
                     {orders.length > 5 && (
@@ -439,8 +497,8 @@ const OrdersExpanded = ({
                   </div>
                 </div>
               
-              <div className="space-y-4">
-                                 {orders.map((order, index) => (
+                              <div className="space-y-4">
+                  {filteredOrders.map((order, index) => (
                    <div key={order.ID_da_Transacao || index} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors">
                      {/* Order Header */}
                      <div className="flex items-center justify-between mb-3">
@@ -477,15 +535,15 @@ const OrdersExpanded = ({
                        </div>
                      </div>
 
-                     {/* Traffic Info */}
+                     {/* Traffic Info - Last Click */}
                      <div className="border-t border-gray-100 pt-3">
-                       <h4 className="text-sm font-medium text-gray-700 mb-2">Informações de Tráfego:</h4>
+                       <h4 className="text-sm font-medium text-blue-700 mb-2">🔄 Último Clique Não Direto (Atribuição Atual):</h4>
                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                          <div>
-                           <p className="text-gray-600"><strong>Canal:</strong> {order.Canal}</p>
                            <p className="text-gray-600"><strong>Categoria:</strong> {order.Categoria_de_Trafico}</p>
                            <p className="text-gray-600"><strong>Origem:</strong> {order.Origem}</p>
                            <p className="text-gray-600"><strong>Mídia:</strong> {order.Midia}</p>
+                           <p className="text-gray-600"><strong>Canal:</strong> {order.Canal}</p>
                          </div>
                          <div>
                            <p className="text-gray-600"><strong>Campanha:</strong> {order.Campanha}</p>
@@ -499,6 +557,58 @@ const OrdersExpanded = ({
                        </div>
                      </div>
 
+                     {/* Traffic Info - First Click */}
+                     <div className="border-t border-gray-100 pt-3">
+                       <h4 className="text-sm font-medium text-green-700 mb-2">🎯 Primeiro Clique:</h4>
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                         <div>
+                           <p className="text-gray-600"><strong>Categoria:</strong> {order.Categoria_de_Trafico_Primeiro_Clique || 'Não informado'}</p>
+                           <p className="text-gray-600"><strong>Origem:</strong> {order.Origem_Primeiro_Clique || 'Não informado'}</p>
+                           <p className="text-gray-600"><strong>Mídia:</strong> {order.Midia_Primeiro_Clique || 'Não informado'}</p>
+                         </div>
+                         <div>
+                           <p className="text-gray-600"><strong>Campanha:</strong> {order.Campanha_Primeiro_Clique || 'Não informado'}</p>
+                           <p className="text-gray-600"><strong>Conteúdo:</strong> {order.Conteudo_Primeiro_Clique || 'Não informado'}</p>
+                           <p className="text-gray-600"><strong>Página de Entrada:</strong> 
+                             {order.Pagina_de_Entrada_Primeiro_Clique ? (
+                               <a href={order.Pagina_de_Entrada_Primeiro_Clique} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:underline ml-1">
+                                 {order.Pagina_de_Entrada_Primeiro_Clique}
+                               </a>
+                             ) : (
+                               <span className="text-gray-500 ml-1">Não informado</span>
+                             )}
+                           </p>
+                         </div>
+                       </div>
+                     </div>
+
+                     {/* Traffic Info - First Lead */}
+                     {order.Categoria_de_Trafico_Primeiro_Lead && order.Categoria_de_Trafico_Primeiro_Lead.trim() !== '' && (
+                       <div className="border-t border-gray-100 pt-3">
+                         <h4 className="text-sm font-medium text-purple-700 mb-2">📞 Primeiro Lead:</h4>
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                           <div>
+                             <p className="text-gray-600"><strong>Categoria:</strong> {order.Categoria_de_Trafico_Primeiro_Lead}</p>
+                             <p className="text-gray-600"><strong>Origem:</strong> {order.Origem_Primeiro_Lead}</p>
+                             <p className="text-gray-600"><strong>Mídia:</strong> {order.Midia_Primeiro_Lead}</p>
+                           </div>
+                           <div>
+                             <p className="text-gray-600"><strong>Campanha:</strong> {order.Campanha_Primeiro_Lead}</p>
+                             <p className="text-gray-600"><strong>Conteúdo:</strong> {order.Conteudo_Primeiro_Lead}</p>
+                             <p className="text-gray-600"><strong>Página de Entrada:</strong> 
+                               {order.Pagina_de_Entrada_Primeiro_Lead ? (
+                                 <a href={order.Pagina_de_Entrada_Primeiro_Lead} target="_blank" rel="noopener noreferrer" className="text-purple-600 hover:underline ml-1">
+                                   {order.Pagina_de_Entrada_Primeiro_Lead}
+                                 </a>
+                               ) : (
+                                 <span className="text-gray-500 ml-1">Não informado</span>
+                               )}
+                             </p>
+                           </div>
+                         </div>
+                       </div>
+                     )}
+
                      {/* Debug Info - Temporário */}
                      {getOrderDate(order) === 'Data não informada' && (
                        <div className="border-t border-gray-100 pt-3">
@@ -510,6 +620,36 @@ const OrdersExpanded = ({
                          </div>
                        </div>
                      )}
+
+                     {/* Comparison Section */}
+                     <div className="border-t border-gray-100 pt-3">
+                       <h4 className="text-sm font-medium text-gray-700 mb-2">📊 Comparação de Atribuição:</h4>
+                       <div className="bg-gradient-to-r from-blue-50 to-green-50 p-3 rounded-lg">
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                           <div className="text-center">
+                             <div className="font-semibold text-blue-700 mb-1">🔄 Último Clique Não Direto</div>
+                             <div className="bg-white p-2 rounded border border-blue-200">
+                               <div className="font-medium">{order.Categoria_de_Trafico}</div>
+                               <div className="text-gray-600">{order.Campanha}</div>
+                             </div>
+                           </div>
+                           <div className="text-center">
+                             <div className="font-semibold text-green-700 mb-1">🎯 Primeiro Clique</div>
+                             <div className="bg-white p-2 rounded border border-green-200">
+                               <div className="font-medium">{order.Categoria_de_Trafico_Primeiro_Clique || 'Não informado'}</div>
+                               <div className="text-gray-600">{order.Campanha_Primeiro_Clique || 'Não informado'}</div>
+                             </div>
+                           </div>
+                         </div>
+                         {(order.Categoria_de_Trafico !== order.Categoria_de_Trafico_Primeiro_Clique) && (
+                           <div className="mt-2 text-center">
+                             <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                               ⚠️ Diferentes fontes de tráfego
+                             </span>
+                           </div>
+                         )}
+                       </div>
+                     </div>
 
                      {/* URL Parameters */}
                      {order.Parametros_de_URL && (

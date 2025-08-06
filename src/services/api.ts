@@ -40,7 +40,8 @@ interface OrdersRequest {
   start_date: string
   end_date: string
   table_name: string
-  traffic_category: string
+  traffic_category?: string
+  fs_traffic_category?: string
   limit?: number
 }
 
