@@ -767,7 +767,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   currentTable={selectedTable}
                   onTableChange={setSelectedTable}
                   availableTables={
-                    user?.tablename === 'all' 
+                    user?.access_control === 'all' 
                       ? [
                           '3dfila',
                           'gringa',

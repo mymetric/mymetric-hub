@@ -46,6 +46,121 @@ Este documento descreve a implementação do sistema de expansão de pedidos no 
 - **Loading States**: Indicadores visuais durante carregamento
 - **Fallback Inteligente**: Lista padrão em caso de erro na API
 - **Busca em Tempo Real**: Filtro dinâmico por nome do cliente
+- **Controle de Acesso**: Lista completa apenas para usuários com `access_control: 'all'`
+
+## Controle de Acesso de Usuários
+
+### Visão Geral
+O sistema implementa controle de acesso baseado no campo `access_control` do usuário, determinando quais funcionalidades e dados estão disponíveis para cada tipo de usuário.
+
+### Tipos de Acesso
+
+#### 1. Acesso Total (`access_control: 'all'`)
+**Funcionalidades Disponíveis:**
+- ✅ **Lista Completa de Clientes**: Dropdown com todas as empresas
+- ✅ **Navegação Livre**: Acesso a qualquer cliente do sistema
+- ✅ **Compartilhamento**: URLs com qualquer cliente
+- ✅ **Análises Comparativas**: Comparação entre diferentes clientes
+
+**Comportamento:**
+```typescript
+availableTables = user?.access_control === 'all' 
+  ? [lista_completa_de_clientes]
+  : [user?.tablename || 'coffeemais']
+```
+
+#### 2. Acesso Restrito (`access_control: 'specific'`)
+**Funcionalidades Disponíveis:**
+- ✅ **Cliente Único**: Acesso apenas ao cliente específico (`tablename`)
+- ✅ **Análises Limitadas**: Dados apenas do cliente autorizado
+- ✅ **Interface Simplificada**: Dropdown com apenas um cliente
+
+**Comportamento:**
+```typescript
+availableTables = [user?.tablename || 'coffeemais']
+```
+
+### Implementação Técnica
+
+#### 1. Interface de Usuário
+```typescript
+interface User {
+  email: string
+  admin: boolean
+  access_control: string  // 'all' ou 'specific'
+  tablename: string       // Cliente específico (quando access_control !== 'all')
+  username: string
+  lastLogin: string
+}
+```
+
+#### 2. Lógica de Controle
+```typescript
+// TableSelector - Lista de clientes disponíveis
+const availableTables = user?.access_control === 'all' 
+  ? [
+      '3dfila', 'gringa', 'orthocrin', 'meurodape', 'coffeemais',
+      'universomaschio', 'oculosshop', 'evoke', 'hotbuttered',
+      // ... lista completa
+    ]
+  : [user?.tablename || 'coffeemais']
+
+// Cliente padrão selecionado
+const defaultTable = user?.access_control === 'all'
+  ? (params.table || user?.tablename || 'coffeemais')
+  : (user?.tablename || 'coffeemais')
+```
+
+#### 3. Validação de Acesso
+- **Frontend**: Interface adaptada ao nível de acesso
+- **Backend**: Validação adicional de permissões
+- **URL Params**: Respeita restrições de acesso
+- **Compartilhamento**: URLs filtradas por permissão
+
+### Benefícios
+
+#### 1. Segurança
+- ✅ **Isolamento de Dados**: Usuários veem apenas dados autorizados
+- ✅ **Controle Granular**: Diferentes níveis de acesso
+- ✅ **Validação Dupla**: Frontend e backend
+- ✅ **Auditoria**: Rastreamento de acessos
+
+#### 2. Experiência do Usuário
+- ✅ **Interface Adaptada**: UI simplificada para usuários restritos
+- ✅ **Navegação Intuitiva**: Apenas opções relevantes
+- ✅ **Performance**: Menos dados carregados
+- ✅ **Clareza**: Funcionalidades claras por nível
+
+#### 3. Manutenibilidade
+- ✅ **Configuração Centralizada**: Controle via `access_control`
+- ✅ **Escalabilidade**: Fácil adição de novos níveis
+- ✅ **Flexibilidade**: Adaptação rápida a mudanças
+- ✅ **Consistência**: Comportamento uniforme
+
+### Casos de Uso
+
+#### 1. Administradores
+- **Acesso**: `access_control: 'all'`
+- **Funcionalidades**: Lista completa, comparações, relatórios gerais
+- **Uso**: Gestão geral, análises comparativas, suporte
+
+#### 2. Analistas de Cliente
+- **Acesso**: `access_control: 'specific'`
+- **Funcionalidades**: Cliente específico, análises focadas
+- **Uso**: Análises diárias, relatórios específicos, otimizações
+
+#### 3. Consultores
+- **Acesso**: `access_control: 'all'` ou `access_control: 'specific'`
+- **Funcionalidades**: Depende do tipo de consultoria
+- **Uso**: Análises comparativas ou focadas
+
+### Fluxo de Funcionamento
+
+1. **Login**: Sistema identifica nível de acesso do usuário
+2. **Carregamento**: Interface adaptada ao `access_control`
+3. **Navegação**: Opções limitadas conforme permissão
+4. **Dados**: Apenas dados autorizados carregados
+5. **Compartilhamento**: URLs respeitam restrições
 
 ## Sistema de Clientes Dinâmicos
 
