@@ -15,7 +15,8 @@ import {
   ShoppingBag,
   ChevronDown,
   ChevronUp,
-  DollarSign
+  DollarSign,
+  Target
 } from 'lucide-react'
 import { api } from '../services/api'
 import Logo from './Logo'
@@ -65,6 +66,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const [showAllRecords, setShowAllRecords] = useState(false)
   const [activeTab, setActiveTab] = useState<string>('visao-geral')
   const [filtersCollapsed, setFiltersCollapsed] = useState(true)
+  const [attributionModel, setAttributionModel] = useState<string>('Último Clique Não Direto')
   // const tokenCheckInterval = useRef<NodeJS.Timeout | null>(null)
 
   // Função para calcular datas dos últimos 30 dias
@@ -118,7 +120,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         const response = await api.getMetrics(token, {
           start_date: requestStartDate,
           end_date: requestEndDate,
-          table_name: selectedTable
+          table_name: selectedTable,
+          attribution_model: attributionModel
         })
 
         console.log('✅ Response received:', response)
@@ -136,7 +139,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     }
 
     fetchMetrics()
-  }, [user, selectedTable, startDate, endDate])
+  }, [user, selectedTable, startDate, endDate, attributionModel])
 
   // Verificação periódica do token removida - não é mais necessária
   // useEffect(() => {
@@ -748,6 +751,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   </div>
                 </div>
               )}
+
+
             </div>
 
             {/* Desktop Layout - Horizontal */}
@@ -788,6 +793,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   </div>
                 </div>
               )}
+
+
             </div>
           </div>
         </div>
@@ -898,17 +905,76 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 {/* Data Table */}
                 <div className="bg-white rounded-xl shadow-lg overflow-hidden">
                   <div className="px-6 py-4 border-b border-gray-200">
-                    <div className="flex items-center justify-between">
+                    {/* Desktop Header */}
+                    <div className="hidden md:flex items-center justify-between">
                       <div>
                         <h2 className="text-lg font-semibold text-gray-900">Dados Agrupados por Cluster</h2>
                         <p className="text-sm text-gray-500">Métricas consolidadas por cluster</p>
                       </div>
-                      {isTableLoading && (
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
-                          <span>Carregando...</span>
+                      <div className="flex items-center gap-4">
+                        {/* Attribution Model Selector */}
+                        <div className="flex items-center gap-2">
+                          <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                            Modelo de Atribuição:
+                          </label>
+                          <div className="relative">
+                            <Target className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500" />
+                            <select
+                              value={attributionModel}
+                              onChange={(e) => {
+                                console.log('🔍 Dashboard - Table Attribution Model changed to:', e.target.value)
+                                setAttributionModel(e.target.value)
+                              }}
+                              className="pl-10 pr-8 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[200px]"
+                            >
+                              <option value="Último Clique Não Direto">Último Clique Não Direto</option>
+                              <option value="Primeiro Clique">Primeiro Clique</option>
+                            </select>
+                          </div>
                         </div>
-                      )}
+                        {isTableLoading && (
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+                            <span>Carregando...</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Mobile Header */}
+                    <div className="md:hidden">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <h2 className="text-lg font-semibold text-gray-900">Dados Agrupados por Cluster</h2>
+                          <p className="text-sm text-gray-500">Métricas consolidadas por cluster</p>
+                        </div>
+                        {isTableLoading && (
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+                            <span>Carregando...</span>
+                          </div>
+                        )}
+                      </div>
+                      {/* Mobile Attribution Model Selector */}
+                      <div className="flex items-center gap-2">
+                        <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                          Modelo de Atribuição:
+                        </label>
+                        <div className="relative flex-1">
+                          <Target className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500" />
+                          <select
+                            value={attributionModel}
+                            onChange={(e) => {
+                              console.log('🔍 Dashboard - Mobile Table Attribution Model changed to:', e.target.value)
+                              setAttributionModel(e.target.value)
+                            }}
+                            className="w-full pl-10 pr-8 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                          >
+                            <option value="Último Clique Não Direto">Último Clique Não Direto</option>
+                            <option value="Primeiro Clique">Primeiro Clique</option>
+                          </select>
+                        </div>
+                      </div>
                     </div>
                   </div>
                   
@@ -1061,6 +1127,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
             selectedTable={selectedTable}
             startDate={startDate}
             endDate={endDate}
+            attributionModel={attributionModel}
           />
         )}
       </main>

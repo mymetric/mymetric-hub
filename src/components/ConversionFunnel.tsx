@@ -17,9 +17,10 @@ interface ConversionFunnelProps {
   selectedTable: string
   startDate: string
   endDate: string
+  attributionModel?: string
 }
 
-const ConversionFunnel = ({ selectedTable, startDate, endDate }: ConversionFunnelProps) => {
+const ConversionFunnel = ({ selectedTable, startDate, endDate, attributionModel = 'Último Clique Não Direto' }: ConversionFunnelProps) => {
   const [funnelData, setFunnelData] = useState<FunnelDataItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -56,7 +57,8 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate }: ConversionFunne
         const requestData = {
           start_date: startDate,
           end_date: endDate,
-          table_name: selectedTable
+          table_name: selectedTable,
+          attribution_model: attributionModel
         }
 
         console.log('🔍 ConversionFunnel - requestData:', requestData)
@@ -76,7 +78,7 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate }: ConversionFunne
     }
 
     fetchFunnelData()
-  }, [selectedTable, startDate, endDate])
+  }, [selectedTable, startDate, endDate, attributionModel])
 
   // Calcular totais
   const totals = funnelData.reduce((acc, item) => ({

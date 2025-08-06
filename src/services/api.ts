@@ -33,6 +33,7 @@ interface MetricsRequest {
   end_date: string
   table_name: string
   cluster?: string
+  attribution_model?: string
 }
 
 interface MetricsDataItem {
