@@ -18,7 +18,8 @@ import {
   DollarSign,
   Target,
   Download,
-  Eye
+  Eye,
+  Filter
 } from 'lucide-react'
 import { api } from '../services/api'
 import Logo from './Logo'
@@ -857,7 +858,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4" />
+                  <Filter className="w-4 h-4" />
                   Funil de Conversão
                 </div>
               </button>

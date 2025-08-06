@@ -40,6 +40,107 @@ Este documento descreve a implementação do sistema de expansão de pedidos no 
 - **Tooltip Informativo**: Mostra tempo decorrido e status atual
 - **Layout Responsivo**: Adapta-se a diferentes tamanhos de tela
 
+### 5. Sistema de Clientes Dinâmicos
+- **CSV Remoto**: Lista de clientes carregada de URL externa
+- **Slugs Limpos**: Exibição apenas dos slugs, sem nomes amigáveis
+- **Loading States**: Indicadores visuais durante carregamento
+- **Fallback Inteligente**: Lista padrão em caso de erro na API
+- **Busca em Tempo Real**: Filtro dinâmico por nome do cliente
+
+## Sistema de Clientes Dinâmicos
+
+### Visão Geral
+O sistema de clientes dinâmicos carrega automaticamente a lista de clientes disponíveis de uma URL CSV externa, permitindo atualizações centralizadas sem necessidade de deploy.
+
+### Funcionalidades
+
+#### 1. Carregamento de CSV Remoto
+```typescript
+const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQQNqKWaGX0EUBtFGSaMnHoHJSoLKFqjPrjydOtcSexU3xVGyoEnhgKQh8A6-6_hOOQ0CfmV-IfoC8d/pub?gid=771281747&single=true&output=csv'
+```
+
+#### 2. Hook Personalizado (useClientList)
+```typescript
+interface UseClientListReturn {
+  clients: string[]
+  isLoading: boolean
+  error: string | null
+}
+```
+
+**Funcionalidades:**
+- **Fetch Automático**: Carrega dados ao montar componente
+- **Parse CSV**: Extrai slugs da primeira coluna
+- **Tratamento de Erros**: Fallback para lista padrão
+- **Loading States**: Indicadores de carregamento
+
+#### 3. Exibição de Slugs Limpos
+- **Sem Nomes Amigáveis**: Mostra apenas os slugs dos clientes
+- **Busca Simplificada**: Filtro direto por slug
+- **Interface Limpa**: Visual mais técnico e direto
+
+#### 4. Estados de Interface
+
+**Loading:**
+- **Botão**: Spinner + "Carregando..."
+- **Dropdown**: "Carregando clientes..."
+- **Desabilitado**: Interação bloqueada
+
+**Erro:**
+- **Fallback**: Lista padrão carregada
+- **Mensagem**: "Erro ao carregar clientes"
+- **Funcionalidade**: Sistema continua operacional
+
+**Sucesso:**
+- **Lista Dinâmica**: Clientes do CSV
+- **Busca Funcional**: Filtro em tempo real
+- **Seleção**: Mudança de cliente ativa
+
+### Benefícios
+
+#### 1. Manutenibilidade
+- ✅ **Atualização Centralizada**: CSV único para todos os clientes
+- ✅ **Sem Deploy**: Mudanças refletem imediatamente
+- ✅ **Versionamento**: Controle de versão via Google Sheets
+
+#### 2. Flexibilidade
+- ✅ **Adição Rápida**: Novos clientes via CSV
+- ✅ **Remoção Simples**: Clientes removidos automaticamente
+- ✅ **Edição Fácil**: Interface familiar do Google Sheets
+
+#### 3. Robustez
+- ✅ **Fallback Inteligente**: Lista padrão em caso de erro
+- ✅ **Loading States**: Feedback visual durante carregamento
+- ✅ **Tratamento de Erros**: Sistema não quebra
+
+### Fluxo de Funcionamento
+
+1. **Inicialização**: Hook carrega CSV ao montar componente
+2. **Parse**: Extrai slugs da primeira coluna
+3. **Fallback**: Se erro, usa lista padrão
+4. **Exibição**: Mostra slugs limpos no dropdown
+5. **Busca**: Filtro dinâmico por slug
+6. **Seleção**: Mudança de cliente atualiza dashboard
+
+### Estrutura do CSV
+
+**Formato Esperado:**
+```csv
+slug
+gringa
+constance
+coffeemais
+3dfila
+orthocrin
+...
+```
+
+**Processamento:**
+- **Header**: Ignora linha "slug"
+- **Dados**: Extrai primeira coluna de cada linha
+- **Limpeza**: Remove espaços e linhas vazias
+- **Validação**: Filtra slugs válidos
+
 ## Sistema de Comparação de Métricas
 
 ### Visão Geral
