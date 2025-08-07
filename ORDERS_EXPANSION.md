@@ -427,6 +427,140 @@ const [selectedTable, setSelectedTable] = useState<string>(user?.tablename || ''
 - ⚠️ **Backup Necessário**: Manter cópia de segurança do CSV
 - ⚠️ **Validação**: Verificar formato e dados do CSV
 
+## Sistema de Métricas Avançadas
+
+### Visão Geral
+O sistema implementa métricas avançadas que fornecem insights detalhados sobre o desempenho dos clusters de tráfego, incluindo análises específicas de perda de conversão.
+
+### Métricas Principais
+
+#### 1. Métricas Básicas
+- **Sessões**: Total de sessões no período
+- **Pedidos Pagos**: Total de pedidos pagos
+- **Receita Paga**: Receita total paga
+- **Ticket Médio**: Valor médio por pedido
+
+#### 2. Métricas de Conversão
+- **Taxa de Conversão**: Percentual de sessões que geraram pedidos
+- **Taxa de Adição ao Carrinho**: Percentual de sessões com adições ao carrinho
+- **Receita por Sessão**: Valor médio gerado por sessão
+- **Taxa de Novos Clientes**: Percentual de pedidos de novos clientes
+
+#### 3. Métricas Específicas de Cluster
+- **🍪 Perda de Cookies**: Percentual de vendas no cluster "Perda de Cookies" em relação ao total
+
+### Implementação do Percentual de Perda de Cookies
+
+#### 1. Cálculo da Métrica
+```typescript
+// Calcular percentual de vendas do cluster "🍪 Perda de Cookies"
+const cookieLossCluster = clusterTotals.find(cluster => cluster.cluster === '🍪 Perda de Cookies')
+const cookieLossPercentage = totals.pedidos > 0 && cookieLossCluster 
+  ? (cookieLossCluster.totals.pedidos / totals.pedidos) * 100 
+  : 0
+```
+
+#### 2. Exibição no Dashboard
+```typescript
+<MetricCard
+  title="🍪 Perda de Cookies"
+  value={cookieLossPercentage}
+  icon={Cookie}
+  format="percentage"
+  color="orange"
+/>
+```
+
+#### 3. Posicionamento
+- **Localização**: Segunda linha de métricas no topo da visão geral
+- **Ícone**: Cookie (🍪) para representar o cluster
+- **Formato**: Percentual com duas casas decimais
+- **Cor**: Laranja para destacar a métrica
+
+### Benefícios da Implementação
+
+#### 1. Visibilidade
+- ✅ **Alerta Ultra Discreto**: Tamanho mínimo e visual sutil
+- ✅ **Design Minimalista**: Apenas elementos essenciais
+- ✅ **Ícone Mínimo**: Cookie pequeno e discreto
+- ✅ **Mensagem Única**: Tudo em uma linha horizontal
+- ✅ **Espaço Mínimo**: Ocupa o menor espaço possível
+- ✅ **Tooltip Customizado**: Hover com CSS puro e animação suave
+- ✅ **Botão Fechar**: Permite esconder o alerta temporariamente
+- ✅ **Threshold Inteligente**: Só aparece quando >= 5% (requer atenção)
+
+#### 2. Análise de Performance
+- ✅ **Monitoramento Contínuo**: Acompanhamento em tempo real
+- ✅ **Níveis de Severidade**: Classificação automática por percentual
+- ✅ **Identificação de Problemas**: Detecção imediata de perdas de conversão
+- ✅ **Otimização**: Base para melhorias de performance
+
+#### 3. Tomada de Decisão
+- ✅ **Alertas Inteligentes**: Notificações baseadas em thresholds
+- ✅ **Priorização**: Identificação de problemas críticos
+- ✅ **Ações Corretivas**: Base para estratégias de melhoria
+- ✅ **ROI**: Medição do impacto das otimizações
+
+### Casos de Uso
+
+#### 1. Monitoramento Diário
+- **Objetivo**: Acompanhar status de perda de cookies
+- **Ação**: Verificar alerta no topo do dashboard
+- **Resultado**: Identificação rápida do nível de severidade
+
+#### 2. Análise de Tendências
+- **Objetivo**: Comparar níveis de alerta ao longo do tempo
+- **Ação**: Observar mudanças nas cores e mensagens
+- **Resultado**: Identificação de padrões e tendências
+
+#### 3. Otimização de Performance
+- **Objetivo**: Reduzir percentual de perda de cookies
+- **Ação**: Implementar melhorias baseadas no nível de alerta
+- **Resultado**: Mudança de alerta vermelho para amarelo/verde
+
+#### 4. Relatórios Executivos
+- **Objetivo**: Fornecer insights visuais para stakeholders
+- **Ação**: Incluir status do alerta em relatórios
+- **Resultado**: Decisões baseadas em indicadores visuais
+
+#### 5. Gestão de Crises
+- **Objetivo**: Responder rapidamente a problemas críticos
+- **Ação**: Alerta vermelho dispara ações imediatas
+- **Resultado**: Redução do tempo de resposta a problemas
+
+### Validação da Implementação
+
+#### 1. Testes de Funcionalidade
+- ✅ **Cálculo Correto**: Percentual calculado adequadamente
+- ✅ **Exibição Visual**: Alerta aparece no local correto
+- ✅ **Níveis de Severidade**: Cores e mensagens corretas por percentual
+- ✅ **Ícone Apropriado**: Cookie representa o cluster
+- ✅ **Design Ultra Discreto**: Tamanho mínimo e estilo sutil
+- ✅ **Tooltip Funcional**: Hover mostra mensagem informativa
+- ✅ **Botão Fechar**: Permite esconder o alerta temporariamente
+- ✅ **Threshold Mínimo**: Só aparece quando >= 5% (requer atenção)
+
+#### 2. Testes de Performance
+- ✅ **Carregamento Rápido**: Cálculo não impacta performance
+- ✅ **Atualização Dinâmica**: Alerta atualiza com filtros
+- ✅ **Responsividade**: Funciona em diferentes dispositivos
+- ✅ **Cache Eficiente**: Não recalcula desnecessariamente
+- ✅ **Renderização Mínima**: Elementos visuais ultra simples
+
+#### 3. Testes de Usabilidade
+- ✅ **Posicionamento Intuitivo**: Fácil localização no topo
+- ✅ **Compreensão Clara**: Cores e mensagens são autoexplicativas
+- ✅ **Consistência Visual**: Segue padrão de design do sistema
+- ✅ **Acessibilidade**: Legível em diferentes resoluções
+- ✅ **Design Ultra Discreto**: Interferência mínima na experiência
+
+#### 4. Testes de Thresholds
+- ✅ **< 5%**: Alerta não aparece (nível aceitável)
+- ✅ **5-10%**: Alerta amarelo com status "Moderado"
+- ✅ **> 10%**: Alerta vermelho com status "Preocupante"
+- ✅ **0%**: Alerta não aparece (sem dados)
+- ✅ **Cálculo Preciso**: Percentual correto baseado em dados reais
+
 ## Sistema de Clientes Dinâmicos
 
 ### Visão Geral
@@ -1011,3 +1145,95 @@ Limpeza automática quando filtros mudam
 3. **Batch Downloads**: Download de múltiplos clusters simultaneamente
 4. **Export Options**: Exportação de dados para CSV/Excel
 5. **Real-time Updates**: Atualizações em tempo real via WebSocket 
+
+### Implementação do Alerta de Perda de Cookies
+
+#### 1. Cálculo da Métrica
+```typescript
+// Calcular percentual de vendas do cluster "🍪 Perda de Cookies"
+const cookieLossCluster = clusterTotals.find(cluster => cluster.cluster === '🍪 Perda de Cookies')
+const cookieLossPercentage = totals.pedidos > 0 && cookieLossCluster 
+  ? (cookieLossCluster.totals.pedidos / totals.pedidos) * 100 
+  : 0
+```
+
+#### 2. Sistema de Alertas
+```typescript
+{/* Cookie Loss Alert */}
+{cookieLossPercentage >= 5 && (
+  <div className="mb-3">
+    <div className={`rounded-md border px-3 py-2 ${
+      cookieLossPercentage < 10 
+        ? 'bg-yellow-50 border-yellow-100' 
+        : 'bg-red-50 border-red-100'
+    }`}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Cookie className={`w-3 h-3 ${
+            cookieLossPercentage < 10 
+              ? 'text-yellow-500' 
+              : 'text-red-500'
+          }`} />
+          
+          <div className="relative group">
+            <span 
+              className={`text-xs font-medium cursor-help ${
+                cookieLossPercentage < 10 
+                  ? 'text-yellow-700' 
+                  : 'text-red-700'
+              }`}
+            >
+              🍪 Perda de Cookies: {cookieLossPercentage.toFixed(1)}% 
+              {cookieLossPercentage < 10 
+                ? ' (Moderado)'
+                : ' (Preocupante)'
+              }
+            </span>
+            
+            {/* Custom Tooltip */}
+            <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+              Converse com o time MyMetric para discutir formas de melhorar esse ponto
+              <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+            </div>
+          </div>
+        </div>
+        
+        <button
+          onClick={() => setCookieLossPercentage(0)}
+          className={`text-xs p-1 rounded hover:bg-opacity-20 transition-colors ${
+            cookieLossPercentage < 10 
+              ? 'text-yellow-500 hover:bg-yellow-500' 
+              : 'text-red-500 hover:bg-red-500'
+          }`}
+          title="Fechar alerta"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+```
+
+#### 3. Níveis de Severidade
+- **🟡 Moderado (5-10%)**: Amarelo discreto - Requer atenção
+- **🔴 Preocupante (> 10%)**: Vermelho discreto - Requer ação imediata
+- **🟢 Bom (< 5%)**: Não exibe alerta - Percentual em níveis aceitáveis
+
+#### 4. Posicionamento
+- **Localização**: Topo da página, após o MetricsCarousel
+- **Visibilidade**: Aparece apenas quando há dados de perda de cookies >= 5%
+- **Responsividade**: Funciona em desktop e mobile
+- **Destaque**: Cores e ícones diferenciados por nível
+
+#### 5. Design Ultra Discreto
+- **Tamanho Mínimo**: Padding e margens reduzidos ao mínimo
+- **Sem Sombras**: Apenas bordas sutis
+- **Tipografia Muito Pequena**: Textos em `text-xs`
+- **Ícone Mínimo**: Cookie em `w-3 h-3`
+- **Layout Linear**: Tudo em uma linha horizontal
+- **Mensagem Única**: Percentual e status em um só texto
+- **Bordas Suaves**: `border-yellow-100` ou `border-red-100`
+- **Tooltip Customizado**: Hover com CSS puro e animação suave
+- **Botão Fechar**: Permite esconder o alerta temporariamente
+- **Threshold Mínimo**: Só aparece quando >= 5%

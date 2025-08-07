@@ -19,7 +19,8 @@ import {
   Target,
   Download,
   Eye,
-  Filter
+  Filter,
+  Cookie
 } from 'lucide-react'
 import { api } from '../services/api'
 import Logo from './Logo'
@@ -415,6 +416,20 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       items
     }
   })
+
+  // Calcular percentual de vendas do cluster "🍪 Perda de Cookies"
+  const cookieLossCluster = clusterTotals.find(cluster => cluster.cluster === '🍪 Perda de Cookies')
+  const calculatedCookieLossPercentage = totals.pedidos > 0 && cookieLossCluster 
+    ? (cookieLossCluster.totals.pedidos / totals.pedidos) * 100 
+    : 0
+
+  // Estado para controlar a visibilidade do alerta
+  const [cookieLossPercentage, setCookieLossPercentage] = useState(calculatedCookieLossPercentage)
+
+  // Atualizar o estado quando o cálculo mudar
+  useEffect(() => {
+    setCookieLossPercentage(calculatedCookieLossPercentage)
+  }, [calculatedCookieLossPercentage])
 
   // Função de ordenação
   const sortData = (data: typeof clusterTotals) => {
@@ -893,6 +908,62 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
             />
           </div>
         </div>
+
+        {/* Cookie Loss Alert */}
+        {cookieLossPercentage >= 5 && (
+          <div className="mb-3">
+            <div className={`rounded-md border px-3 py-2 ${
+              cookieLossPercentage < 10 
+                ? 'bg-yellow-50 border-yellow-100' 
+                : 'bg-red-50 border-red-100'
+            }`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Cookie className={`w-3 h-3 ${
+                    cookieLossPercentage < 10 
+                      ? 'text-yellow-500' 
+                      : 'text-red-500'
+                  }`} />
+                  
+                  <div className="relative group">
+                    <span 
+                      className={`text-xs font-medium cursor-help ${
+                        cookieLossPercentage < 10 
+                          ? 'text-yellow-700' 
+                          : 'text-red-700'
+                      }`}
+                    >
+                      🍪 Perda de Cookies: {cookieLossPercentage.toFixed(1)}% 
+                      {cookieLossPercentage < 10 
+                        ? ' (Moderado)'
+                        : ' (Preocupante)'
+                      }
+                    </span>
+                    
+                    {/* Custom Tooltip */}
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+                      Converse com o time MyMetric para discutir formas de melhorar esse ponto
+                      <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                    </div>
+                  </div>
+                </div>
+                
+                <button
+                  onClick={() => setCookieLossPercentage(0)}
+                  className={`text-xs p-1 rounded hover:bg-opacity-20 transition-colors ${
+                    cookieLossPercentage < 10 
+                      ? 'text-yellow-500 hover:bg-yellow-500' 
+                      : 'text-red-500 hover:bg-red-500'
+                  }`}
+                  title="Fechar alerta"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Filters */}
         <div className="mb-6">
           {/* Mobile Collapsible Header */}
