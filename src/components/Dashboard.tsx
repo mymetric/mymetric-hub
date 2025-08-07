@@ -32,6 +32,7 @@ import MetricsCarousel from './MetricsCarousel'
 import ConversionFunnel from './ConversionFunnel'
 import OrdersExpanded from './OrdersExpanded'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { useUrlParams } from '../hooks/useUrlParams'
 
 interface User {
   email: string
@@ -58,13 +59,45 @@ interface MetricsDataItem {
 }
 
 const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) => {
+  const { getUrlParams, updateUrlParams } = useUrlParams()
+  
+  // Função para calcular datas dos últimos 7 dias
+  const getLast7Days = () => {
+    const endDate = new Date()
+    const startDate = new Date()
+    startDate.setDate(endDate.getDate() - 7)
+    
+    return {
+      start: startDate.toISOString().split('T')[0],
+      end: endDate.toISOString().split('T')[0]
+    }
+  }
+
+  // Função para calcular datas dos últimos 30 dias
+  const getLast30Days = () => {
+    const endDate = new Date()
+    const startDate = new Date()
+    startDate.setDate(endDate.getDate() - 30)
+    
+    return {
+      start: startDate.toISOString().split('T')[0],
+      end: endDate.toISOString().split('T')[0]
+    }
+  }
+  
   const [metrics, setMetrics] = useState<MetricsDataItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isTableLoading, setIsTableLoading] = useState(false)
-  const [startDate, setStartDate] = useState<string>('2025-07-27')
-  const [endDate, setEndDate] = useState<string>('2025-08-03')
+  const [startDate, setStartDate] = useState<string>(() => {
+    const last7Days = getLast7Days()
+    return last7Days.start
+  })
+  const [endDate, setEndDate] = useState<string>(() => {
+    const last7Days = getLast7Days()
+    return last7Days.end
+  })
   const [selectedCluster, setSelectedCluster] = useState<string>('Todos')
-  const [selectedTable, setSelectedTable] = useState<string>(user?.tablename || '')
+  const [selectedTable, setSelectedTable] = useState<string>(user?.tablename || 'coffeemais') // Valor padrão
   const [sortField, setSortField] = useState<string>('receita')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [showAllRecords, setShowAllRecords] = useState(false)
@@ -95,17 +128,43 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   
   // const tokenCheckInterval = useRef<NodeJS.Timeout | null>(null)
 
-  // Função para calcular datas dos últimos 30 dias
-  const getLast30Days = () => {
-    const endDate = new Date()
-    const startDate = new Date()
-    startDate.setDate(endDate.getDate() - 30)
+  // Carregar parâmetros da URL na inicialização
+  useEffect(() => {
+    const urlParams = getUrlParams()
+    const last7Days = getLast7Days()
     
-    return {
-      start: startDate.toISOString().split('T')[0],
-      end: endDate.toISOString().split('T')[0]
+    // Aplicar parâmetros da URL aos estados
+    if (urlParams.table) {
+      setSelectedTable(urlParams.table)
     }
-  }
+    if (urlParams.startDate) {
+      setStartDate(urlParams.startDate)
+    } else {
+      setStartDate(last7Days.start)
+    }
+    if (urlParams.endDate) {
+      setEndDate(urlParams.endDate)
+    } else {
+      setEndDate(last7Days.end)
+    }
+    if (urlParams.tab) {
+      setActiveTab(urlParams.tab)
+    }
+    if (urlParams.cluster) {
+      setSelectedCluster(urlParams.cluster)
+    }
+  }, []) // Removendo getUrlParams da dependência para evitar loop
+
+  // Sincronizar mudanças de estado com a URL
+  useEffect(() => {
+    updateUrlParams({
+      table: selectedTable,
+      startDate,
+      endDate,
+      tab: activeTab,
+      cluster: selectedCluster
+    })
+  }, [selectedTable, startDate, endDate, activeTab, selectedCluster]) // Removendo updateUrlParams da dependência
 
   // Função para calcular período anterior
   const getPreviousPeriod = () => {
@@ -148,6 +207,12 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       try {
         const token = localStorage.getItem('auth-token')
         if (!token) return
+
+        // Verificar se selectedTable tem um valor válido
+        if (!selectedTable || selectedTable.trim() === '') {
+          console.log('⚠️ selectedTable está vazio, aguardando...')
+          return
+        }
 
         console.log('🔄 Fetching metrics for table:', selectedTable)
         setIsTableLoading(true)
@@ -538,7 +603,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
     } else {
       setSortField(field)
-      setSortDirection('asc')
+      setSortDirection('desc')
     }
   }
 

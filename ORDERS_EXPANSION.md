@@ -612,6 +612,220 @@ useEffect(() => {
 - **UX Moderna**: Padrão comum em aplicações web
 - **Eficiência**: Reduz tempo para trocar de cliente
 
+## Períodos Padrão do Dashboard
+
+### Configuração de Períodos
+
+#### 1. Visão Geral
+- **Período Padrão**: Últimos 7 dias
+- **Cálculo Dinâmico**: Baseado na data atual
+- **Atualização Automática**: Sempre reflete os últimos 7 dias
+- **URL Params**: Podem sobrescrever o padrão
+
+#### 2. Funil de Conversão
+- **Período Padrão**: Últimos 30 dias
+- **Cálculo Dinâmico**: Baseado na data atual
+- **Análise Mais Ampliada**: Para melhor visualização do funil
+- **URL Params**: Podem sobrescrever o padrão
+
+#### 3. Implementação Técnica
+```typescript
+// Função para calcular datas dos últimos 7 dias
+const getLast7Days = () => {
+  const endDate = new Date()
+  const startDate = new Date()
+  startDate.setDate(endDate.getDate() - 7)
+  
+  return {
+    start: startDate.toISOString().split('T')[0],
+    end: endDate.toISOString().split('T')[0]
+  }
+}
+
+// Estados iniciais com últimos 7 dias
+const [startDate, setStartDate] = useState<string>(() => {
+  const last7Days = getLast7Days()
+  return last7Days.start
+})
+const [endDate, setEndDate] = useState<string>(() => {
+  const last7Days = getLast7Days()
+  return last7Days.end
+})
+```
+
+#### 4. Lógica de Carregamento
+- **URL Params**: Prioridade máxima quando presentes
+- **Fallback**: Últimos 7 dias quando não há parâmetros
+- **Atualização**: Sempre reflete período atual
+- **Consistência**: Mesmo período em todas as abas
+
+#### 5. Benefícios
+- **Relevância**: Sempre mostra dados recentes
+- **Consistência**: Padrão uniforme em toda aplicação
+- **Flexibilidade**: URL params permitem personalização
+- **Usabilidade**: Períodos intuitivos para análise
+
+## Sistema de URL Params
+
+### Funcionalidades
+
+#### 1. Parâmetros Sincronizados
+- ✅ **Nome do Cliente**: `table` - Cliente selecionado
+- ✅ **Datas**: `startDate` e `endDate` - Período selecionado
+- ✅ **Aba Ativa**: `tab` - Aba atual (visao-geral, funil-conversao)
+- ✅ **Cluster**: `cluster` - Cluster selecionado
+- ✅ **Sincronização Automática**: URL atualiza automaticamente
+- ✅ **Carregamento Inicial**: Estados carregados da URL
+
+#### 2. Hook useUrlParams
+```typescript
+interface UrlParams {
+  table?: string
+  startDate?: string
+  endDate?: string
+  tab?: string
+  cluster?: string
+}
+
+export const useUrlParams = () => {
+  // Função para obter parâmetros da URL
+  const getUrlParams = useCallback((): UrlParams => {
+    const urlParams = new URLSearchParams(window.location.search)
+    return {
+      table: urlParams.get('table') || undefined,
+      startDate: urlParams.get('startDate') || undefined,
+      endDate: urlParams.get('endDate') || undefined,
+      tab: urlParams.get('tab') || undefined,
+      cluster: urlParams.get('cluster') || undefined
+    }
+  }, [])
+
+  // Função para atualizar parâmetros da URL
+  const updateUrlParams = useCallback((params: Partial<UrlParams>) => {
+    const url = new URL(window.location.href)
+    const searchParams = url.searchParams
+
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        searchParams.set(key, value)
+      } else {
+        searchParams.delete(key)
+      }
+    })
+
+    window.history.replaceState({}, '', url.toString())
+  }, [])
+
+  // Função para copiar URL para clipboard
+  const copyShareableUrl = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href)
+      return true
+    } catch (error) {
+      console.error('Erro ao copiar URL:', error)
+      return false
+    }
+  }, [])
+
+  return {
+    getUrlParams,
+    updateUrlParams,
+    copyShareableUrl
+  }
+}
+```
+
+#### 3. Integração no Dashboard
+```typescript
+const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) => {
+  const { getUrlParams, updateUrlParams } = useUrlParams()
+  
+  // Função para calcular datas dos últimos 7 dias
+  const getLast7Days = () => {
+    const endDate = new Date()
+    const startDate = new Date()
+    startDate.setDate(endDate.getDate() - 7)
+    
+    return {
+      start: startDate.toISOString().split('T')[0],
+      end: endDate.toISOString().split('T')[0]
+    }
+  }
+  
+  // Estados iniciais com últimos 7 dias
+  const [startDate, setStartDate] = useState<string>(() => {
+    const last7Days = getLast7Days()
+    return last7Days.start
+  })
+  const [endDate, setEndDate] = useState<string>(() => {
+    const last7Days = getLast7Days()
+    return last7Days.end
+  })
+  
+  // Carregar parâmetros da URL na inicialização
+  useEffect(() => {
+    const urlParams = getUrlParams()
+    const last7Days = getLast7Days()
+    
+    // Aplicar parâmetros da URL aos estados
+    if (urlParams.table) {
+      setSelectedTable(urlParams.table)
+    }
+    if (urlParams.startDate) {
+      setStartDate(urlParams.startDate)
+    } else {
+      setStartDate(last7Days.start)
+    }
+    if (urlParams.endDate) {
+      setEndDate(urlParams.endDate)
+    } else {
+      setEndDate(last7Days.end)
+    }
+    if (urlParams.tab) {
+      setActiveTab(urlParams.tab)
+    }
+    if (urlParams.cluster) {
+      setSelectedCluster(urlParams.cluster)
+    }
+  }, [getUrlParams])
+
+  // Sincronizar mudanças de estado com a URL
+  useEffect(() => {
+    updateUrlParams({
+      table: selectedTable,
+      startDate,
+      endDate,
+      tab: activeTab,
+      cluster: selectedCluster
+    })
+  }, [selectedTable, startDate, endDate, activeTab, selectedCluster, updateUrlParams])
+}
+```
+
+#### 4. Períodos Padrão
+- **Visão Geral**: Últimos 7 dias (padrão)
+- **Funil de Conversão**: Últimos 30 dias (padrão)
+- **URL Params**: Sobrescrevem padrões quando presentes
+- **Fallback**: Últimos 7 dias quando não há parâmetros na URL
+
+#### 5. Botão de Compartilhamento
+- **Removido**: Botão de compartilhar não está mais disponível
+- **URLs Ainda Funcionais**: URLs ainda podem ser copiadas manualmente
+- **Sincronização Mantida**: Parâmetros ainda são sincronizados com a URL
+- **Navegação Preservada**: Browser back/forward ainda funcionam
+
+#### 6. Exemplo de URL
+```
+https://app.mymetric.com.br/?table=gringa&startDate=2025-07-27&endDate=2025-08-03&tab=visao-geral&cluster=Todos
+```
+
+#### 7. Benefícios
+- **Compartilhamento Manual**: URLs podem ser copiadas manualmente do browser
+- **Bookmarks**: Usuários podem salvar URLs específicas
+- **Navegação**: Browser back/forward funciona corretamente
+- **Estado Persistente**: Filtros mantidos ao recarregar página
+- **Colaboração**: Equipes podem compartilhar visões específicas manualmente
+
 ## Sistema de Clientes Dinâmicos
 
 ### Visão Geral
