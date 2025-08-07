@@ -482,7 +482,7 @@ const cookieLossPercentage = totals.pedidos > 0 && cookieLossCluster
 #### 1. Visibilidade
 - ✅ **Alerta Ultra Discreto**: Tamanho mínimo e visual sutil
 - ✅ **Design Minimalista**: Apenas elementos essenciais
-- ✅ **Ícone Mínimo**: Cookie pequeno e discreto
+- ✅ **Layout Limpo**: Sem ícones desnecessários
 - ✅ **Mensagem Única**: Tudo em uma linha horizontal
 - ✅ **Espaço Mínimo**: Ocupa o menor espaço possível
 - ✅ **Tooltip Customizado**: Hover com CSS puro e animação suave
@@ -534,7 +534,7 @@ const cookieLossPercentage = totals.pedidos > 0 && cookieLossCluster
 - ✅ **Cálculo Correto**: Percentual calculado adequadamente
 - ✅ **Exibição Visual**: Alerta aparece no local correto
 - ✅ **Níveis de Severidade**: Cores e mensagens corretas por percentual
-- ✅ **Ícone Apropriado**: Cookie representa o cluster
+- ✅ **Design Limpo**: Sem ícones desnecessários
 - ✅ **Design Ultra Discreto**: Tamanho mínimo e estilo sutil
 - ✅ **Tooltip Funcional**: Hover mostra mensagem informativa
 - ✅ **Botão Fechar**: Permite esconder o alerta temporariamente
@@ -560,6 +560,57 @@ const cookieLossPercentage = totals.pedidos > 0 && cookieLossCluster
 - ✅ **> 10%**: Alerta vermelho com status "Preocupante"
 - ✅ **0%**: Alerta não aparece (sem dados)
 - ✅ **Cálculo Preciso**: Percentual correto baseado em dados reais
+
+## Atalhos de Teclado
+
+### Command + K - Busca de Clientes
+O sistema implementa um atalho de teclado para acesso rápido à busca de clientes.
+
+#### 1. Funcionalidade
+- **Atalho**: Command + K (Mac) / Ctrl + K (Windows/Linux)
+- **Ação**: Abre o dropdown de clientes e foca no campo de busca
+- **Escopo**: Funciona em qualquer lugar da aplicação
+- **Feedback**: Tooltip no botão mostra o atalho
+
+#### 2. Implementação Técnica
+```typescript
+// Hook para detectar atalho global
+useEffect(() => {
+  const handleKeyDown = (event: KeyboardEvent) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+      event.preventDefault()
+      
+      // Abrir dropdown se não estiver aberto
+      if (!isOpen) {
+        setIsOpen(true)
+      }
+      
+      // Focar no campo de busca
+      setTimeout(() => {
+        searchInputRef.current?.focus()
+      }, 100)
+    }
+  }
+
+  document.addEventListener('keydown', handleKeyDown)
+  return () => {
+    document.removeEventListener('keydown', handleKeyDown)
+  }
+}, [isOpen])
+```
+
+#### 3. Experiência do Usuário
+- **Acesso Rápido**: Atalho de teclado para busca
+- **Comportamento Intuitivo**: Abre e foca automaticamente
+- **Cross-platform**: Funciona em diferentes sistemas operacionais
+- **Dica Visual**: Tooltip mostra o atalho no botão
+- **Responsivo**: Funciona em todos os dispositivos
+
+#### 4. Benefícios
+- **Produtividade**: Acesso rápido sem usar mouse
+- **Acessibilidade**: Suporte para usuários que preferem teclado
+- **UX Moderna**: Padrão comum em aplicações web
+- **Eficiência**: Reduz tempo para trocar de cliente
 
 ## Sistema de Clientes Dinâmicos
 
@@ -657,31 +708,46 @@ export const useClientList = (shouldFetch: boolean = true): UseClientListReturn 
 #### 1. Carregamento Inicial
 1. **Componente Monta**: `TableSelector` é renderizado
 2. **Hook Executa**: `useClientList` inicia o fetch do CSV
-3. **Loading State**: Interface mostra "Carregando clientes..."
-4. **CSV Processado**: Slugs extraídos e armazenados
-5. **Interface Atualizada**: Lista de clientes disponível
+3. **Dados Carregados**: Lista de clientes disponível
+4. **Interface Atualizada**: Dropdown populado com clientes
 
-#### 2. Controle de Acesso
+#### 2. Atalho Command + K
 ```typescript
-// TableSelector - Lógica de prioridade com controle de acesso
-const tables = useMemo(() => {
-  // Se não deve usar CSV, usar apenas availableTables (usuários restritos)
-  if (!useCSV) {
-    return availableTables.length > 0 ? availableTables : []
+// Atalho Command + K para focar na busca
+useEffect(() => {
+  const handleKeyDown = (event: KeyboardEvent) => {
+    // Verificar se é Command + K (Mac) ou Ctrl + K (Windows/Linux)
+    if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+      event.preventDefault()
+      
+      // Abrir dropdown se não estiver aberto
+      if (!isOpen) {
+        setIsOpen(true)
+      }
+      
+      // Focar no campo de busca após um pequeno delay
+      setTimeout(() => {
+        searchInputRef.current?.focus()
+      }, 100)
+    }
   }
-  
-  // Se deve usar CSV, seguir a lógica normal (usuários com acesso total)
-  if (clients.length > 0) {
-    return clients // 1º Prioridade: CSV carregado
+
+  document.addEventListener('keydown', handleKeyDown)
+  return () => {
+    document.removeEventListener('keydown', handleKeyDown)
   }
-  if (availableTables.length > 0) {
-    return availableTables // 2º Prioridade: Lista específica
-  }
-  return [] // 3º Prioridade: Array vazio (sem fallback hardcoded)
-}, [clients, availableTables, useCSV])
+}, [isOpen])
 ```
 
-#### 3. Estados da Interface
+**Funcionalidades do Atalho:**
+- **Cross-platform**: Funciona em Mac (⌘) e Windows/Linux (Ctrl)
+- **Auto-abertura**: Abre dropdown se fechado
+- **Auto-foco**: Foca automaticamente no campo de busca
+- **Prevent Default**: Evita comportamento padrão do navegador
+- **Cleanup**: Remove listener ao desmontar componente
+- **Dica Visual**: Tooltip mostra "Selecionar cliente (⌘K para buscar)"
+
+#### 3. Busca e Filtragem
 
 **Loading:**
 ```typescript
@@ -1169,12 +1235,6 @@ const cookieLossPercentage = totals.pedidos > 0 && cookieLossCluster
     }`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Cookie className={`w-3 h-3 ${
-            cookieLossPercentage < 10 
-              ? 'text-yellow-500' 
-              : 'text-red-500'
-          }`} />
-          
           <div className="relative group">
             <span 
               className={`text-xs font-medium cursor-help ${
@@ -1230,10 +1290,10 @@ const cookieLossPercentage = totals.pedidos > 0 && cookieLossCluster
 - **Tamanho Mínimo**: Padding e margens reduzidos ao mínimo
 - **Sem Sombras**: Apenas bordas sutis
 - **Tipografia Muito Pequena**: Textos em `text-xs`
-- **Ícone Mínimo**: Cookie em `w-3 h-3`
 - **Layout Linear**: Tudo em uma linha horizontal
 - **Mensagem Única**: Percentual e status em um só texto
 - **Bordas Suaves**: `border-yellow-100` ou `border-red-100`
 - **Tooltip Customizado**: Hover com CSS puro e animação suave
 - **Botão Fechar**: Permite esconder o alerta temporariamente
 - **Threshold Mínimo**: Só aparece quando >= 5%
+- **Sem Ícone**: Design mais limpo sem ícone de cookie

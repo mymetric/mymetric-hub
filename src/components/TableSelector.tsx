@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { Database, Search, X, Loader2 } from 'lucide-react'
 import { useClientList } from '../hooks/useClientList'
 
@@ -12,9 +12,35 @@ interface TableSelectorProps {
 const TableSelector = ({ currentTable, onTableChange, availableTables = [], useCSV = true }: TableSelectorProps) => {
   const [isOpen, setIsOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const searchInputRef = useRef<HTMLInputElement>(null)
   
   // Só executar o hook se useCSV for true
   const { clients, isLoading, error } = useClientList(useCSV)
+
+  // Atalho Command + K para focar na busca
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Verificar se é Command + K (Mac) ou Ctrl + K (Windows/Linux)
+      if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+        event.preventDefault()
+        
+        // Abrir dropdown se não estiver aberto
+        if (!isOpen) {
+          setIsOpen(true)
+        }
+        
+        // Focar no campo de busca após um pequeno delay para garantir que o dropdown está aberto
+        setTimeout(() => {
+          searchInputRef.current?.focus()
+        }, 100)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isOpen])
 
   // Usar clientes do CSV ou fallback para availableTables ou lista padrão
   const tables = useMemo(() => {
@@ -68,6 +94,7 @@ const TableSelector = ({ currentTable, onTableChange, availableTables = [], useC
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center justify-between px-2 sm:px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-500 focus:border-gray-500 bg-white hover:bg-gray-50 transition-colors min-w-[120px] sm:min-w-[200px]"
         disabled={isActuallyLoading}
+        title="Selecionar cliente (⌘K para buscar)"
       >
         <div className="flex items-center gap-2 sm:gap-3">
           <Database className="w-4 h-4 text-gray-500 flex-shrink-0" />
@@ -107,6 +134,7 @@ const TableSelector = ({ currentTable, onTableChange, availableTables = [], useC
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-8 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 autoFocus
+                ref={searchInputRef}
               />
               {searchTerm && (
                 <button

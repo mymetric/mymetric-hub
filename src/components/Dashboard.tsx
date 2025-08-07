@@ -19,8 +19,7 @@ import {
   Target,
   Download,
   Eye,
-  Filter,
-  Cookie
+  Filter
 } from 'lucide-react'
 import { api } from '../services/api'
 import Logo from './Logo'
@@ -919,12 +918,6 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
             }`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Cookie className={`w-3 h-3 ${
-                    cookieLossPercentage < 10 
-                      ? 'text-yellow-500' 
-                      : 'text-red-500'
-                  }`} />
-                  
                   <div className="relative group">
                     <span 
                       className={`text-xs font-medium cursor-help ${
