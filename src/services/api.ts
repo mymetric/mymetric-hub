@@ -45,6 +45,22 @@ interface OrdersRequest {
   limit?: number
 }
 
+interface GoalsRequest {
+  table_name: string
+}
+
+interface GoalsResponse {
+  username: string
+  goals: {
+    metas_mensais: {
+      [key: string]: {
+        meta_receita_paga: number
+      }
+    }
+  }
+  message: string
+}
+
 interface MetricsDataItem {
   Data: string
   Cluster: string
@@ -236,6 +252,41 @@ export const api = {
     } catch (error) {
       console.error('❌ Orders fetch error:', error)
       throw new Error('Erro ao buscar pedidos.')
+    }
+  },
+
+  async getGoals(token: string, goalsData: GoalsRequest): Promise<GoalsResponse> {
+    try {
+      console.log('🌐 Goals API Request:', {
+        url: `${API_BASE_URL}/metrics/goals`,
+        method: 'POST',
+        body: goalsData
+      })
+
+      const response = await fetch(`${API_BASE_URL}/metrics/goals`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(goalsData),
+      })
+
+      console.log('📡 Goals Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        handleAuthError(response.status)
+        const errorText = await response.text()
+        console.error('❌ Goals API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('📦 Goals API Response data:', data)
+      return data
+    } catch (error) {
+      console.error('❌ Goals fetch error:', error)
+      throw new Error('Erro ao buscar metas.')
     }
   }
 } 

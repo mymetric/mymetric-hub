@@ -84,6 +84,58 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       end: endDate.toISOString().split('T')[0]
     }
   }
+
+  // Função para buscar goals
+  const fetchGoals = async () => {
+    try {
+      const token = localStorage.getItem('auth-token')
+      if (!token || !selectedTable) return
+
+      setIsLoadingGoals(true)
+      console.log('🎯 Fetching goals for table:', selectedTable)
+      
+      const response = await api.getGoals(token, {
+        table_name: selectedTable
+      })
+      
+      console.log('✅ Goals response:', response)
+      setGoals(response)
+    } catch (error) {
+      console.error('❌ Error fetching goals:', error)
+      setGoals(null)
+    } finally {
+      setIsLoadingGoals(false)
+    }
+  }
+
+  // Função para calcular run rate da meta do mês
+  const calculateRunRate = () => {
+    if (!goals || !totals.receitaPaga) return null
+
+    const currentDate = new Date()
+    const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`
+    
+    const monthlyGoal = goals.goals?.metas_mensais?.[currentMonth]?.meta_receita_paga
+    if (!monthlyGoal) return null
+
+    // Calcular dias no mês atual
+    const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate()
+    const currentDay = currentDate.getDate()
+    
+    // Calcular run rate (receita atual * dias no mês / dia atual)
+    const runRate = (totals.receitaPaga * daysInMonth) / currentDay
+    
+    // Calcular percentual da meta
+    const percentageOfGoal = (runRate / monthlyGoal) * 100
+    
+    return {
+      runRate,
+      monthlyGoal,
+      percentageOfGoal,
+      currentDay,
+      daysInMonth
+    }
+  }
   
   const [metrics, setMetrics] = useState<MetricsDataItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -108,6 +160,10 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   // Estados para dados históricos
   const [previousMetrics, setPreviousMetrics] = useState<MetricsDataItem[]>([])
   const [isLoadingPrevious, setIsLoadingPrevious] = useState(false)
+  
+  // Estados para goals e run rate
+  const [goals, setGoals] = useState<any>(null)
+  const [isLoadingGoals, setIsLoadingGoals] = useState(false)
   const [expandedOrders, setExpandedOrders] = useState<{
     isOpen: boolean
     trafficCategory: string
@@ -319,6 +375,11 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     setDownloadMessages(new Map())
   }, [selectedTable, startDate, endDate, attributionModel])
 
+  // Buscar goals quando a tabela mudar
+  useEffect(() => {
+    fetchGoals()
+  }, [selectedTable])
+
   // Filtrar dados por cluster
   const filteredMetrics = selectedCluster === 'Todos' 
     ? metrics 
@@ -388,6 +449,9 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const previousRevenuePerSession = previousTotals.sessoes > 0 ? previousTotals.receita / previousTotals.sessoes : 0
   const previousNewCustomerRate = previousTotals.pedidos > 0 ? (previousTotals.novosClientes / previousTotals.pedidos) * 100 : 0
   const previousAddToCartRate = previousTotals.sessoes > 0 ? Math.min((previousTotals.adicoesCarrinho / previousTotals.sessoes) * 100, 100) : 0
+
+  // Calcular run rate da meta do mês
+  const runRateData = calculateRunRate()
 
   // Preparar dados para a timeline baseados nos dados filtrados
   const timelineData = filteredMetrics
@@ -751,6 +815,118 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     })
   }
 
+  const RunRateHighlight = ({ runRateData, isLoadingGoals }: { runRateData: any, isLoadingGoals: boolean }) => {
+    if (isLoadingGoals) {
+      return (
+        <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4 shadow-sm">
+          <div className="flex items-center justify-center">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600 mr-2"></div>
+            <span className="text-sm text-gray-700">Carregando metas...</span>
+          </div>
+        </div>
+      )
+    }
+
+    if (!runRateData) {
+      return (
+        <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4 shadow-sm">
+          <div className="text-center">
+            <Target className="w-5 h-5 text-gray-400 mx-auto mb-1" />
+            <h3 className="text-base font-semibold text-gray-700">Run Rate da Meta</h3>
+            <p className="text-xs text-gray-500">Meta não disponível</p>
+          </div>
+        </div>
+      )
+    }
+
+    const { runRate, monthlyGoal, percentageOfGoal, currentDay, daysInMonth } = runRateData
+    const isOnTrack = percentageOfGoal >= 100
+    const progressWidth = Math.min(percentageOfGoal, 100)
+
+    return (
+      <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4 shadow-sm">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-gray-100 rounded-md flex items-center justify-center">
+              <Target className="w-4 h-4 text-gray-600" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-gray-900">Run Rate da Meta</h2>
+              <p className="text-xs text-gray-600">Projeção mensal</p>
+            </div>
+          </div>
+          <div className={`px-3 py-1 rounded-md text-center ${
+            isOnTrack 
+              ? 'bg-green-50 text-green-700 border border-green-200' 
+              : 'bg-red-50 text-red-700 border border-red-200'
+          }`}>
+            <p className="text-xs font-medium">
+              {isOnTrack ? 'No caminho' : 'Atrasado'}
+            </p>
+            <p className="text-xs text-gray-600">
+              {currentDay}/{daysInMonth}
+            </p>
+          </div>
+        </div>
+
+        {/* Main Content */}
+        <div className="grid grid-cols-3 gap-4">
+          {/* Run Rate Projetado */}
+          <div className="text-center">
+            <p className="text-xs font-medium text-gray-600 mb-1">Run Rate</p>
+            <p className="text-lg font-bold text-gray-900">{formatCurrency(runRate)}</p>
+          </div>
+
+          {/* Meta Mensal */}
+          <div className="text-center">
+            <p className="text-xs font-medium text-gray-600 mb-1">Meta</p>
+            <p className="text-base font-bold text-gray-700">{formatCurrency(monthlyGoal)}</p>
+          </div>
+
+          {/* Progresso */}
+          <div className="text-center">
+            <p className="text-xs font-medium text-gray-600 mb-1">Progresso</p>
+            <div className="flex items-center justify-center gap-1 mb-2">
+              <span className={`text-lg font-bold ${
+                isOnTrack ? 'text-green-600' : 'text-red-600'
+              }`}>
+                {percentageOfGoal.toFixed(1)}%
+              </span>
+              {isOnTrack ? (
+                <ArrowUpRight className="w-4 h-4 text-green-600" />
+              ) : (
+                <ArrowDownRight className="w-4 h-4 text-red-600" />
+              )}
+            </div>
+            
+            {/* Progress Bar */}
+            <div className="w-full bg-gray-200 rounded-full h-1.5">
+              <div 
+                className={`h-1.5 rounded-full transition-all duration-300 ${
+                  isOnTrack ? 'bg-green-600' : 'bg-red-600'
+                }`}
+                style={{ width: `${progressWidth}%` }}
+              ></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Info */}
+        <div className="mt-3 pt-3 border-t border-gray-100">
+          <div className="flex items-center justify-between text-xs text-gray-600">
+            <span>Baseado em {currentDay} dias</span>
+            <span className={`font-medium ${
+              isOnTrack ? 'text-green-600' : 'text-red-600'
+            }`}>
+              {isOnTrack ? 'Meta será atingida' : 'Meta em risco'}
+            </span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const MetricCard = ({ 
     title, 
     value, 
@@ -903,8 +1079,16 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Mobile Full Width Container for Big Numbers */}
         <div className="md:hidden -mx-4 px-4">
+          {/* Run Rate Highlight Mobile */}
+          <div className="mb-6">
+            <RunRateHighlight 
+              runRateData={runRateData} 
+              isLoadingGoals={isLoadingGoals} 
+            />
+          </div>
+          
           <div className="mb-8">
-            <MetricsCarousel 
+            <MetricsCarousel
               metrics={[
                 {
                   title: "Sessões",
@@ -936,11 +1120,12 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   color: "orange",
                   growth: calculateGrowth(avgOrderValue, previousAvgOrderValue)
                 },
+
                 {
                   title: "Taxa de Conversão",
                   value: conversionRate,
                   icon: Sparkles,
-                  format: "percentage",
+                  format: "percentage" as const,
                   color: "red",
                   growth: calculateGrowth(conversionRate, previousConversionRate)
                 },
@@ -948,7 +1133,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   title: "Taxa de Adição ao Carrinho",
                   value: addToCartRate,
                   icon: ShoppingBag,
-                  format: "percentage",
+                  format: "percentage" as const,
                   color: "blue",
                   growth: calculateGrowth(addToCartRate, previousAddToCartRate)
                 },
@@ -956,7 +1141,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   title: "Receita por Sessão",
                   value: revenuePerSession,
                   icon: ArrowUpCircle,
-                  format: "currency",
+                  format: "currency" as const,
                   color: "green",
                   growth: calculateGrowth(revenuePerSession, previousRevenuePerSession)
                 },
@@ -964,7 +1149,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   title: "Taxa de Novos Clientes",
                   value: newCustomerRate,
                   icon: Users2,
-                  format: "percentage",
+                  format: "percentage" as const,
                   color: "purple",
                   growth: calculateGrowth(newCustomerRate, previousNewCustomerRate)
                 }
@@ -1171,6 +1356,12 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
                 {/* Metrics Grid (Desktop) */}
                 <div className="hidden md:block">
+                  {/* Run Rate Highlight */}
+                  <RunRateHighlight 
+                    runRateData={runRateData} 
+                    isLoadingGoals={isLoadingGoals} 
+                  />
+
                   {/* Metrics Grid - First Row */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                     <MetricCard
