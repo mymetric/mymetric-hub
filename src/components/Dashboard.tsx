@@ -19,7 +19,8 @@ import {
   Target,
   Download,
   Eye,
-  Filter
+  Filter,
+  Database
 } from 'lucide-react'
 import { api } from '../services/api'
 import Logo from './Logo'
@@ -31,6 +32,7 @@ import TimelineChart from './TimelineChart'
 import MetricsCarousel from './MetricsCarousel'
 import ConversionFunnel from './ConversionFunnel'
 import OrdersExpanded from './OrdersExpanded'
+import DetailedData from './DetailedData'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useUrlParams } from '../hooks/useUrlParams'
 
@@ -108,9 +110,42 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     }
   }
 
+  // Função para buscar dados do mês atual
+  const fetchCurrentMonthData = async () => {
+    try {
+      const token = localStorage.getItem('auth-token')
+      if (!token || !selectedTable) return
+
+      setIsLoadingCurrentMonth(true)
+      
+      const currentDate = new Date()
+      const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`
+      const startOfMonth = `${currentMonth}-01`
+      const endOfMonth = `${currentMonth}-${new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate()}`
+
+      console.log('📊 Fetching current month data:', { startOfMonth, endOfMonth, selectedTable })
+      
+      const response = await api.getMetrics(token, {
+        start_date: startOfMonth,
+        end_date: endOfMonth,
+        table_name: selectedTable,
+        attribution_model: attributionModel
+      })
+
+      const currentMonthReceitaPaga = response.data?.reduce((total: number, item: any) => total + item.Receita_Paga, 0) || 0
+      
+      setCurrentMonthData({ currentMonthReceitaPaga })
+    } catch (error) {
+      console.error('❌ Error fetching current month data:', error)
+      setCurrentMonthData(null)
+    } finally {
+      setIsLoadingCurrentMonth(false)
+    }
+  }
+
   // Função para calcular run rate da meta do mês
   const calculateRunRate = () => {
-    if (!goals || !totals.receitaPaga) return null
+    if (!goals || !currentMonthData) return null
 
     const currentDate = new Date()
     const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`
@@ -122,8 +157,11 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate()
     const currentDay = currentDate.getDate()
     
-    // Calcular run rate (receita atual * dias no mês / dia atual)
-    const runRate = (totals.receitaPaga * daysInMonth) / currentDay
+    // Usar receita paga do mês atual
+    const currentMonthReceitaPaga = currentMonthData.currentMonthReceitaPaga
+    
+    // Calcular run rate (receita do mês atual * dias no mês / dia atual)
+    const runRate = (currentMonthReceitaPaga * daysInMonth) / currentDay
     
     // Calcular percentual da meta
     const percentageOfGoal = (runRate / monthlyGoal) * 100
@@ -133,7 +171,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       monthlyGoal,
       percentageOfGoal,
       currentDay,
-      daysInMonth
+      daysInMonth,
+      currentMonthReceitaPaga
     }
   }
   
@@ -164,6 +203,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   // Estados para goals e run rate
   const [goals, setGoals] = useState<any>(null)
   const [isLoadingGoals, setIsLoadingGoals] = useState(false)
+  const [currentMonthData, setCurrentMonthData] = useState<any>(null)
+  const [isLoadingCurrentMonth, setIsLoadingCurrentMonth] = useState(false)
   const [expandedOrders, setExpandedOrders] = useState<{
     isOpen: boolean
     trafficCategory: string
@@ -379,6 +420,11 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   useEffect(() => {
     fetchGoals()
   }, [selectedTable])
+
+  // Buscar dados do mês atual quando a tabela ou modelo de atribuição mudar
+  useEffect(() => {
+    fetchCurrentMonthData()
+  }, [selectedTable, attributionModel])
 
   // Filtrar dados por cluster
   const filteredMetrics = selectedCluster === 'Todos' 
@@ -815,8 +861,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     })
   }
 
-  const RunRateHighlight = ({ runRateData, isLoadingGoals }: { runRateData: any, isLoadingGoals: boolean }) => {
-    if (isLoadingGoals) {
+  const RunRateHighlight = ({ runRateData, isLoadingGoals, isLoadingCurrentMonth }: { runRateData: any, isLoadingGoals: boolean, isLoadingCurrentMonth: boolean }) => {
+    if (isLoadingGoals || isLoadingCurrentMonth) {
       return (
         <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4 shadow-sm">
           <div className="flex items-center justify-center">
@@ -1071,6 +1117,19 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   Funil de Conversão
                 </div>
               </button>
+                          <button
+                onClick={() => handleTabChange('dados-detalhados')}
+                className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  activeTab === 'dados-detalhados'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Database className="w-4 h-4" />
+                  Dados Detalhados
+                </div>
+              </button>
           </nav>
         </div>
       </div>
@@ -1083,7 +1142,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
           <div className="mb-6">
             <RunRateHighlight 
               runRateData={runRateData} 
-              isLoadingGoals={isLoadingGoals} 
+              isLoadingGoals={isLoadingGoals}
+              isLoadingCurrentMonth={isLoadingCurrentMonth}
             />
           </div>
           
@@ -1359,7 +1419,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   {/* Run Rate Highlight */}
                   <RunRateHighlight 
                     runRateData={runRateData} 
-                    isLoadingGoals={isLoadingGoals} 
+                    isLoadingGoals={isLoadingGoals}
+                    isLoadingCurrentMonth={isLoadingCurrentMonth}
                   />
 
                   {/* Metrics Grid - First Row */}
@@ -1714,6 +1775,16 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         {/* Funil de Conversão Tab */}
         {activeTab === 'funil-conversao' && (
           <ConversionFunnel 
+            selectedTable={selectedTable}
+            startDate={startDate}
+            endDate={endDate}
+            attributionModel={attributionModel}
+          />
+        )}
+
+        {/* Dados Detalhados Tab */}
+        {activeTab === 'dados-detalhados' && (
+          <DetailedData 
             selectedTable={selectedTable}
             startDate={startDate}
             endDate={endDate}
