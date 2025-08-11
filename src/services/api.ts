@@ -45,6 +45,13 @@ interface OrdersRequest {
   limit?: number
 }
 
+interface DetailedDataRequest {
+  start_date: string
+  end_date: string
+  table_name: string
+  attribution_model?: string
+}
+
 interface GoalsRequest {
   table_name: string
 }
@@ -287,6 +294,41 @@ export const api = {
     } catch (error) {
       console.error('❌ Goals fetch error:', error)
       throw new Error('Erro ao buscar metas.')
+    }
+  },
+
+  async getDetailedData(token: string, detailedData: DetailedDataRequest): Promise<any> {
+    try {
+      console.log('🌐 Detailed Data API Request:', {
+        url: `${API_BASE_URL}/metrics/detailed-data`,
+        method: 'POST',
+        body: detailedData
+      })
+
+      const response = await fetch(`${API_BASE_URL}/metrics/detailed-data`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(detailedData),
+      })
+
+      console.log('📡 Detailed Data Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        handleAuthError(response.status)
+        const errorText = await response.text()
+        console.error('❌ Detailed Data API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('📦 Detailed Data API Response data:', data)
+      return data
+    } catch (error) {
+      console.error('❌ Detailed Data fetch error:', error)
+      throw new Error('Erro ao buscar dados detalhados.')
     }
   }
 } 
