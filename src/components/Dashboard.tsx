@@ -20,7 +20,8 @@ import {
   Download,
   Eye,
   Filter,
-  Database
+  Database,
+  EyeOff
 } from 'lucide-react'
 import { api } from '../services/api'
 import Logo from './Logo'
@@ -187,11 +188,11 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     const last7Days = getLast7Days()
     return last7Days.end
   })
-  const [selectedCluster, setSelectedCluster] = useState<string>('Todos')
   const [selectedTable, setSelectedTable] = useState<string>(user?.tablename || 'coffeemais') // Valor padrão
   const [sortField, setSortField] = useState<string>('receita')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [showAllRecords, setShowAllRecords] = useState(false)
+  const [hideClientName, setHideClientName] = useState(false)
   const [activeTab, setActiveTab] = useState<string>('visao-geral')
   const [filtersCollapsed, setFiltersCollapsed] = useState(true)
   const [attributionModel, setAttributionModel] = useState<string>('Último Clique Não Direto')
@@ -247,9 +248,6 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     if (urlParams.tab) {
       setActiveTab(urlParams.tab)
     }
-    if (urlParams.cluster) {
-      setSelectedCluster(urlParams.cluster)
-    }
   }, []) // Removendo getUrlParams da dependência para evitar loop
 
   // Sincronizar mudanças de estado com a URL
@@ -259,9 +257,9 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       startDate,
       endDate,
       tab: activeTab,
-      cluster: selectedCluster
+      cluster: 'Todos' // Removido para simplificar
     })
-  }, [selectedTable, startDate, endDate, activeTab, selectedCluster]) // Removendo updateUrlParams da dependência
+  }, [selectedTable, startDate, endDate, activeTab]) // Removendo updateUrlParams da dependência
 
   // Função para calcular período anterior
   const getPreviousPeriod = () => {
@@ -296,7 +294,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   useDocumentTitle(
     isLoading 
       ? 'Carregando Dashboard... | MyMetricHUB'
-      : `Dashboard ${selectedTable} | MyMetricHUB`
+      : `Dashboard ${hideClientName ? 'Cliente Selecionado' : selectedTable} | MyMetricHUB`
   )
 
   useEffect(() => {
@@ -427,9 +425,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   }, [selectedTable, attributionModel])
 
   // Filtrar dados por cluster
-  const filteredMetrics = selectedCluster === 'Todos' 
-    ? metrics 
-    : metrics.filter(item => item.Cluster === selectedCluster)
+  const filteredMetrics = metrics
 
   // Calcular totais e médias baseados nos dados filtrados
   const totals = filteredMetrics.reduce((acc, item) => ({
@@ -545,9 +541,6 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     }[])
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 
-  // Obter clusters únicos
-  const clusters = [...new Set(metrics.map(item => item.Cluster))]
-
   // Agrupar dados por cluster
   const groupedMetrics = filteredMetrics.reduce((acc, item) => {
     const cluster = item.Cluster
@@ -659,6 +652,10 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         case 'taxaConversao':
           aValue = a.totals.sessoes > 0 ? (a.totals.pedidos / a.totals.sessoes) * 100 : 0
           bValue = b.totals.sessoes > 0 ? (b.totals.pedidos / b.totals.sessoes) * 100 : 0
+          break
+        case 'taxaAdicaoCarrinho':
+          aValue = a.totals.sessoes > 0 ? (a.totals.adicoesCarrinho / a.totals.sessoes) * 100 : 0
+          bValue = b.totals.sessoes > 0 ? (b.totals.adicoesCarrinho / b.totals.sessoes) * 100 : 0
           break
         default:
           aValue = a.cluster
@@ -1073,8 +1070,20 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       ? [] // Deixar vazio para usar apenas o CSV via useClientList
                       : [user?.tablename || '']
                   }
+                  hideClientName={hideClientName}
                 />
               </div>
+              <button
+                onClick={() => setHideClientName(!hideClientName)}
+                className="flex items-center justify-center p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-md transition-colors relative z-40"
+                title={hideClientName ? "Mostrar nome do cliente" : "Ocultar nome do cliente"}
+              >
+                {hideClientName ? (
+                  <Eye className="w-4 h-4" />
+                ) : (
+                  <EyeOff className="w-4 h-4" />
+                )}
+              </button>
               <button
                 onClick={onLogout}
                 className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors relative z-40 min-w-[40px] sm:min-w-auto"
@@ -1180,7 +1189,14 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   color: "orange",
                   growth: calculateGrowth(avgOrderValue, previousAvgOrderValue)
                 },
-
+                {
+                  title: "Novos Clientes",
+                  value: newCustomerRate,
+                  icon: Users2,
+                  format: "percentage",
+                  color: "indigo",
+                  growth: calculateGrowth(newCustomerRate, previousNewCustomerRate)
+                },
                 {
                   title: "Taxa de Conversão",
                   value: conversionRate,
@@ -1204,14 +1220,6 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   format: "currency" as const,
                   color: "green",
                   growth: calculateGrowth(revenuePerSession, previousRevenuePerSession)
-                },
-                {
-                  title: "Taxa de Novos Clientes",
-                  value: newCustomerRate,
-                  icon: Users2,
-                  format: "percentage" as const,
-                  color: "purple",
-                  growth: calculateGrowth(newCustomerRate, previousNewCustomerRate)
                 }
               ]}
             />
@@ -1282,7 +1290,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 <div className="text-left">
                   <span className="font-semibold text-gray-900 block">Filtros</span>
                   <span className="text-xs text-gray-500">
-                    {selectedCluster === 'Todos' ? 'Todos os clusters' : selectedCluster} • {startDate} a {endDate}
+                    Todos os clusters • {startDate} a {endDate}
                   </span>
                 </div>
               </div>
@@ -1321,33 +1329,6 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   }}
                 />
               </div>
-              
-              {/* Cluster Filter Card */}
-              {activeTab !== 'funil-conversao' && (
-                <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-                  <label className="block text-sm font-semibold text-gray-700 mb-3">
-                    Cluster
-                  </label>
-                  <div className="relative">
-                    <PieChart className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500" />
-                    <select
-                      value={selectedCluster}
-                      onChange={(e) => {
-                        console.log('🔍 Dashboard - Mobile Cluster changed to:', e.target.value)
-                        setSelectedCluster(e.target.value)
-                      }}
-                      className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                    >
-                      <option value="Todos">Todos os clusters</option>
-                      {clusters.map(cluster => (
-                        <option key={cluster} value={cluster}>{cluster}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              )}
-
-
             </div>
 
             {/* Desktop Layout - Horizontal */}
@@ -1363,33 +1344,6 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   }}
                 />
               </div>
-              
-              {/* Cluster Filter */}
-              {activeTab !== 'funil-conversao' && (
-                <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Cluster
-                  </label>
-                  <div className="relative">
-                    <PieChart className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500" />
-                    <select
-                      value={selectedCluster}
-                      onChange={(e) => {
-                        console.log('🔍 Dashboard - Desktop Cluster changed to:', e.target.value)
-                        setSelectedCluster(e.target.value)
-                      }}
-                      className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                    >
-                      <option value="Todos">Todos os clusters</option>
-                      {clusters.map(cluster => (
-                        <option key={cluster} value={cluster}>{cluster}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              )}
-
-
             </div>
           </div>
         </div>
@@ -1405,7 +1359,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">Nenhum dado encontrado</h3>
                 <p className="text-gray-600 mb-4">
-                  Não foram encontrados dados para a tabela <strong>{selectedTable}</strong> no período selecionado.
+                  Não foram encontrados dados para a tabela <strong>{hideClientName ? 'Cliente Selecionado' : selectedTable}</strong> no período selecionado.
                 </p>
                 <div className="text-sm text-gray-500">
                   <p>Tente selecionar uma tabela diferente ou verificar se há dados disponíveis.</p>
@@ -1484,11 +1438,11 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       growth={calculateGrowth(revenuePerSession, previousRevenuePerSession)}
                     />
                     <MetricCard
-                      title="Taxa de Novos Clientes"
+                      title="Novos Clientes"
                       value={newCustomerRate}
                       icon={Users2}
                       format="percentage"
-                      color="purple"
+                      color="indigo"
                       growth={calculateGrowth(newCustomerRate, previousNewCustomerRate)}
                     />
                   </div>
@@ -1601,6 +1555,14 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             Sessões
                           </SortableHeader>
                           <SortableHeader
+                            field="taxaAdicaoCarrinho"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            Taxa Carrinho
+                          </SortableHeader>
+                          <SortableHeader
                             field="adicoesCarrinho"
                             currentSortField={sortField}
                             currentSortDirection={sortDirection}
@@ -1609,12 +1571,28 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             Carrinho
                           </SortableHeader>
                           <SortableHeader
+                            field="taxaConversao"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            Taxa Conv.
+                          </SortableHeader>
+                          <SortableHeader
                             field="pedidos"
                             currentSortField={sortField}
                             currentSortDirection={sortDirection}
                             onSort={handleSort}
                           >
                             Pedidos
+                          </SortableHeader>
+                          <SortableHeader
+                            field="pedidosPagos"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            Pedidos Pagos
                           </SortableHeader>
                           <SortableHeader
                             field="receita"
@@ -1633,6 +1611,14 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             Receita Paga
                           </SortableHeader>
                           <SortableHeader
+                            field="taxaReceitaPaga"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            % Receita Paga
+                          </SortableHeader>
+                          <SortableHeader
                             field="novosClientes"
                             currentSortField={sortField}
                             currentSortDirection={sortDirection}
@@ -1648,22 +1634,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                           >
                             Receita Novos
                           </SortableHeader>
-                          <SortableHeader
-                            field="pedidosPagos"
-                            currentSortField={sortField}
-                            currentSortDirection={sortDirection}
-                            onSort={handleSort}
-                          >
-                            Pedidos Pagos
-                          </SortableHeader>
-                          <SortableHeader
-                            field="taxaConversao"
-                            currentSortField={sortField}
-                            currentSortDirection={sortDirection}
-                            onSort={handleSort}
-                          >
-                            Taxa Conv.
-                          </SortableHeader>
+
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
@@ -1677,7 +1648,11 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                                 <span className="text-lg">{cluster}</span>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{formatNumber(totals.sessoes)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">
+                                {totals.sessoes > 0 ? ((totals.adicoesCarrinho / totals.sessoes) * 100).toFixed(1) : '0.0'}%
+                              </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{formatNumber(totals.adicoesCarrinho)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-orange-600">{conversionRate.toFixed(2)}%</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                 <div className="flex items-center gap-2">
                                   <span>{formatNumber(totals.pedidos)}</span>
@@ -1728,12 +1703,14 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                                   })()}
                                 </div>
                               </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-teal-600">{formatNumber(totals.pedidosPagos)}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">{formatCurrency(totals.receita)}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">{formatCurrency(totals.receitaPaga)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-cyan-600">
+                                {totals.receita > 0 ? ((totals.receitaPaga / totals.receita) * 100).toFixed(1) : '0.0'}%
+                              </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">{formatNumber(totals.novosClientes)}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{formatCurrency(totals.receitaNovosClientes)}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-teal-600">{formatNumber(totals.pedidosPagos)}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-orange-600">{conversionRate.toFixed(2)}%</td>
                             </tr>
                           )
                         })}

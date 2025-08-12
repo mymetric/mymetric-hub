@@ -7,9 +7,10 @@ interface TableSelectorProps {
   onTableChange: (table: string) => void
   availableTables?: string[]
   useCSV?: boolean // Nova prop para controlar se deve usar CSV
+  hideClientName?: boolean // Prop para ocultar o nome do cliente
 }
 
-const TableSelector = ({ currentTable, onTableChange, availableTables = [], useCSV = true }: TableSelectorProps) => {
+const TableSelector = ({ currentTable, onTableChange, availableTables = [], useCSV = true, hideClientName = false }: TableSelectorProps) => {
   const [isOpen, setIsOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -65,6 +66,9 @@ const TableSelector = ({ currentTable, onTableChange, availableTables = [], useC
 
   // Mostrar apenas o slug (sem nomes amigáveis)
   const getTableDisplayName = (tableName: string) => {
+    if (hideClientName) {
+      return 'Cliente Selecionado'
+    }
     return tableName
   }
 

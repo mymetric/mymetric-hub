@@ -18,9 +18,10 @@ interface ConversionFunnelProps {
   startDate: string
   endDate: string
   attributionModel?: string
+  hideClientName?: boolean
 }
 
-const ConversionFunnel = ({ selectedTable, startDate, endDate, attributionModel = 'Último Clique Não Direto' }: ConversionFunnelProps) => {
+const ConversionFunnel = ({ selectedTable, startDate, endDate, attributionModel = 'Último Clique Não Direto', hideClientName = false }: ConversionFunnelProps) => {
   const [funnelData, setFunnelData] = useState<FunnelDataItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -250,7 +251,7 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, attributionModel 
           </div>
           <h3 className="text-lg font-semibold text-gray-900 mb-2">Nenhum dado encontrado</h3>
           <p className="text-gray-600 mb-4">
-            Não foram encontrados dados para a tabela <strong>{selectedTable}</strong> no período selecionado.
+            Não foram encontrados dados para a tabela <strong>{hideClientName ? 'Cliente Selecionado' : selectedTable}</strong> no período selecionado.
           </p>
         </div>
       </div>
