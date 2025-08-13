@@ -1,5 +1,14 @@
 const API_BASE_URL = 'https://api.mymetric.app'
 
+// Função para validar table_name - não permite "all" como valor válido para consultas
+export const validateTableName = (tableName: string): boolean => {
+  if (tableName === 'all') {
+    console.log('⚠️ Tentativa de consultar table_name = "all" bloqueada')
+    return false
+  }
+  return true
+}
+
 // Função para verificar se é um erro de autenticação e deslogar se necessário
 const handleAuthError = (status: number) => {
   if (status === 401) {

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { BarChart3, Users, ShoppingCart, CreditCard, CheckCircle, TrendingUp, TrendingDown, ArrowDown, Calendar } from 'lucide-react'
-import { api } from '../services/api'
+import { api, validateTableName } from '../services/api'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 interface FunnelDataItem {
@@ -52,6 +52,11 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, attributionModel 
         const token = localStorage.getItem('auth-token')
         if (!token) {
           setError('Token de autenticação não encontrado')
+          return
+        }
+
+        // Validar que selectedTable não é "all" - não deve consultar diretamente
+        if (!validateTableName(selectedTable)) {
           return
         }
 

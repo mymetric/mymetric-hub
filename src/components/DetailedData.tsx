@@ -21,7 +21,7 @@ import {
   ArrowUpCircle,
   Users2
 } from 'lucide-react'
-import { api } from '../services/api'
+import { api, validateTableName } from '../services/api'
 import TimelineChart from './TimelineChart'
 
 interface DetailedDataItem {
@@ -86,6 +86,11 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
   useEffect(() => {
     const fetchDetailedData = async () => {
       if (!selectedTable) return
+
+      // Validar que selectedTable não é "all" - não deve consultar diretamente
+      if (!validateTableName(selectedTable)) {
+        return
+      }
 
       setIsLoading(true)
       setError(null)

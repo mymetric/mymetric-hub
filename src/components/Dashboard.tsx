@@ -23,7 +23,7 @@ import {
   Database,
   EyeOff
 } from 'lucide-react'
-import { api } from '../services/api'
+import { api, validateTableName } from '../services/api'
 import Logo from './Logo'
 import TableSelector from './TableSelector'
 import DateRangePicker from './DateRangePicker'
@@ -94,6 +94,11 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       const token = localStorage.getItem('auth-token')
       if (!token || !selectedTable) return
 
+      // Validar que selectedTable não é "all" - não deve consultar diretamente
+      if (!validateTableName(selectedTable)) {
+        return
+      }
+
       setIsLoadingGoals(true)
       console.log('🎯 Fetching goals for table:', selectedTable)
       
@@ -116,6 +121,11 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     try {
       const token = localStorage.getItem('auth-token')
       if (!token || !selectedTable) return
+
+      // Validar que selectedTable não é "all" - não deve consultar diretamente
+      if (!validateTableName(selectedTable)) {
+        return
+      }
 
       setIsLoadingCurrentMonth(true)
       
@@ -188,7 +198,13 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     const last7Days = getLast7Days()
     return last7Days.end
   })
-  const [selectedTable, setSelectedTable] = useState<string>(user?.tablename || 'coffeemais') // Valor padrão
+  const [selectedTable, setSelectedTable] = useState<string>(() => {
+    // Se o usuário tem tablename: 'all', usar um cliente padrão em vez de "all"
+    if (user?.tablename === 'all') {
+      return 'coffeemais' // Cliente padrão para usuários com acesso total
+    }
+    return user?.tablename || 'coffeemais'
+  })
   const [sortField, setSortField] = useState<string>('receita')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [showAllRecords, setShowAllRecords] = useState(false)
@@ -196,6 +212,9 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const [activeTab, setActiveTab] = useState<string>('visao-geral')
   const [filtersCollapsed, setFiltersCollapsed] = useState(true)
   const [attributionModel, setAttributionModel] = useState<string>('Último Clique Não Direto')
+  
+  // Estado para filtro de cluster
+  const [selectedCluster, setSelectedCluster] = useState<string>('')
   
   // Estados para dados históricos
   const [previousMetrics, setPreviousMetrics] = useState<MetricsDataItem[]>([])
@@ -232,7 +251,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     const last7Days = getLast7Days()
     
     // Aplicar parâmetros da URL aos estados
-    if (urlParams.table) {
+    if (urlParams.table && urlParams.table !== 'all') {
       setSelectedTable(urlParams.table)
     }
     if (urlParams.startDate) {
@@ -306,6 +325,11 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         // Verificar se selectedTable tem um valor válido
         if (!selectedTable || selectedTable.trim() === '') {
           console.log('⚠️ selectedTable está vazio, aguardando...')
+          return
+        }
+
+        // Validar que selectedTable não é "all" - não deve consultar diretamente
+        if (!validateTableName(selectedTable)) {
           return
         }
 
@@ -425,7 +449,9 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   }, [selectedTable, attributionModel])
 
   // Filtrar dados por cluster
-  const filteredMetrics = metrics
+  const filteredMetrics = selectedCluster 
+    ? metrics.filter(item => item.Cluster === selectedCluster)
+    : metrics
 
   // Calcular totais e médias baseados nos dados filtrados
   const totals = filteredMetrics.reduce((acc, item) => ({
@@ -597,6 +623,20 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   useEffect(() => {
     setCookieLossPercentage(calculatedCookieLossPercentage)
   }, [calculatedCookieLossPercentage])
+
+  // Verificar se a meta do mês está cadastrada
+  const currentDate = new Date()
+  const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`
+  const monthlyGoal = goals?.goals?.metas_mensais?.[currentMonth]?.meta_receita_paga
+  const isMonthlyGoalMissing = !isLoadingGoals && !isLoadingCurrentMonth && !monthlyGoal
+
+  // Estado para controlar a visibilidade do alerta de meta
+  const [showGoalAlert, setShowGoalAlert] = useState(isMonthlyGoalMissing)
+
+  // Atualizar o estado quando a verificação da meta mudar
+  useEffect(() => {
+    setShowGoalAlert(isMonthlyGoalMissing)
+  }, [isMonthlyGoalMissing])
 
   // Função de ordenação
   const sortData = (data: typeof clusterTotals) => {
@@ -776,6 +816,11 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         throw new Error('Token de autenticação não encontrado')
       }
       
+      // Validar que selectedTable não é "all" - não deve consultar diretamente
+      if (!validateTableName(selectedTable)) {
+        return
+      }
+
       // Preparar parâmetros baseados no modelo de atribuição
       const requestParams: any = {
         start_date: startDate,
@@ -1226,9 +1271,31 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
           </div>
         </div>
 
-        {/* Cookie Loss Alert */}
-        {cookieLossPercentage >= 5 && (
-          <div className="mb-3">
+        {/* Alerts Row */}
+        <div className="mb-3 space-y-2">
+          {/* Cluster Filter Indicator */}
+          {selectedCluster && (
+            <div className="rounded-md border px-3 py-2 bg-blue-50 border-blue-100">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Filter className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm font-medium text-blue-700">
+                    Filtrado por: <span className="font-semibold">{selectedCluster}</span>
+                  </span>
+                </div>
+                
+                <button
+                  onClick={() => setSelectedCluster('')}
+                  className="text-sm p-1 rounded hover:bg-blue-100 transition-colors text-blue-600 hover:text-blue-700"
+                  title="Remover filtro"
+                >
+                  Limpar filtro
+                </button>
+              </div>
+            </div>
+          )}
+          {/* Cookie Loss Alert */}
+          {cookieLossPercentage >= 5 && (
             <div className={`rounded-md border px-3 py-2 ${
               cookieLossPercentage < 10 
                 ? 'bg-yellow-50 border-yellow-100' 
@@ -1272,8 +1339,37 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 </button>
               </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {/* Monthly Goal Missing Alert */}
+          {showGoalAlert && (
+            <div className="rounded-md border px-3 py-2 bg-red-50 border-red-100">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="relative group">
+                    <span className="text-xs font-medium cursor-help text-red-700">
+                      🎯 Meta do mês não cadastrada
+                    </span>
+                    
+                    {/* Custom Tooltip */}
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+                      Cadastre a meta de receita paga para o mês atual para acompanhar o progresso
+                      <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                    </div>
+                  </div>
+                </div>
+                
+                <button
+                  onClick={() => setShowGoalAlert(false)}
+                  className="text-xs p-1 rounded hover:bg-opacity-20 transition-colors text-red-500 hover:bg-red-500"
+                  title="Fechar alerta"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Filters */}
         <div className="mb-6">
@@ -1643,9 +1739,38 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                           const conversionRate = totals.sessoes > 0 ? (totals.pedidos / totals.sessoes) * 100 : 0
                           
                           return (
-                            <tr key={index} className="hover:bg-gray-50">
+                            <tr 
+                              key={index} 
+                              className={`hover:bg-gray-50 cursor-pointer transition-all duration-200 group ${
+                                selectedCluster === cluster ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
+                              }`}
+                              onClick={() => {
+                                if (selectedCluster === cluster) {
+                                  setSelectedCluster('') // Desmarcar se já está selecionado
+                                } else {
+                                  setSelectedCluster(cluster) // Selecionar o cluster
+                                }
+                              }}
+                              title={selectedCluster === cluster ? "Clique para remover filtro" : "Clique para filtrar por este cluster"}
+                            >
                               <td className="px-6 py-4 whitespace-nowrap">
-                                <span className="text-lg">{cluster}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-lg transition-colors ${
+                                    selectedCluster === cluster ? 'text-blue-600 font-semibold' : 'group-hover:text-blue-600'
+                                  }`}>
+                                    {cluster}
+                                  </span>
+                                  <Filter className={`w-3 h-3 transition-opacity ${
+                                    selectedCluster === cluster 
+                                      ? 'text-blue-600 opacity-100' 
+                                      : 'text-gray-400 opacity-0 group-hover:opacity-100'
+                                  }`} />
+                                  {selectedCluster === cluster && (
+                                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">
+                                      Filtrado
+                                    </span>
+                                  )}
+                                </div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{formatNumber(totals.sessoes)}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">

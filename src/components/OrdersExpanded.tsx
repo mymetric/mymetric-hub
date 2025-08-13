@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { X, ShoppingBag, Calendar, User, Package, RefreshCw } from 'lucide-react'
-import { api } from '../services/api'
+import { api, validateTableName } from '../services/api'
 
 interface Order {
   Horario: string
@@ -145,6 +145,11 @@ const OrdersExpanded = ({
       const token = localStorage.getItem('auth-token')
       if (!token) {
         throw new Error('Token de autenticação não encontrado')
+      }
+
+      // Validar que tableName não é "all" - não deve consultar diretamente
+      if (!validateTableName(tableName)) {
+        return
       }
 
       // Preparar parâmetros baseados no modelo de atribuição

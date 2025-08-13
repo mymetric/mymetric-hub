@@ -133,9 +133,17 @@ const TableSelector = ({ currentTable, onTableChange, availableTables = [], useC
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Buscar cliente..."
+                placeholder="Buscar cliente... (Enter para selecionar o primeiro)"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && filteredTables.length > 0) {
+                    e.preventDefault()
+                    // Selecionar o primeiro cliente da lista filtrada
+                    onTableChange(filteredTables[0])
+                    handleCloseDropdown()
+                  }
+                }}
                 className="w-full pl-10 pr-8 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 autoFocus
                 ref={searchInputRef}
@@ -153,6 +161,11 @@ const TableSelector = ({ currentTable, onTableChange, availableTables = [], useC
           
           {/* Lista de tabelas */}
           <div className="py-1 sm:py-2 max-h-60 overflow-y-auto">
+            {searchTerm && filteredTables.length > 0 && (
+              <div className="px-3 sm:px-4 py-1 text-xs text-gray-500 text-center border-b border-gray-100">
+                Pressione Enter para selecionar "{filteredTables[0]}"
+              </div>
+            )}
             {isActuallyLoading ? (
               <div className="px-3 sm:px-4 py-2.5 sm:py-3 text-sm text-gray-500 text-center">
                 <div className="flex items-center justify-center gap-2">
