@@ -59,6 +59,9 @@ interface DetailedDataRequest {
   end_date: string
   table_name: string
   attribution_model?: string
+  limit?: number
+  offset?: number
+  order_by?: string
 }
 
 interface GoalsRequest {

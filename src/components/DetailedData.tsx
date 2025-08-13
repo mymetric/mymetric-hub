@@ -8,7 +8,6 @@ import {
   Globe,
   Target,
   FileText,
-  Hash,
   Tag,
   Layers,
   ChevronUp,
@@ -19,12 +18,13 @@ import {
   Sparkles,
   ShoppingBag,
   ArrowUpCircle,
-  Users2,
-  Database
+  Database,
+  Loader2
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
 import TimelineChart from './TimelineChart'
 import { useUrlParams } from '../hooks/useUrlParams'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 interface DetailedDataItem {
   Data: string
@@ -53,6 +53,13 @@ interface GroupedData {
   [key: string]: DetailedDataItem[]
 }
 
+interface PaginationInfo {
+  limit: number
+  offset: number
+  order_by: string
+  has_more: boolean | undefined
+}
+
 interface DetailedDataProps {
   startDate: string
   endDate: string
@@ -61,7 +68,7 @@ interface DetailedDataProps {
   hideClientName?: boolean
 }
 
-const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hideClientName = false }: DetailedDataProps) => {
+const DetailedData = ({ startDate, endDate, selectedTable, attributionModel }: DetailedDataProps) => {
   const { getUrlParams, updateUrlParams } = useUrlParams()
   const [data, setData] = useState<DetailedDataItem[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -70,8 +77,18 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
   const [searchTerm, setSearchTerm] = useState('')
   const [isInitialized, setIsInitialized] = useState(false)
 
-  const [showTabChangeIndicator, setShowTabChangeIndicator] = useState(false)
+  // Estados para paginação
+  const [pagination, setPagination] = useState<PaginationInfo>({
+    limit: 10000,
+    offset: 0,
+    order_by: 'Pedidos',
+    has_more: false
+  })
+  const [isLoadingAll, setIsLoadingAll] = useState(false)
+  const [autoLoadProgress, setAutoLoadProgress] = useState(0)
+  const [currentBatchNumber, setCurrentBatchNumber] = useState(1)
 
+  const [showTabChangeIndicator, setShowTabChangeIndicator] = useState(false)
 
   const [activeTab, setActiveTab] = useState('cluster')
   const [showAllGroups, setShowAllGroups] = useState(false)
@@ -123,6 +140,8 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
     }
   }
 
+
+
   // Buscar dados detalhados
   useEffect(() => {
     const fetchDetailedData = async () => {
@@ -137,6 +156,9 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
       setLoadingMessage('Iniciando busca de dados...')
       setError(null)
 
+              // Resetar paginação quando os filtros mudarem
+        setPagination(prev => ({ ...prev, offset: 0, has_more: false as boolean | undefined }))
+
       try {
         const token = localStorage.getItem('auth-token')
         if (!token) return
@@ -146,23 +168,33 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
         // Atualizar mensagem de loading
         setLoadingMessage('Conectando com o servidor...')
         
-        // Adicionar timeout para evitar travamentos
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Timeout: A requisição demorou muito tempo')), 30000) // 30 segundos
-        })
-
         setLoadingMessage('Buscando dados detalhados...')
         
         const response = await fetchDetailedDataWithRetry(token, {
           start_date: startDate,
           end_date: endDate,
           table_name: selectedTable,
-          attribution_model: attributionModel
+          attribution_model: attributionModel,
+          limit: pagination.limit,
+          offset: 0,
+          order_by: pagination.order_by
         })
 
         console.log('✅ Dados detalhados recebidos:', response.data?.length || 0, 'registros')
         
         setData(response.data || [])
+        
+        // Atualizar informações de paginação
+        if (response.pagination) {
+          setPagination(response.pagination)
+        }
+
+        // Se há mais dados, carregar automaticamente todos
+        if (response.pagination?.has_more) {
+          console.log('🚀 Iniciando carregamento automático de todos os dados...')
+          await loadAllDataAutomatically(token, response.data?.length || 0)
+        }
+        
       } catch (err) {
         console.error('Error fetching detailed data:', err)
         if (err instanceof Error && err.message.includes('Timeout')) {
@@ -178,6 +210,85 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
 
     fetchDetailedData()
   }, [startDate, endDate, selectedTable, attributionModel, isInitialized])
+
+  // Função para carregar automaticamente todos os dados (sem botões)
+  const loadAllDataAutomatically = async (token: string, initialDataLength: number) => {
+    setIsLoadingAll(true)
+    setLoadingMessage('Carregando dados automaticamente...')
+    setAutoLoadProgress(0)
+
+    try {
+      let currentOffset = pagination.limit // Começar do segundo lote
+      let hasMore: boolean = true
+      let totalLoaded = initialDataLength
+      let batchCount = 1
+
+      console.log('🚀 Iniciando carregamento automático de todos os dados...')
+
+      while (hasMore) {
+        batchCount++
+        currentOffset += pagination.limit
+        
+        console.log(`🔄 Carregando lote ${batchCount}... (offset: ${currentOffset})`)
+        setLoadingMessage(`Carregando lote ${batchCount}... (${totalLoaded} registros carregados)`)
+        
+        // Atualizar número do lote atual
+        setCurrentBatchNumber(batchCount)
+        
+        const response = await fetchDetailedDataWithRetry(token, {
+          start_date: startDate,
+          end_date: endDate,
+          table_name: selectedTable,
+          attribution_model: attributionModel,
+          limit: pagination.limit,
+          offset: currentOffset,
+          order_by: pagination.order_by
+        })
+
+        const newData = response.data || []
+        totalLoaded += newData.length
+        
+        console.log(`✅ Lote ${batchCount} carregado:`, newData.length, 'registros')
+        
+        // Adicionar novos dados aos existentes
+        setData(prevData => [...prevData, ...newData])
+        
+        // Atualizar progresso baseado no número de lotes
+        // Usar uma estimativa mais realista baseada no número de lotes carregados
+        const estimatedTotalBatches = Math.max(10, batchCount + 2) // Estimativa dinâmica
+        const progress = Math.min((batchCount / estimatedTotalBatches) * 100, 95) // Máximo 95% até finalizar
+        setAutoLoadProgress(progress)
+        
+        // Atualizar informações de paginação
+        if (response.pagination) {
+          setPagination(response.pagination)
+          hasMore = response.pagination.has_more || false
+        } else {
+          hasMore = false
+        }
+        
+        // Pequena pausa para não sobrecarregar o servidor
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+
+      console.log('🎉 Carregamento automático concluído!', totalLoaded, 'registros carregados')
+      setLoadingMessage('Carregamento concluído!')
+      
+      // Aguardar um pouco antes de limpar a mensagem
+      setTimeout(() => setLoadingMessage(''), 2000)
+      
+    } catch (err) {
+      console.error('Error loading all data automatically:', err)
+      if (err instanceof Error && err.message.includes('Timeout')) {
+        setError('A requisição demorou muito tempo. Tente novamente.')
+      } else {
+        setError('Erro ao carregar todos os dados')
+      }
+    } finally {
+      setIsLoadingAll(false)
+      setAutoLoadProgress(0)
+    }
+  }
 
   // Aplicar filtros acumulativos quando os dados são carregados
   useEffect(() => {
@@ -252,9 +363,36 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
   // Usar dados filtrados por grupo para métricas e timeline também
   const dataForMetrics = selectedFilters.length > 0 ? filteredByGroup : filteredData
 
+  // Atualizar título da aba com progresso do carregamento
+  const getDocumentTitle = () => {
+    if (isLoading && data.length === 0) {
+      return '⏳ Carregando dados... | MyMetric Hub'
+    }
+    if (isLoadingAll && data.length > 0) {
+      const progress = Math.round(autoLoadProgress)
+      // Usar número real do lote atual
+      return `🔄 Lote ${currentBatchNumber} (${progress}%) | ${data.length} registros | MyMetric Hub`
+    }
+    if (data.length > 0) {
+      if (pagination.has_more) {
+        return `${data.length} registros • Carregando mais... | MyMetric Hub`
+      }
+      return `${data.length} registros • Completo | MyMetric Hub`
+    }
+    return 'MyMetric Hub'
+  }
+
+  useDocumentTitle(getDocumentTitle())
+
+  // Atualizar título quando o progresso mudar
+  useEffect(() => {
+    const title = getDocumentTitle()
+    document.title = title
+  }, [isLoading, isLoadingAll, autoLoadProgress, data.length, pagination.has_more, currentBatchNumber])
+
   // Agrupar dados por diferentes critérios - otimizado para performance
   const groupedData: { [key: string]: { [key: string]: DetailedDataItem[] } } = React.useMemo(() => {
-    const groups = {
+    const groups: { [key: string]: { [key: string]: DetailedDataItem[] } } = {
       cluster: {},
       origemMidia: {},
       campanha: {},
@@ -310,111 +448,7 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
     return groups
   }, [dataToGroup])
 
-  // Funções para gerar opções ordenadas por receita para cada filtro - otimizadas com useMemo
-  const getClusterOptions = React.useMemo(() => {
-    const clusterTotals = dataToGroup.reduce((acc, item) => {
-      const cluster = item.Cluster || 'Sem Cluster'
-      if (!acc[cluster]) {
-        acc[cluster] = { name: cluster, receita: 0 }
-      }
-      acc[cluster].receita += item.Receita
-      return acc
-    }, {} as { [key: string]: { name: string; receita: number } })
 
-    return Object.values(clusterTotals)
-      .sort((a, b) => b.receita - a.receita)
-      .map(item => ({ value: item.name, label: `${item.name} (R$ ${item.receita.toLocaleString('pt-BR')})` }))
-  }, [dataToGroup])
-
-  const getOrigemOptions = React.useMemo(() => {
-    const origemTotals = dataToGroup.reduce((acc, item) => {
-      const origem = item.Origem || 'Sem Origem'
-      if (!acc[origem]) {
-        acc[origem] = { name: origem, receita: 0 }
-      }
-      acc[origem].receita += item.Receita
-      return acc
-    }, {} as { [key: string]: { name: string; receita: number } })
-
-    return Object.values(origemTotals)
-      .sort((a, b) => b.receita - a.receita)
-      .map(item => ({ value: item.name, label: `${item.name} (R$ ${item.receita.toLocaleString('pt-BR')})` }))
-  }, [dataToGroup])
-
-  const getMidiaOptions = React.useMemo(() => {
-    const midiaTotals = dataToGroup.reduce((acc, item) => {
-      const midia = item.Midia || 'Sem Mídia'
-      if (!acc[midia]) {
-        acc[midia] = { name: midia, receita: 0 }
-      }
-      acc[midia].receita += item.Receita
-      return acc
-    }, {} as { [key: string]: { name: string; receita: number } })
-
-    return Object.values(midiaTotals)
-      .sort((a, b) => b.receita - a.receita)
-      .map(item => ({ value: item.name, label: `${item.name} (R$ ${item.receita.toLocaleString('pt-BR')})` }))
-  }, [dataToGroup])
-
-  const getCampanhaOptions = React.useMemo(() => {
-    const campanhaTotals = dataToGroup.reduce((acc, item) => {
-      const campanha = item.Campanha || 'Sem Campanha'
-      if (!acc[campanha]) {
-        acc[campanha] = { name: campanha, receita: 0 }
-      }
-      acc[campanha].receita += item.Receita
-      return acc
-    }, {} as { [key: string]: { name: string; receita: number } })
-
-    return Object.values(campanhaTotals)
-      .sort((a, b) => b.receita - a.receita)
-      .map(item => ({ value: item.name, label: `${item.name} (R$ ${item.receita.toLocaleString('pt-BR')})` }))
-  }, [dataToGroup])
-
-  const getPaginaEntradaOptions = React.useMemo(() => {
-    const paginaTotals = dataToGroup.reduce((acc, item) => {
-      const pagina = item.Pagina_de_Entrada || 'Sem Página'
-      if (!acc[pagina]) {
-        acc[pagina] = { name: pagina, receita: 0 }
-      }
-      acc[pagina].receita += item.Receita
-      return acc
-    }, {} as { [key: string]: { name: string; receita: number } })
-
-    return Object.values(paginaTotals)
-      .sort((a, b) => b.receita - a.receita)
-      .map(item => ({ value: item.name, label: `${item.name} (R$ ${item.receita.toLocaleString('pt-BR')})` }))
-  }, [dataToGroup])
-
-  const getConteudoOptions = React.useMemo(() => {
-    const conteudoTotals = dataToGroup.reduce((acc, item) => {
-      const conteudo = item.Conteudo || 'Sem Conteúdo'
-      if (!acc[conteudo]) {
-        acc[conteudo] = { name: conteudo, receita: 0 }
-      }
-      acc[conteudo].receita += item.Receita
-      return acc
-    }, {} as { [key: string]: { name: string; receita: number } })
-
-    return Object.values(conteudoTotals)
-      .sort((a, b) => b.receita - a.receita)
-      .map(item => ({ value: item.name, label: `${item.name} (R$ ${item.receita.toLocaleString('pt-BR')})` }))
-  }, [dataToGroup])
-
-  const getCupomOptions = React.useMemo(() => {
-    const cupomTotals = dataToGroup.reduce((acc, item) => {
-      const cupom = item.Cupom || 'Sem Cupom'
-      if (!acc[cupom]) {
-        acc[cupom] = { name: cupom, receita: 0 }
-      }
-      acc[cupom].receita += item.Receita
-      return acc
-    }, {} as { [key: string]: { name: string; receita: number } })
-
-    return Object.values(cupomTotals)
-      .sort((a, b) => b.receita - a.receita)
-      .map(item => ({ value: item.name, label: `${item.name} (R$ ${item.receita.toLocaleString('pt-BR')})` }))
-  }, [dataToGroup])
 
 
 
@@ -549,9 +583,7 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
     return new Intl.NumberFormat('pt-BR').format(value)
   }
 
-  const formatTime = (hour: number) => {
-    return `${hour.toString().padStart(2, '0')}:00`
-  }
+
 
   const MetricCard = ({ 
     title, 
@@ -655,7 +687,7 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
                      <tr 
                        key={groupName} 
                        className="hover:bg-gray-50 cursor-pointer transition-colors group"
-                       onClick={() => handleRowClick(groupName, items)}
+                       onClick={() => handleRowClick(groupName)}
                        title="Clique para filtrar e ir para a próxima aba"
                      >
                       <td className="px-6 py-4 text-sm font-medium text-gray-900 max-w-48 truncate group-hover:text-blue-600" title={groupName}>
@@ -709,20 +741,71 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
             </button>
           </div>
         )}
+
+                  {/* Barra de progresso para carregamento automático */}
+          {isLoadingAll && (
+            <div className="flex flex-col items-center gap-4 mt-6">
+              <div className="w-full max-w-md">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-gray-700">Carregando dados automaticamente...</span>
+                  <span className="text-sm text-gray-500">Lote {currentBatchNumber}</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div 
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${autoLoadProgress}%` }}
+                  ></div>
+                </div>
+              </div>
+            </div>
+          )}
+
+        {/* Informações de paginação */}
+        {data.length > 0 && (
+          <div className="mt-4 text-center text-sm text-gray-500">
+            <p>
+              {data.length} registros carregados
+              {pagination.has_more && ` • Carregando mais dados...`}
+              {!pagination.has_more && (
+                <span className="text-green-600 font-medium"> • Carregamento completo! 🎉</span>
+              )}
+            </p>
+          </div>
+        )}
       </div>
   )
   }
 
-  if (isLoading) {
+  // Mostrar loading apenas se não há dados ainda
+  if (isLoading && data.length === 0) {
     return (
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-        <div className="flex items-center justify-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-3"></div>
-          <span className="text-gray-700">{loadingMessage || 'Carregando dados detalhados...'}</span>
-        </div>
-        <div className="mt-4 text-center text-sm text-gray-500">
-          <p>Isso pode levar alguns segundos dependendo da quantidade de dados</p>
-          <p className="mt-2 text-xs">Se demorar muito, tente reduzir o período de datas</p>
+        <div className="flex flex-col items-center justify-center">
+          <div className="flex items-center mb-4">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-3"></div>
+            <span className="text-gray-700 text-lg font-medium">{loadingMessage || 'Carregando dados detalhados...'}</span>
+          </div>
+          
+          {/* Barra de progresso para carregamento automático */}
+          {isLoadingAll && (
+            <div className="w-full max-w-md mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-gray-700">Carregando dados automaticamente...</span>
+                <span className="text-sm text-gray-500">Lote {currentBatchNumber}</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-3">
+                <div 
+                  className="bg-blue-600 h-3 rounded-full transition-all duration-300"
+                  style={{ width: `${autoLoadProgress}%` }}
+                ></div>
+              </div>
+            </div>
+          )}
+          
+          <div className="text-center text-sm text-gray-500">
+            <p>Isso pode levar alguns segundos dependendo da quantidade de dados</p>
+            <p className="mt-2 text-xs">Se demorar muito, tente reduzir o período de datas</p>
+          </div>
         </div>
       </div>
     )
@@ -795,7 +878,56 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
     }
   }
 
-  const handleRowClick = (groupName: string, items: DetailedDataItem[]) => {
+  // Função para recarregar dados com nova ordenação
+  const reloadDataWithOrder = async (orderBy: string) => {
+    if (!selectedTable || !isInitialized) return
+
+    setIsLoading(true)
+    setLoadingMessage('Recarregando dados com nova ordenação...')
+    setError(null)
+
+    // Resetar paginação
+    setPagination(prev => ({ ...prev, offset: 0, has_more: false, order_by: orderBy }))
+
+    try {
+      const token = localStorage.getItem('auth-token')
+      if (!token) return
+
+      console.log('🔄 Recarregando dados com ordenação:', orderBy)
+      
+      const response = await fetchDetailedDataWithRetry(token, {
+        start_date: startDate,
+        end_date: endDate,
+        table_name: selectedTable,
+        attribution_model: attributionModel,
+        limit: pagination.limit,
+        offset: 0,
+        order_by: orderBy
+      })
+
+      console.log('✅ Dados recarregados:', response.data?.length || 0, 'registros')
+      
+      setData(response.data || [])
+      
+      // Atualizar informações de paginação
+      if (response.pagination) {
+        setPagination(response.pagination)
+      }
+      
+    } catch (err) {
+      console.error('Error reloading data:', err)
+      if (err instanceof Error && err.message.includes('Timeout')) {
+        setError('A requisição demorou muito tempo. Tente novamente.')
+      } else {
+        setError('Erro ao recarregar dados')
+      }
+    } finally {
+      setIsLoading(false)
+      setLoadingMessage('')
+    }
+  }
+
+  const handleRowClick = (groupName: string) => {
     // Verificar se o filtro já existe
     const existingFilterIndex = selectedFilters.findIndex(filter => 
       filter.type === activeTab && filter.value === groupName
@@ -866,7 +998,15 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
       <div className="px-6 py-4 border-b border-gray-200">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Visão Detalhada</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-semibold text-gray-900">Visão Detalhada</h2>
+              {isLoadingAll && (
+                <div className="flex items-center gap-1 px-2 py-1 bg-green-50 border border-green-200 rounded-md">
+                  <Loader2 className="w-3 h-3 text-green-600 animate-spin" />
+                  <span className="text-xs text-green-700 font-medium">Carregando todos ({Math.round(autoLoadProgress)}%)</span>
+                </div>
+              )}
+            </div>
             {selectedFilters.length > 0 && (
               <div className="flex items-center gap-2 mt-1 flex-wrap">
                 {selectedFilters.map((filter, index) => (
@@ -880,8 +1020,40 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
               </div>
             )}
 
+            {/* Informações de paginação no header */}
+            {data.length > 0 && (
+              <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center gap-1 px-2 py-1 bg-gray-50 border border-gray-200 rounded-md">
+                  <Database className="w-3 h-3 text-gray-600" />
+                  <span className="text-xs text-gray-700 font-medium">
+                    {data.length} registros carregados
+                    {pagination.has_more && ` • Carregando mais...`}
+                    {!pagination.has_more && ` • Carregamento completo`}
+                  </span>
+                </div>
+              </div>
+            )}
+
           </div>
           <div className="flex items-center gap-3">
+            {/* Seletor de ordenação */}
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-600 font-medium">Ordenar por:</label>
+              <select
+                value={pagination.order_by}
+                onChange={(e) => reloadDataWithOrder(e.target.value)}
+                className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                disabled={isLoading}
+              >
+                <option value="Pedidos">Pedidos</option>
+                <option value="Receita">Receita</option>
+                <option value="Receita_Paga">Receita Paga</option>
+                <option value="Sessoes">Sessões</option>
+                <option value="Adicoes_ao_Carrinho">Adições ao Carrinho</option>
+                <option value="Pedidos_Pagos">Pedidos Pagos</option>
+              </select>
+            </div>
+
             {selectedFilters.length > 0 && (
               <button
                 onClick={() => {
@@ -923,6 +1095,24 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
 
 
       </div>
+
+      {/* Indicador de loading durante carregamento automático */}
+      {isLoadingAll && data.length > 0 && (
+        <div className="px-6 py-3 bg-blue-50 border-b border-blue-200">
+          <div className="flex items-center justify-center gap-3">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+            <span className="text-sm text-blue-700 font-medium">
+              Carregando mais dados... Lote {currentBatchNumber}
+            </span>
+            <div className="w-32 bg-blue-200 rounded-full h-2">
+              <div 
+                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${autoLoadProgress}%` }}
+              ></div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Metrics Grid */}
       <div className="px-6 py-4">
