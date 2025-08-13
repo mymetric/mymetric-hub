@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { 
   BarChart3,
-  PieChart,
   ArrowUpRight,
   ArrowDownRight,
   LogOut,
@@ -243,8 +242,9 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const [downloadStartTimes, setDownloadStartTimes] = useState<Map<string, number>>(new Map())
   const [downloadMessages, setDownloadMessages] = useState<Map<string, string>>(new Map())
   
-  // const tokenCheckInterval = useRef<NodeJS.Timeout | null>(null)
-
+  // Estados para controle de dados
+  const [totalRecords, setTotalRecords] = useState(0)
+  
   // Carregar parâmetros da URL na inicialização
   useEffect(() => {
     const urlParams = getUrlParams()
@@ -316,6 +316,35 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       : `Dashboard ${hideClientName ? 'Cliente Selecionado' : selectedTable} | MyMetricHUB`
   )
 
+
+
+  // Função para buscar métricas com retry em caso de timeout
+  const fetchMetricsWithRetry = async (token: string, params: any, isRetry = false) => {
+    try {
+      const response = await api.getMetrics(token, params)
+      return response
+    } catch (error) {
+      // Verificar se é um erro de timeout
+      const isTimeout = error instanceof Error && (
+        error.message.includes('timeout') || 
+        error.message.includes('Timeout') ||
+        error.message.includes('demorou muito tempo')
+      )
+      
+      if (isTimeout && !isRetry) {
+        console.log('⏰ Timeout detectado, tentando novamente em 5 segundos...')
+        
+        // Aguardar 5 segundos
+        await new Promise(resolve => setTimeout(resolve, 5000))
+        
+        console.log('🔄 Tentando novamente...')
+        return await fetchMetricsWithRetry(token, params, true)
+      }
+      
+      throw error
+    }
+  }
+
   useEffect(() => {
     const fetchMetrics = async () => {
       try {
@@ -346,8 +375,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
           table_name: selectedTable
         })
 
-        // Buscar dados do período atual
-        const response = await api.getMetrics(token, {
+        // Buscar dados do período atual com retry
+        const response = await fetchMetricsWithRetry(token, {
           start_date: requestStartDate,
           end_date: requestEndDate,
           table_name: selectedTable,
@@ -358,13 +387,14 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         console.log('📈 Data length:', response.data?.length || 0)
 
         setMetrics(response.data || [])
+        setTotalRecords(response.data?.length || 0)
         
         // Buscar dados do período anterior para comparação
         const previousPeriod = getPreviousPeriod()
         console.log('📊 Fetching previous period:', previousPeriod)
         
         try {
-          const previousResponse = await api.getMetrics(token, {
+          const previousResponse = await fetchMetricsWithRetry(token, {
             start_date: previousPeriod.start,
             end_date: previousPeriod.end,
             table_name: selectedTable,
@@ -1561,7 +1591,14 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                     <div className="hidden md:flex items-center justify-between">
                       <div>
                         <h2 className="text-lg font-semibold text-gray-900">Dados Agrupados por Cluster</h2>
-                        <p className="text-sm text-gray-500">Métricas consolidadas por cluster</p>
+                        <p className="text-sm text-gray-500">
+                          Métricas consolidadas por cluster
+                                                      {totalRecords > 0 && (
+                              <span className="ml-2 text-xs text-gray-400">
+                                • {totalRecords.toLocaleString()} registros
+                              </span>
+                            )}
+                        </p>
                       </div>
                       <div className="flex items-center gap-4">
                         {/* Attribution Model Selector */}
@@ -1598,7 +1635,14 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       <div className="flex items-center justify-between mb-3">
                         <div>
                           <h2 className="text-lg font-semibold text-gray-900">Dados Agrupados por Cluster</h2>
-                          <p className="text-sm text-gray-500">Métricas consolidadas por cluster</p>
+                          <p className="text-sm text-gray-500">
+                            Métricas consolidadas por cluster
+                            {totalRecords > 0 && (
+                              <span className="ml-2 text-xs text-gray-400">
+                                • {totalRecords.toLocaleString()} registros
+                              </span>
+                            )}
+                          </p>
                         </div>
                         {isTableLoading && (
                           <div className="flex items-center gap-2 text-sm text-gray-600">

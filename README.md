@@ -35,6 +35,7 @@ Uma tela de login elegante e responsiva para o MyMetricHUB, construída com tecn
 - 🏢 Seletor de cliente para tablename "all"
 - 📊 Métricas dinâmicas com seletor de datas
 
+
 ## 🛠️ Instalação
 
 1. Clone o repositório ou navegue até a pasta do projeto
@@ -64,9 +65,9 @@ npm run dev
 - **Token:** JWT com expiração de 24 horas
 - **Validação:** Tokens são validados automaticamente
 
-## 📡 Formato da API
 
-### Login (POST /login)
+
+## 📡 Formato da API
 ```json
 // Request
 {

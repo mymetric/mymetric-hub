@@ -43,6 +43,33 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, attributionModel 
     }))
   }
 
+  // Função para buscar dados do funil com retry em caso de timeout
+  const fetchFunnelDataWithRetry = async (token: string, params: any, isRetry = false) => {
+    try {
+      const response = await api.getFunnelData(token, params)
+      return response
+    } catch (error) {
+      // Verificar se é um erro de timeout
+      const isTimeout = error instanceof Error && (
+        error.message.includes('timeout') || 
+        error.message.includes('Timeout') ||
+        error.message.includes('demorou muito tempo')
+      )
+      
+      if (isTimeout && !isRetry) {
+        console.log('⏰ Timeout detectado no funil, tentando novamente em 5 segundos...')
+        
+        // Aguardar 5 segundos
+        await new Promise(resolve => setTimeout(resolve, 5000))
+        
+        console.log('🔄 Tentando novamente funil...')
+        return await fetchFunnelDataWithRetry(token, params, true)
+      }
+      
+      throw error
+    }
+  }
+
   useEffect(() => {
     const fetchFunnelData = async () => {
       try {
@@ -69,7 +96,7 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, attributionModel 
 
         console.log('🔍 ConversionFunnel - requestData:', requestData)
 
-        const response = await api.getFunnelData(token, requestData)
+        const response = await fetchFunnelDataWithRetry(token, requestData)
 
         console.log('🔍 ConversionFunnel - response.data:', response.data)
         console.log('🔍 ConversionFunnel - data length:', response.data?.length || 0)

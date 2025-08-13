@@ -69,7 +69,7 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [isInitialized, setIsInitialized] = useState(false)
-  const [dataLimited, setDataLimited] = useState(false)
+
   const [showTabChangeIndicator, setShowTabChangeIndicator] = useState(false)
 
 
@@ -89,6 +89,39 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
     }
     setIsInitialized(true)
   }, []) // Executar apenas na inicialização
+
+  // Função para buscar dados detalhados com retry em caso de timeout
+  const fetchDetailedDataWithRetry = async (token: string, params: any, isRetry = false) => {
+    try {
+      // Adicionar timeout para evitar travamentos
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Timeout: A requisição demorou muito tempo')), 30000) // 30 segundos
+      })
+
+      const dataPromise = api.getDetailedData(token, params)
+      const response = await Promise.race([dataPromise, timeoutPromise]) as any
+      return response
+    } catch (error) {
+      // Verificar se é um erro de timeout
+      const isTimeout = error instanceof Error && (
+        error.message.includes('timeout') || 
+        error.message.includes('Timeout') ||
+        error.message.includes('demorou muito tempo')
+      )
+      
+      if (isTimeout && !isRetry) {
+        console.log('⏰ Timeout detectado em dados detalhados, tentando novamente em 5 segundos...')
+        
+        // Aguardar 5 segundos
+        await new Promise(resolve => setTimeout(resolve, 5000))
+        
+        console.log('🔄 Tentando novamente dados detalhados...')
+        return await fetchDetailedDataWithRetry(token, params, true)
+      }
+      
+      throw error
+    }
+  }
 
   // Buscar dados detalhados
   useEffect(() => {
@@ -120,29 +153,16 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
 
         setLoadingMessage('Buscando dados detalhados...')
         
-        const dataPromise = api.getDetailedData(token, {
+        const response = await fetchDetailedDataWithRetry(token, {
           start_date: startDate,
           end_date: endDate,
           table_name: selectedTable,
           attribution_model: attributionModel
         })
 
-        const response = await Promise.race([dataPromise, timeoutPromise]) as any
-
         console.log('✅ Dados detalhados recebidos:', response.data?.length || 0, 'registros')
         
-        // Limitar a quantidade de dados para evitar travamentos
-        const maxRecords = 10000 // Máximo de 10k registros
-        const limitedData = response.data?.slice(0, maxRecords) || []
-        
-        if (response.data?.length > maxRecords) {
-          console.warn(`⚠️ Dados limitados a ${maxRecords} registros de ${response.data.length} totais`)
-          setDataLimited(true)
-        } else {
-          setDataLimited(false)
-        }
-        
-        setData(limitedData)
+        setData(response.data || [])
       } catch (err) {
         console.error('Error fetching detailed data:', err)
         if (err instanceof Error && err.message.includes('Timeout')) {
@@ -859,15 +879,7 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
                 ))}
               </div>
             )}
-            {dataLimited && (
-              <div className="flex items-center gap-2 mt-1">
-                <div className="flex items-center gap-1 px-2 py-1 bg-yellow-50 border border-yellow-200 rounded-md">
-                  <span className="text-sm text-yellow-700 font-medium">
-                    ⚠️ Dados limitados a 10.000 registros para melhor performance
-                  </span>
-                </div>
-              </div>
-            )}
+
           </div>
           <div className="flex items-center gap-3">
             {selectedFilters.length > 0 && (
