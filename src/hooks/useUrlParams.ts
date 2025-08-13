@@ -6,6 +6,8 @@ interface UrlParams {
   endDate?: string
   tab?: string
   cluster?: string
+  detailedFilter?: string
+  detailedFilterType?: string
 }
 
 export const useUrlParams = () => {
@@ -17,7 +19,9 @@ export const useUrlParams = () => {
       startDate: urlParams.get('startDate') || undefined,
       endDate: urlParams.get('endDate') || undefined,
       tab: urlParams.get('tab') || undefined,
-      cluster: urlParams.get('cluster') || undefined
+      cluster: urlParams.get('cluster') || undefined,
+      detailedFilter: urlParams.get('detailedFilter') || undefined,
+      detailedFilterType: urlParams.get('detailedFilterType') || undefined
     }
   }, [])
 

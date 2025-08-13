@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { 
   Filter,
   Search,
@@ -19,10 +19,12 @@ import {
   Sparkles,
   ShoppingBag,
   ArrowUpCircle,
-  Users2
+  Users2,
+  Database
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
 import TimelineChart from './TimelineChart'
+import { useUrlParams } from '../hooks/useUrlParams'
 
 interface DetailedDataItem {
   Data: string
@@ -60,32 +62,38 @@ interface DetailedDataProps {
 }
 
 const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hideClientName = false }: DetailedDataProps) => {
+  const { getUrlParams, updateUrlParams } = useUrlParams()
   const [data, setData] = useState<DetailedDataItem[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [loadingMessage, setLoadingMessage] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
+  const [isInitialized, setIsInitialized] = useState(false)
+  const [dataLimited, setDataLimited] = useState(false)
+  const [showTabChangeIndicator, setShowTabChangeIndicator] = useState(false)
 
-  const [showFilters, setShowFilters] = useState(false)
-  const [filters, setFilters] = useState({
-    cluster: '',
-    origem: '',
-    midia: '',
-    campanha: '',
-    paginaEntrada: '',
-    conteudo: '',
-    cupom: ''
-  })
+
   const [activeTab, setActiveTab] = useState('cluster')
   const [showAllGroups, setShowAllGroups] = useState(false)
   const [sortField, setSortField] = useState('Receita_Paga')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
-  const [selectedGroup, setSelectedGroup] = useState<string>('')
+  const [selectedFilters, setSelectedFilters] = useState<Array<{type: string, value: string}>>([])
   const [filteredByGroup, setFilteredByGroup] = useState<DetailedDataItem[]>([])
+
+  // Carregar filtros da URL na inicialização
+  useEffect(() => {
+    const urlParams = getUrlParams()
+    if (urlParams.detailedFilter && urlParams.detailedFilterType) {
+      setSelectedFilters([{type: urlParams.detailedFilterType, value: urlParams.detailedFilter}])
+      setActiveTab(urlParams.detailedFilterType)
+    }
+    setIsInitialized(true)
+  }, []) // Executar apenas na inicialização
 
   // Buscar dados detalhados
   useEffect(() => {
     const fetchDetailedData = async () => {
-      if (!selectedTable) return
+      if (!selectedTable || !isInitialized) return
 
       // Validar que selectedTable não é "all" - não deve consultar diretamente
       if (!validateTableName(selectedTable)) {
@@ -93,30 +101,114 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
       }
 
       setIsLoading(true)
+      setLoadingMessage('Iniciando busca de dados...')
       setError(null)
 
       try {
         const token = localStorage.getItem('auth-token')
         if (!token) return
 
-        const response = await api.getDetailedData(token, {
+        console.log('🔄 Iniciando busca de dados detalhados...')
+        
+        // Atualizar mensagem de loading
+        setLoadingMessage('Conectando com o servidor...')
+        
+        // Adicionar timeout para evitar travamentos
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Timeout: A requisição demorou muito tempo')), 30000) // 30 segundos
+        })
+
+        setLoadingMessage('Buscando dados detalhados...')
+        
+        const dataPromise = api.getDetailedData(token, {
           start_date: startDate,
           end_date: endDate,
           table_name: selectedTable,
           attribution_model: attributionModel
         })
 
-        setData(response.data || [])
+        const response = await Promise.race([dataPromise, timeoutPromise]) as any
+
+        console.log('✅ Dados detalhados recebidos:', response.data?.length || 0, 'registros')
+        
+        // Limitar a quantidade de dados para evitar travamentos
+        const maxRecords = 10000 // Máximo de 10k registros
+        const limitedData = response.data?.slice(0, maxRecords) || []
+        
+        if (response.data?.length > maxRecords) {
+          console.warn(`⚠️ Dados limitados a ${maxRecords} registros de ${response.data.length} totais`)
+          setDataLimited(true)
+        } else {
+          setDataLimited(false)
+        }
+        
+        setData(limitedData)
       } catch (err) {
         console.error('Error fetching detailed data:', err)
-        setError('Erro ao carregar dados detalhados')
+        if (err instanceof Error && err.message.includes('Timeout')) {
+          setError('A requisição demorou muito tempo. Tente novamente ou reduza o período de datas.')
+        } else {
+          setError('Erro ao carregar dados detalhados')
+        }
       } finally {
         setIsLoading(false)
+        setLoadingMessage('')
       }
     }
 
     fetchDetailedData()
-  }, [startDate, endDate, selectedTable, attributionModel])
+  }, [startDate, endDate, selectedTable, attributionModel, isInitialized])
+
+  // Aplicar filtros acumulativos quando os dados são carregados
+  useEffect(() => {
+    if (data.length > 0 && selectedFilters.length > 0) {
+      // Usar dados originais em vez de filteredData para evitar loop infinito
+      const dataToFilter = data.filter(item => {
+        const matchesSearch = 
+          item.Data.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.Origem.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.Midia.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.Campanha.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.Cupom.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.Cluster.toLowerCase().includes(searchTerm.toLowerCase())
+
+        return matchesSearch
+      })
+      
+      // Aplicar todos os filtros acumulativos
+      let filteredItems = dataToFilter
+      
+      selectedFilters.forEach(filter => {
+        switch (filter.type) {
+          case 'cluster':
+            filteredItems = filteredItems.filter(item => (item.Cluster || 'Sem Cluster') === filter.value)
+            break
+          case 'origemMidia':
+            const [origem, midia] = filter.value.split(' / ')
+            filteredItems = filteredItems.filter(item => 
+              (item.Origem || 'Sem Origem') === origem && (item.Midia || 'Sem Mídia') === midia
+            )
+            break
+          case 'campanha':
+            filteredItems = filteredItems.filter(item => (item.Campanha || 'Sem Campanha') === filter.value)
+            break
+          case 'paginaEntrada':
+            filteredItems = filteredItems.filter(item => (item.Pagina_de_Entrada || 'Sem Página') === filter.value)
+            break
+          case 'conteudo':
+            filteredItems = filteredItems.filter(item => (item.Conteudo || 'Sem Conteúdo') === filter.value)
+            break
+          case 'cupom':
+            filteredItems = filteredItems.filter(item => (item.Cupom || 'Sem Cupom') === filter.value)
+            break
+        }
+      })
+      
+      setFilteredByGroup(filteredItems)
+    } else {
+      setFilteredByGroup([])
+    }
+  }, [data, selectedFilters, searchTerm])
 
   // Filtrar dados
   const filteredData = data.filter(item => {
@@ -128,38 +220,78 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
       item.Cupom.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.Cluster.toLowerCase().includes(searchTerm.toLowerCase())
 
-    const matchesFilters = 
-      (!filters.cluster || item.Cluster.includes(filters.cluster)) &&
-      (!filters.origem || item.Origem.includes(filters.origem)) &&
-      (!filters.midia || item.Midia.includes(filters.midia)) &&
-      (!filters.campanha || item.Campanha.includes(filters.campanha)) &&
-      (!filters.paginaEntrada || item.Pagina_de_Entrada.includes(filters.paginaEntrada)) &&
-      (!filters.conteudo || item.Conteudo.includes(filters.conteudo)) &&
-      (!filters.cupom || item.Cupom.includes(filters.cupom))
-
-    return matchesSearch && matchesFilters
+    return matchesSearch
   })
 
 
 
-  // Agrupar dados por diferentes critérios
-  const groupedData: { [key: string]: GroupedData } = {
-    cluster: {},
-    origemMidia: {},
-    campanha: {},
-    paginaEntrada: {},
-    conteudo: {},
-    cupom: {}
-  }
-
-  // Usar dados filtrados por grupo se houver um grupo selecionado
-  const dataToGroup = selectedGroup ? filteredByGroup : filteredData
+  // Usar dados filtrados por grupo se houver filtros ativos
+  // Quando há filtros, mostra apenas os dados filtrados em todas as abas
+  const dataToGroup = selectedFilters.length > 0 ? filteredByGroup : filteredData
 
   // Usar dados filtrados por grupo para métricas e timeline também
-  const dataForMetrics = selectedGroup ? filteredByGroup : filteredData
+  const dataForMetrics = selectedFilters.length > 0 ? filteredByGroup : filteredData
 
-  // Funções para gerar opções ordenadas por receita para cada filtro
-  const getClusterOptions = () => {
+  // Agrupar dados por diferentes critérios - otimizado para performance
+  const groupedData: { [key: string]: { [key: string]: DetailedDataItem[] } } = React.useMemo(() => {
+    const groups = {
+      cluster: {},
+      origemMidia: {},
+      campanha: {},
+      paginaEntrada: {},
+      conteudo: {},
+      cupom: {}
+    }
+
+    dataToGroup.forEach(item => {
+      // Agrupar por Cluster
+      const clusterKey = item.Cluster || 'Sem Cluster'
+      if (!groups.cluster[clusterKey]) {
+        groups.cluster[clusterKey] = []
+      }
+      groups.cluster[clusterKey].push(item)
+
+      // Agrupar por Origem/Mídia
+      const origemMidiaKey = `${item.Origem || 'Sem Origem'} / ${item.Midia || 'Sem Mídia'}`
+      if (!groups.origemMidia[origemMidiaKey]) {
+        groups.origemMidia[origemMidiaKey] = []
+      }
+      groups.origemMidia[origemMidiaKey].push(item)
+
+      // Agrupar por Campanha
+      const campanhaKey = item.Campanha || 'Sem Campanha'
+      if (!groups.campanha[campanhaKey]) {
+        groups.campanha[campanhaKey] = []
+      }
+      groups.campanha[campanhaKey].push(item)
+
+      // Agrupar por Página de Entrada
+      const paginaKey = item.Pagina_de_Entrada || 'Sem Página'
+      if (!groups.paginaEntrada[paginaKey]) {
+        groups.paginaEntrada[paginaKey] = []
+      }
+      groups.paginaEntrada[paginaKey].push(item)
+
+      // Agrupar por Conteúdo
+      const conteudoKey = item.Conteudo || 'Sem Conteúdo'
+      if (!groups.conteudo[conteudoKey]) {
+        groups.conteudo[conteudoKey] = []
+      }
+      groups.conteudo[conteudoKey].push(item)
+
+      // Agrupar por Cupom
+      const cupomKey = item.Cupom || 'Sem Cupom'
+      if (!groups.cupom[cupomKey]) {
+        groups.cupom[cupomKey] = []
+      }
+      groups.cupom[cupomKey].push(item)
+    })
+
+    return groups
+  }, [dataToGroup])
+
+  // Funções para gerar opções ordenadas por receita para cada filtro - otimizadas com useMemo
+  const getClusterOptions = React.useMemo(() => {
     const clusterTotals = dataToGroup.reduce((acc, item) => {
       const cluster = item.Cluster || 'Sem Cluster'
       if (!acc[cluster]) {
@@ -172,9 +304,9 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
     return Object.values(clusterTotals)
       .sort((a, b) => b.receita - a.receita)
       .map(item => ({ value: item.name, label: `${item.name} (R$ ${item.receita.toLocaleString('pt-BR')})` }))
-  }
+  }, [dataToGroup])
 
-  const getOrigemOptions = () => {
+  const getOrigemOptions = React.useMemo(() => {
     const origemTotals = dataToGroup.reduce((acc, item) => {
       const origem = item.Origem || 'Sem Origem'
       if (!acc[origem]) {
@@ -187,9 +319,9 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
     return Object.values(origemTotals)
       .sort((a, b) => b.receita - a.receita)
       .map(item => ({ value: item.name, label: `${item.name} (R$ ${item.receita.toLocaleString('pt-BR')})` }))
-  }
+  }, [dataToGroup])
 
-  const getMidiaOptions = () => {
+  const getMidiaOptions = React.useMemo(() => {
     const midiaTotals = dataToGroup.reduce((acc, item) => {
       const midia = item.Midia || 'Sem Mídia'
       if (!acc[midia]) {
@@ -202,9 +334,9 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
     return Object.values(midiaTotals)
       .sort((a, b) => b.receita - a.receita)
       .map(item => ({ value: item.name, label: `${item.name} (R$ ${item.receita.toLocaleString('pt-BR')})` }))
-  }
+  }, [dataToGroup])
 
-  const getCampanhaOptions = () => {
+  const getCampanhaOptions = React.useMemo(() => {
     const campanhaTotals = dataToGroup.reduce((acc, item) => {
       const campanha = item.Campanha || 'Sem Campanha'
       if (!acc[campanha]) {
@@ -217,9 +349,9 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
     return Object.values(campanhaTotals)
       .sort((a, b) => b.receita - a.receita)
       .map(item => ({ value: item.name, label: `${item.name} (R$ ${item.receita.toLocaleString('pt-BR')})` }))
-  }
+  }, [dataToGroup])
 
-  const getPaginaEntradaOptions = () => {
+  const getPaginaEntradaOptions = React.useMemo(() => {
     const paginaTotals = dataToGroup.reduce((acc, item) => {
       const pagina = item.Pagina_de_Entrada || 'Sem Página'
       if (!acc[pagina]) {
@@ -232,9 +364,9 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
     return Object.values(paginaTotals)
       .sort((a, b) => b.receita - a.receita)
       .map(item => ({ value: item.name, label: `${item.name} (R$ ${item.receita.toLocaleString('pt-BR')})` }))
-  }
+  }, [dataToGroup])
 
-  const getConteudoOptions = () => {
+  const getConteudoOptions = React.useMemo(() => {
     const conteudoTotals = dataToGroup.reduce((acc, item) => {
       const conteudo = item.Conteudo || 'Sem Conteúdo'
       if (!acc[conteudo]) {
@@ -247,11 +379,9 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
     return Object.values(conteudoTotals)
       .sort((a, b) => b.receita - a.receita)
       .map(item => ({ value: item.name, label: `${item.name} (R$ ${item.receita.toLocaleString('pt-BR')})` }))
-  }
+  }, [dataToGroup])
 
-
-
-  const getCupomOptions = () => {
+  const getCupomOptions = React.useMemo(() => {
     const cupomTotals = dataToGroup.reduce((acc, item) => {
       const cupom = item.Cupom || 'Sem Cupom'
       if (!acc[cupom]) {
@@ -264,53 +394,9 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
     return Object.values(cupomTotals)
       .sort((a, b) => b.receita - a.receita)
       .map(item => ({ value: item.name, label: `${item.name} (R$ ${item.receita.toLocaleString('pt-BR')})` }))
-  }
-
-  dataToGroup.forEach(item => {
-    // Agrupar por Cluster
-    const clusterKey = item.Cluster || 'Sem Cluster'
-    if (!groupedData.cluster[clusterKey]) {
-      groupedData.cluster[clusterKey] = []
-    }
-    groupedData.cluster[clusterKey].push(item)
-
-    // Agrupar por Origem/Mídia
-    const origemMidiaKey = `${item.Origem || 'Sem Origem'} / ${item.Midia || 'Sem Mídia'}`
-    if (!groupedData.origemMidia[origemMidiaKey]) {
-      groupedData.origemMidia[origemMidiaKey] = []
-    }
-    groupedData.origemMidia[origemMidiaKey].push(item)
-
-    // Agrupar por Campanha
-    const campanhaKey = item.Campanha || 'Sem Campanha'
-    if (!groupedData.campanha[campanhaKey]) {
-      groupedData.campanha[campanhaKey] = []
-    }
-    groupedData.campanha[campanhaKey].push(item)
-
-    // Agrupar por Página de Entrada
-    const paginaKey = item.Pagina_de_Entrada || 'Sem Página'
-    if (!groupedData.paginaEntrada[paginaKey]) {
-      groupedData.paginaEntrada[paginaKey] = []
-    }
-    groupedData.paginaEntrada[paginaKey].push(item)
-
-    // Agrupar por Conteúdo
-    const conteudoKey = item.Conteudo || 'Sem Conteúdo'
-    if (!groupedData.conteudo[conteudoKey]) {
-      groupedData.conteudo[conteudoKey] = []
-    }
-    groupedData.conteudo[conteudoKey].push(item)
+  }, [dataToGroup])
 
 
-
-    // Agrupar por Cupom
-    const cupomKey = item.Cupom || 'Sem Cupom'
-    if (!groupedData.cupom[cupomKey]) {
-      groupedData.cupom[cupomKey] = []
-    }
-    groupedData.cupom[cupomKey].push(item)
-  })
 
 
 
@@ -337,83 +423,97 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
     return totals
   }
 
-  // Preparar dados para a timeline
-  const timelineData = dataForMetrics
-    .reduce((acc, item) => {
-      const existingDate = acc.find(d => d.date === item.Data)
-      if (existingDate) {
-        existingDate.sessions += item.Sessoes
-        existingDate.revenue += item.Receita
-        existingDate.clicks += item.Cliques || 0
-        existingDate.addToCart += item.Adicoes_ao_Carrinho
-        existingDate.orders += item.Pedidos
-        existingDate.newCustomers += item.Novos_Clientes || 0
-        existingDate.paidOrders += item.Pedidos_Pagos
-        existingDate.paidRevenue += item.Receita_Paga
-        existingDate.newCustomerRevenue += item.Receita_Novos_Clientes || 0
-        existingDate.investment += item.Investimento || 0
-      } else {
-        acc.push({
-          date: item.Data,
-          sessions: item.Sessoes,
-          revenue: item.Receita,
-          clicks: item.Cliques || 0,
-          addToCart: item.Adicoes_ao_Carrinho,
-          orders: item.Pedidos,
-          newCustomers: item.Novos_Clientes || 0,
-          paidOrders: item.Pedidos_Pagos,
-          paidRevenue: item.Receita_Paga,
-          newCustomerRevenue: item.Receita_Novos_Clientes || 0,
-          investment: item.Investimento || 0
-        })
-      }
-      return acc
-    }, [] as { 
-      date: string; 
-      sessions: number; 
-      revenue: number;
-      clicks: number;
-      addToCart: number;
-      orders: number;
-      newCustomers: number;
-      paidOrders: number;
-      paidRevenue: number;
-      newCustomerRevenue: number;
-      investment: number;
-    }[])
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+  // Preparar dados para a timeline - otimizado com useMemo
+  const timelineData = React.useMemo(() => {
+    return dataForMetrics
+      .reduce((acc, item) => {
+        const existingDate = acc.find(d => d.date === item.Data)
+        if (existingDate) {
+          existingDate.sessions += item.Sessoes
+          existingDate.revenue += item.Receita
+          existingDate.clicks += item.Cliques || 0
+          existingDate.addToCart += item.Adicoes_ao_Carrinho
+          existingDate.orders += item.Pedidos
+          existingDate.newCustomers += item.Novos_Clientes || 0
+          existingDate.paidOrders += item.Pedidos_Pagos
+          existingDate.paidRevenue += item.Receita_Paga
+          existingDate.newCustomerRevenue += item.Receita_Novos_Clientes || 0
+          existingDate.investment += item.Investimento || 0
+        } else {
+          acc.push({
+            date: item.Data,
+            sessions: item.Sessoes,
+            revenue: item.Receita,
+            clicks: item.Cliques || 0,
+            addToCart: item.Adicoes_ao_Carrinho,
+            orders: item.Pedidos,
+            newCustomers: item.Novos_Clientes || 0,
+            paidOrders: item.Pedidos_Pagos,
+            paidRevenue: item.Receita_Paga,
+            newCustomerRevenue: item.Receita_Novos_Clientes || 0,
+            investment: item.Investimento || 0
+          })
+        }
+        return acc
+      }, [] as { 
+        date: string; 
+        sessions: number; 
+        revenue: number;
+        clicks: number;
+        addToCart: number;
+        orders: number;
+        newCustomers: number;
+        paidOrders: number;
+        paidRevenue: number;
+        newCustomerRevenue: number;
+        investment: number;
+      }[])
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+  }, [dataForMetrics])
 
-  // Calcular totais para as métricas
-  const totals = dataForMetrics.reduce((acc, item) => ({
-    sessoes: acc.sessoes + item.Sessoes,
-    pedidos: acc.pedidos + item.Pedidos,
-    receita: acc.receita + item.Receita,
-    novosClientes: acc.novosClientes + (item.Novos_Clientes || 0),
-    adicoesCarrinho: acc.adicoesCarrinho + item.Adicoes_ao_Carrinho,
-    receitaPaga: acc.receitaPaga + item.Receita_Paga,
-    pedidosPagos: acc.pedidosPagos + item.Pedidos_Pagos,
-    receitaNovosClientes: acc.receitaNovosClientes + (item.Receita_Novos_Clientes || 0),
-    investimento: acc.investimento + (item.Investimento || 0),
-    cliques: acc.cliques + (item.Cliques || 0)
-  }), {
-    sessoes: 0,
-    pedidos: 0,
-    receita: 0,
-    novosClientes: 0,
-    adicoesCarrinho: 0,
-    receitaPaga: 0,
-    pedidosPagos: 0,
-    receitaNovosClientes: 0,
-    investimento: 0,
-    cliques: 0
-  })
+  // Calcular totais para as métricas - otimizado com useMemo
+  const totals = React.useMemo(() => {
+    return dataForMetrics.reduce((acc, item) => ({
+      sessoes: acc.sessoes + item.Sessoes,
+      pedidos: acc.pedidos + item.Pedidos,
+      receita: acc.receita + item.Receita,
+      novosClientes: acc.novosClientes + (item.Novos_Clientes || 0),
+      adicoesCarrinho: acc.adicoesCarrinho + item.Adicoes_ao_Carrinho,
+      receitaPaga: acc.receitaPaga + item.Receita_Paga,
+      pedidosPagos: acc.pedidosPagos + item.Pedidos_Pagos,
+      receitaNovosClientes: acc.receitaNovosClientes + (item.Receita_Novos_Clientes || 0),
+      investimento: acc.investimento + (item.Investimento || 0),
+      cliques: acc.cliques + (item.Cliques || 0)
+    }), {
+      sessoes: 0,
+      pedidos: 0,
+      receita: 0,
+      novosClientes: 0,
+      adicoesCarrinho: 0,
+      receitaPaga: 0,
+      pedidosPagos: 0,
+      receitaNovosClientes: 0,
+      investimento: 0,
+      cliques: 0
+    })
+  }, [dataForMetrics])
 
-  // Calcular métricas derivadas
-  const avgOrderValue = totals.pedidos > 0 ? totals.receita / totals.pedidos : 0
-  const conversionRate = totals.sessoes > 0 ? (totals.pedidos / totals.sessoes) * 100 : 0
-  const addToCartRate = totals.sessoes > 0 ? (totals.adicoesCarrinho / totals.sessoes) * 100 : 0
-  const revenuePerSession = totals.sessoes > 0 ? totals.receita / totals.sessoes : 0
-  const newCustomerRate = totals.pedidos > 0 ? (totals.novosClientes / totals.pedidos) * 100 : 0
+  // Calcular métricas derivadas - otimizado com useMemo
+  const derivedMetrics = React.useMemo(() => {
+    const avgOrderValue = totals.pedidos > 0 ? totals.receita / totals.pedidos : 0
+    const conversionRate = totals.sessoes > 0 ? (totals.pedidos / totals.sessoes) * 100 : 0
+    const addToCartRate = totals.sessoes > 0 ? (totals.adicoesCarrinho / totals.sessoes) * 100 : 0
+    const revenuePerSession = totals.sessoes > 0 ? totals.receita / totals.sessoes : 0
+    const newCustomerRate = totals.pedidos > 0 ? (totals.novosClientes / totals.pedidos) * 100 : 0
+    
+    return {
+      avgOrderValue,
+      conversionRate,
+      addToCartRate,
+      revenuePerSession,
+      newCustomerRate
+    }
+  }, [totals])
 
 
   // Funções auxiliares
@@ -536,10 +636,13 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
                        key={groupName} 
                        className="hover:bg-gray-50 cursor-pointer transition-colors group"
                        onClick={() => handleRowClick(groupName, items)}
-                       title="Clique para filtrar dados por este grupo"
+                       title="Clique para filtrar e ir para a próxima aba"
                      >
                       <td className="px-6 py-4 text-sm font-medium text-gray-900 max-w-48 truncate group-hover:text-blue-600" title={groupName}>
-                        {groupName}
+                        <div className="flex items-center gap-2">
+                          <span>{groupName}</span>
+                          <ArrowUpCircle className="w-3 h-3 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {formatNumber(totals.Sessoes)}
@@ -595,7 +698,11 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
         <div className="flex items-center justify-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-3"></div>
-          <span className="text-gray-700">Carregando dados detalhados...</span>
+          <span className="text-gray-700">{loadingMessage || 'Carregando dados detalhados...'}</span>
+        </div>
+        <div className="mt-4 text-center text-sm text-gray-500">
+          <p>Isso pode levar alguns segundos dependendo da quantidade de dados</p>
+          <p className="mt-2 text-xs">Se demorar muito, tente reduzir o período de datas</p>
         </div>
       </div>
     )
@@ -615,6 +722,31 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
     )
   }
 
+  // Verificar se há dados para renderizar
+  if (data.length === 0 && !isLoading && isInitialized) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Database className="w-8 h-8 text-gray-400" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Nenhum dado encontrado</h3>
+          <p className="text-gray-600">
+            Não foram encontrados dados detalhados para o período selecionado.
+          </p>
+          <div className="mt-4 text-sm text-gray-500">
+            <p>Tente selecionar um período menor ou verificar se há dados disponíveis.</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Não renderizar nada se ainda não foi inicializado
+  if (!isInitialized) {
+    return null
+  }
+
   const tabs = [
     { id: 'cluster', label: 'Por Cluster', icon: <Layers className="w-4 h-4" /> },
     { id: 'origemMidia', label: 'Por Origem/Mídia', icon: <Globe className="w-4 h-4" /> },
@@ -629,9 +761,9 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
     setShowAllGroups(false) // Reset para mostrar apenas 10 linhas quando mudar de aba
     setSortField('Receita_Paga') // Reset para ordenação padrão
     setSortDirection('desc') // Reset para decrescente
-    // Reset do filtro quando mudar de aba manualmente
-    setSelectedGroup('')
-    setFilteredByGroup([])
+    // Manter o filtro ativo quando mudar de aba
+            // setSelectedFilters([])
+    // setFilteredByGroup([])
   }
 
   const handleSort = (field: string) => {
@@ -644,39 +776,49 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
   }
 
   const handleRowClick = (groupName: string, items: DetailedDataItem[]) => {
-    // Filtrar dados originais baseado no critério da aba atual
-    let filteredItems: DetailedDataItem[] = []
+    // Verificar se o filtro já existe
+    const existingFilterIndex = selectedFilters.findIndex(filter => 
+      filter.type === activeTab && filter.value === groupName
+    )
     
-    switch (activeTab) {
-      case 'cluster':
-        filteredItems = filteredData.filter(item => (item.Cluster || 'Sem Cluster') === groupName)
-        break
-      case 'origemMidia':
-        const [origem, midia] = groupName.split(' / ')
-        filteredItems = filteredData.filter(item => 
-          (item.Origem || 'Sem Origem') === origem && (item.Midia || 'Sem Mídia') === midia
-        )
-        break
-      case 'campanha':
-        filteredItems = filteredData.filter(item => (item.Campanha || 'Sem Campanha') === groupName)
-        break
-      case 'paginaEntrada':
-        filteredItems = filteredData.filter(item => (item.Pagina_de_Entrada || 'Sem Página') === groupName)
-        break
-      case 'conteudo':
-        filteredItems = filteredData.filter(item => (item.Conteudo || 'Sem Conteúdo') === groupName)
-        break
-
-      case 'cupom':
-        filteredItems = filteredData.filter(item => (item.Cupom || 'Sem Cupom') === groupName)
-        break
-      default:
-        filteredItems = items
+    let newFilters: Array<{type: string, value: string}>
+    
+    if (existingFilterIndex >= 0) {
+      // Se o filtro já existe, removê-lo (toggle)
+      newFilters = selectedFilters.filter((_, index) => index !== existingFilterIndex)
+    } else {
+      // Adicionar novo filtro
+      newFilters = [...selectedFilters, {type: activeTab, value: groupName}]
     }
     
-    // Aplicar filtro na aba atual
-    setFilteredByGroup(filteredItems)
-    setSelectedGroup(groupName)
+    // Atualizar filtros
+    setSelectedFilters(newFilters)
+    
+    // Persistir filtros na URL (usar o último filtro para compatibilidade)
+    if (newFilters.length > 0) {
+      const lastFilter = newFilters[newFilters.length - 1]
+      updateUrlParams({
+        detailedFilter: lastFilter.value,
+        detailedFilterType: lastFilter.type
+      })
+    } else {
+      updateUrlParams({
+        detailedFilter: undefined,
+        detailedFilterType: undefined
+      })
+    }
+    
+    // Pular para a próxima aba à direita
+    const currentTabIndex = tabs.findIndex(tab => tab.id === activeTab)
+    const nextTabIndex = (currentTabIndex + 1) % tabs.length
+    const nextTab = tabs[nextTabIndex]
+    
+    // Mudar para a próxima aba
+    setActiveTab(nextTab.id)
+    
+    // Mostrar indicador de mudança de aba
+    setShowTabChangeIndicator(true)
+    setTimeout(() => setShowTabChangeIndicator(false), 2000) // Esconder após 2 segundos
     
     // Resetar estados de visualização
     setShowAllGroups(false)
@@ -705,29 +847,45 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Visão Detalhada</h2>
-            {selectedGroup && (
-              <p className="text-sm text-blue-600">
-                • Filtrado por: {selectedGroup}
-              </p>
+            {selectedFilters.length > 0 && (
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                {selectedFilters.map((filter, index) => (
+                  <div key={index} className="flex items-center gap-1 px-2 py-1 bg-blue-50 border border-blue-200 rounded-md">
+                    <Filter className="w-3 h-3 text-blue-600" />
+                    <span className="text-sm text-blue-700 font-medium">
+                      {tabs.find(tab => tab.id === filter.type)?.label.replace('Por ', '')}: {filter.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {dataLimited && (
+              <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center gap-1 px-2 py-1 bg-yellow-50 border border-yellow-200 rounded-md">
+                  <span className="text-sm text-yellow-700 font-medium">
+                    ⚠️ Dados limitados a 10.000 registros para melhor performance
+                  </span>
+                </div>
+              </div>
             )}
           </div>
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-            >
-              <Filter className="w-4 h-4" />
-              Filtros
-            </button>
-            {selectedGroup && (
+            {selectedFilters.length > 0 && (
               <button
                 onClick={() => {
-                  setSelectedGroup('')
+                  setSelectedFilters([])
                   setFilteredByGroup([])
+                  // Limpar filtros da URL
+                  updateUrlParams({
+                    detailedFilter: undefined,
+                    detailedFilterType: undefined
+                  })
                 }}
-                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100"
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
+                title="Remover todos os filtros"
               >
-                Limpar Filtro
+                <Filter className="w-4 h-4" />
+                Limpar Filtros ({selectedFilters.length})
               </button>
             )}
             <button className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
@@ -751,124 +909,7 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
           </div>
         </div>
 
-        {/* Filters */}
-        {showFilters && (
-          <div className="mt-4 space-y-4">
-            {/* Primeira linha - Cluster, Origem, Mídia, Campanha */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Cluster</label>
-                <select
-                value={filters.cluster}
-                onChange={(e) => setFilters({ ...filters, cluster: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                >
-                  <option value="">Todos os clusters</option>
-                  {getClusterOptions().map(option => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Origem</label>
-                <select
-                value={filters.origem}
-                onChange={(e) => setFilters({ ...filters, origem: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                >
-                  <option value="">Todas as origens</option>
-                  {getOrigemOptions().map(option => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Mídia</label>
-                <select
-                value={filters.midia}
-                onChange={(e) => setFilters({ ...filters, midia: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                >
-                  <option value="">Todas as mídias</option>
-                  {getMidiaOptions().map(option => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Campanha</label>
-                <select
-                  value={filters.campanha}
-                  onChange={(e) => setFilters({ ...filters, campanha: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                >
-                  <option value="">Todas as campanhas</option>
-                  {getCampanhaOptions().map(option => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            
-            {/* Segunda linha - Página de Entrada, Conteúdo, Termo, Cupom */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Página de Entrada</label>
-                <select
-                  value={filters.paginaEntrada}
-                  onChange={(e) => setFilters({ ...filters, paginaEntrada: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                >
-                  <option value="">Todas as páginas</option>
-                  {getPaginaEntradaOptions().map(option => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Conteúdo</label>
-                <select
-                  value={filters.conteudo}
-                  onChange={(e) => setFilters({ ...filters, conteudo: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                >
-                  <option value="">Todos os conteúdos</option>
-                  {getConteudoOptions().map(option => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
 
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Cupom</label>
-                <select
-                  value={filters.cupom}
-                  onChange={(e) => setFilters({ ...filters, cupom: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                >
-                  <option value="">Todos os cupons</option>
-                  {getCupomOptions().map(option => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Metrics Grid */}
@@ -896,7 +937,7 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
           />
           <MetricCard
             title="Ticket Médio"
-            value={avgOrderValue}
+            value={derivedMetrics.avgOrderValue}
             icon={DollarSign}
             format="currency"
             color="orange"
@@ -907,21 +948,21 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <MetricCard
             title="Taxa de Conversão"
-            value={conversionRate}
+            value={derivedMetrics.conversionRate}
             icon={Sparkles}
             format="percentage"
             color="red"
           />
           <MetricCard
             title="Taxa de Adição ao Carrinho"
-            value={addToCartRate}
+            value={derivedMetrics.addToCartRate}
             icon={ShoppingBag}
             format="percentage"
             color="blue"
           />
           <MetricCard
             title="Receita por Sessão"
-            value={revenuePerSession}
+            value={derivedMetrics.revenuePerSession}
             icon={ArrowUpCircle}
             format="currency"
             color="green"
@@ -944,7 +985,7 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
               <button
               key={tab.id}
               onClick={() => handleTabChange(tab.id)}
-              className={`flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm ${
+              className={`flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm relative transition-all duration-200 ${
                 activeTab === tab.id
                   ? 'border-blue-500 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -952,6 +993,10 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
             >
               {tab.icon}
               {tab.label}
+              {/* Indicador de filtro ativo */}
+              {selectedFilters.some(filter => filter.type === tab.id) && (
+                <div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+              )}
               </button>
           ))}
         </nav>
@@ -959,7 +1004,58 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel, hid
 
       {/* Content */}
       <div className="p-6">
-        {renderGroupedTable(activeTab, groupedData[activeTab])}
+        {/* Mensagem informativa quando há filtro ativo */}
+        {selectedFilters.length > 0 && (
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-blue-600" />
+              <span className="text-sm text-blue-700">
+                <strong>Filtros ativos:</strong> {selectedFilters.length} filtro(s) aplicado(s) globalmente
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Indicador de mudança automática de aba */}
+        {showTabChangeIndicator && (
+          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg animate-pulse">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-green-500 rounded-full animate-bounce"></div>
+              <span className="text-sm text-green-700 font-medium">
+                Mudou automaticamente para a próxima aba! 🚀
+              </span>
+            </div>
+          </div>
+        )}
+        
+        {Object.keys(groupedData[activeTab] || {}).length === 0 ? (
+          <div className="text-center py-8">
+            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Filter className="w-8 h-8 text-gray-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Nenhum dado encontrado</h3>
+            <p className="text-gray-600">
+              Não há dados para exibir na aba "{tabs.find(tab => tab.id === activeTab)?.label}" com o filtro atual.
+            </p>
+            {selectedFilters.length > 0 && (
+              <button
+                onClick={() => {
+                  setSelectedFilters([])
+                  setFilteredByGroup([])
+                  updateUrlParams({
+                    detailedFilter: undefined,
+                    detailedFilterType: undefined
+                  })
+                }}
+                className="mt-4 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+              >
+                Limpar Filtros
+              </button>
+            )}
+          </div>
+        ) : (
+          renderGroupedTable(activeTab, groupedData[activeTab])
+        )}
         </div>
     </div>
   )
