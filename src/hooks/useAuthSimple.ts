@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { api } from '../services/api'
 
 interface AuthData {
@@ -38,7 +38,7 @@ export const useAuthSimple = () => {
     console.log('❌ SIMPLE AUTH - No stored auth data found')
     return { isAuthenticated: false }
   })
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading] = useState(false)
 
   const login = async (username: string) => {
     console.log('🚀 SIMPLE AUTH - Login called with username:', username)

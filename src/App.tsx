@@ -10,13 +10,6 @@ function App() {
 
   // Interceptor global para capturar erros 401
   useEffect(() => {
-    const handleUnauthorized = (event: MessageEvent) => {
-      if (event.data && event.data.type === 'UNAUTHORIZED') {
-        console.log('🔐 Interceptor global detectou token inválido, deslogando...')
-        logout()
-      }
-    }
-
     // Interceptar erros de fetch globalmente
     const originalFetch = window.fetch
     window.fetch = async (...args) => {

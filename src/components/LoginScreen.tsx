@@ -194,7 +194,7 @@ const LoginScreen = ({ onLogin }: { onLogin: (username: string) => void }) => {
       </div>
       
       {/* Estilos para animações */}
-      <style jsx>{`
+      <style>{`
         .login-container {
           transform: scale(1);
           opacity: 1;

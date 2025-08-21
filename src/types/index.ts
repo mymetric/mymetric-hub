@@ -17,4 +17,31 @@ export interface Activity {
   action: string
   time: string
   type: 'success' | 'info' | 'warning' | 'error'
+}
+
+// Tipos para Havaianas
+export interface HavaianasItem {
+  event_date: string
+  item_id: string
+  item_name: string
+  elegible: number
+  item_views: number
+  size_score: number
+  promo_label: number
+  transactions: number
+  purchase_revenue: number
+}
+
+export interface HavaianasResponse {
+  data: HavaianasItem[]
+}
+
+export interface HavaianasTimelineData {
+  date: string
+  totalViews: number
+  totalTransactions: number
+  totalRevenue: number
+  avgSizeScore: number
+  avgPromoLabel: number
+  itemCount: number
 } 

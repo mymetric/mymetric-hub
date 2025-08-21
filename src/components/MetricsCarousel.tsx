@@ -97,7 +97,7 @@ const MetricsCarousel = ({ metrics }: MetricsCarouselProps) => {
         ))}
       </Swiper>
       
-      <style jsx>{`
+      <style>{`
         .metrics-swiper {
           padding-bottom: 40px;
         }

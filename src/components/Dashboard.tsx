@@ -20,7 +20,8 @@ import {
   Eye,
   Filter,
   Database,
-  EyeOff
+  EyeOff,
+  Package
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
 import Logo from './Logo'
@@ -33,6 +34,7 @@ import MetricsCarousel from './MetricsCarousel'
 import ConversionFunnel from './ConversionFunnel'
 import OrdersExpanded from './OrdersExpanded'
 import DetailedData from './DetailedData'
+import HavaianasDashboard from './HavaianasDashboard'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useUrlParams } from '../hooks/useUrlParams'
 
@@ -1175,45 +1177,60 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <nav className="flex space-x-8">
-                          <button
-                onClick={() => handleTabChange('visao-geral')}
+            <button
+              onClick={() => handleTabChange('visao-geral')}
+              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'visao-geral'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <BarChart3 className="w-4 h-4" />
+                Visão Geral
+              </div>
+            </button>
+            <button
+              onClick={() => handleTabChange('funil-conversao')}
+              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'funil-conversao'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4" />
+                Funil de Conversão
+              </div>
+            </button>
+            <button
+              onClick={() => handleTabChange('dados-detalhados')}
+              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'dados-detalhados'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Database className="w-4 h-4" />
+                Dados Detalhados
+              </div>
+            </button>
+            {selectedTable === 'havaianas' && (
+              <button
+                onClick={() => handleTabChange('havaianas')}
                 className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                  activeTab === 'visao-geral'
+                  activeTab === 'havaianas'
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4" />
-                  Visão Geral
+                  <Package className="w-4 h-4" />
+                  Product Scoring
                 </div>
               </button>
-                          <button
-                onClick={() => handleTabChange('funil-conversao')}
-                className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                  activeTab === 'funil-conversao'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <Filter className="w-4 h-4" />
-                  Funil de Conversão
-                </div>
-              </button>
-                          <button
-                onClick={() => handleTabChange('dados-detalhados')}
-                className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                  activeTab === 'dados-detalhados'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <Database className="w-4 h-4" />
-                  Dados Detalhados
-                </div>
-              </button>
+            )}
           </nav>
         </div>
       </div>
@@ -1935,6 +1952,13 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
             startDate={startDate}
             endDate={endDate}
             attributionModel={attributionModel}
+          />
+        )}
+
+        {/* Havaianas Tab */}
+        {activeTab === 'havaianas' && (
+          <HavaianasDashboard 
+            selectedTable={selectedTable}
           />
         )}
       </main>

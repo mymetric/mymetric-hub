@@ -80,6 +80,26 @@ interface GoalsResponse {
   message: string
 }
 
+interface HavaianasRequest {
+  table_name: string
+}
+
+interface HavaianasItem {
+  event_date: string
+  item_id: string
+  item_name: string
+  elegible: number
+  item_views: number
+  size_score: number
+  promo_label: number
+  transactions: number
+  purchase_revenue: number
+}
+
+interface HavaianasResponse {
+  data: HavaianasItem[]
+}
+
 interface MetricsDataItem {
   Data: string
   Cluster: string
@@ -341,6 +361,41 @@ export const api = {
     } catch (error) {
       console.error('❌ Detailed Data fetch error:', error)
       throw new Error('Erro ao buscar dados detalhados.')
+    }
+  },
+
+  async getHavaianasData(token: string, havaianasData: HavaianasRequest): Promise<HavaianasResponse> {
+    try {
+      console.log('🌐 Havaianas API Request:', {
+        url: `${API_BASE_URL}/havaianas/items-scoring`,
+        method: 'POST',
+        body: havaianasData
+      })
+
+      const response = await fetch(`${API_BASE_URL}/havaianas/items-scoring`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(havaianasData),
+      })
+
+      console.log('📡 Havaianas Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        handleAuthError(response.status)
+        const errorText = await response.text()
+        console.error('❌ Havaianas API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('📦 Havaianas API Response data:', data)
+      return data
+    } catch (error) {
+      console.error('❌ Havaianas fetch error:', error)
+      throw new Error('Erro ao buscar dados da Havaianas.')
     }
   }
 } 

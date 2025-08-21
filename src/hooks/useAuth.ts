@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { api } from '../services/api'
 
 interface AuthData {
@@ -31,7 +31,7 @@ export const useAuth = () => {
     
     return { isAuthenticated: false }
   })
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading] = useState(false)
 
   // Removida a verificação automática de token no useEffect
   // Agora o token só será validado quando necessário
