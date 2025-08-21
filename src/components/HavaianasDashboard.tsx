@@ -19,6 +19,8 @@ import {
 
 interface HavaianasDashboardProps {
   selectedTable: string
+  startDate: string
+  endDate: string
 }
 
 // Tipo para produtos agregados
@@ -33,7 +35,7 @@ interface AggregatedProduct {
   daysCount: number;
 }
 
-const HavaianasDashboard = ({ selectedTable }: HavaianasDashboardProps) => {
+const HavaianasDashboard = ({ selectedTable, startDate, endDate }: HavaianasDashboardProps) => {
   const [havaianasData, setHavaianasData] = useState<HavaianasItem[]>([])
   const [filteredData, setFilteredData] = useState<AggregatedProduct[]>([])
   const [searchTerm, setSearchTerm] = useState('')
@@ -76,8 +78,16 @@ const HavaianasDashboard = ({ selectedTable }: HavaianasDashboardProps) => {
     }
   }, [selectedTable])
 
+  // Filtrar dados por data
+  const filteredByDate = havaianasData.filter(item => {
+    const itemDate = new Date(item.event_date)
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    return itemDate >= start && itemDate <= end
+  })
+
   // Preparar dados agregados por produto
-  const aggregatedProducts = havaianasData
+  const aggregatedProducts = filteredByDate
     .reduce((acc, item) => {
       const existingProduct = acc.find(p => p.item_id === item.item_id)
       if (existingProduct) {
@@ -132,8 +142,8 @@ const HavaianasDashboard = ({ selectedTable }: HavaianasDashboardProps) => {
 
   // Preparar dados agregados por data para timeline
   const timelineData = (selectedProduct 
-    ? havaianasData.filter(item => item.item_id === selectedProduct)
-    : havaianasData
+    ? filteredByDate.filter(item => item.item_id === selectedProduct)
+    : filteredByDate
   ).reduce((acc, item) => {
       const existingDate = acc.find(d => d.date === item.event_date)
       if (existingDate) {
@@ -364,7 +374,7 @@ const HavaianasDashboard = ({ selectedTable }: HavaianasDashboardProps) => {
                     Análise detalhada por produto e data
                     {filteredData.length > 0 && (
                       <span className="ml-2 text-sm text-gray-500">
-                        • {filteredData.length.toLocaleString()} de {havaianasData.length.toLocaleString()} registros
+                        • {filteredData.length.toLocaleString()} de {filteredByDate.length.toLocaleString()} registros ({startDate} a {endDate})
                       </span>
                     )}
                   </p>

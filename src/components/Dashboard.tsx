@@ -1959,6 +1959,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         {activeTab === 'havaianas' && (
           <HavaianasDashboard 
             selectedTable={selectedTable}
+            startDate={startDate}
+            endDate={endDate}
           />
         )}
       </main>
