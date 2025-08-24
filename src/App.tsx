@@ -3,10 +3,14 @@ import LoginScreen from './components/LoginScreen'
 import Dashboard from './components/Dashboard'
 import LoadingScreen from './components/LoadingScreen'
 import { useAuth } from './hooks/useAuth'
+import { useTokenExpiry } from './hooks/useTokenExpiry'
 import { useDocumentTitle } from './hooks/useDocumentTitle'
 
 function App() {
-  const { isAuthenticated, user, isLoading, login, logout } = useAuth()
+  const { isAuthenticated, user, isLoading, isInitialized, login, logout, checkTokenExpiry } = useAuth()
+  
+  // Hook para gerenciar expiração do token
+  useTokenExpiry(checkTokenExpiry)
 
   // Interceptor global para capturar erros 401
   useEffect(() => {
@@ -19,9 +23,7 @@ function App() {
         // Se for erro 401, deslogar o usuário
         if (response.status === 401) {
           console.log('🔐 Erro 401 detectado, deslogando usuário...')
-          localStorage.removeItem('auth-token')
-          localStorage.removeItem('mymetric-auth')
-          window.location.href = '/'
+          logout()
         }
         
         return response
@@ -45,16 +47,26 @@ function App() {
         : 'Login | MyMetricHUB'
   )
 
-  const handleLogin = async (username: string) => {
-    await login(username)
+  const handleLogin = async (username: string, rememberMe: boolean) => {
+    await login(username, rememberMe)
   }
 
   const handleLogout = () => {
     logout()
   }
 
-  if (isLoading) {
-    return <LoadingScreen />
+  // Mostrar loading enquanto inicializa ou carrega
+  if (isLoading || !isInitialized) {
+    const message = !isInitialized 
+      ? 'Inicializando aplicação...' 
+      : 'Carregando...'
+    
+    return (
+      <LoadingScreen 
+        message={message} 
+        showAuthStatus={!isInitialized && !isAuthenticated}
+      />
+    )
   }
 
   return (

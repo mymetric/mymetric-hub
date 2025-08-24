@@ -7,14 +7,16 @@ import { api } from '../services/api'
 interface LoginForm {
   username: string
   password: string
+  rememberMe: boolean
 }
 
-const LoginScreen = ({ onLogin }: { onLogin: (username: string) => void }) => {
+const LoginScreen = ({ onLogin }: { onLogin: (username: string, rememberMe: boolean) => void }) => {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [loginStatus, setLoginStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState('')
   const [showTransition, setShowTransition] = useState(false)
+  const [rememberMe, setRememberMe] = useState(false)
 
   const {
     register,
@@ -22,6 +24,10 @@ const LoginScreen = ({ onLogin }: { onLogin: (username: string) => void }) => {
     formState: { errors },
     reset
   } = useForm<LoginForm>()
+
+  const handleRememberMeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setRememberMe(e.target.checked)
+  }
 
   const onSubmit = async (data: LoginForm) => {
     setIsLoading(true)
@@ -53,8 +59,9 @@ const LoginScreen = ({ onLogin }: { onLogin: (username: string) => void }) => {
           
           // Redirecionar após a animação
           setTimeout(() => {
-            onLogin(data.username) // Usa o username digitado pelo usuário
+            onLogin(data.username, rememberMe) // Usa o estado local rememberMe
             reset()
+            setRememberMe(false) // Reset do estado rememberMe
             setLoginStatus('idle')
             setShowTransition(false)
           }, 800)
@@ -166,6 +173,26 @@ const LoginScreen = ({ onLogin }: { onLogin: (username: string) => void }) => {
             )}
           </div>
 
+          {/* Remember Me Checkbox */}
+          <div className="flex items-center">
+            <input
+              {...register('rememberMe')}
+              type="checkbox"
+              id="rememberMe"
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              checked={rememberMe}
+              onChange={handleRememberMeChange}
+            />
+            <label htmlFor="rememberMe" className="ml-2 block text-sm text-gray-700">
+              Lembrar de mim
+            </label>
+            <div className="ml-auto">
+              <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                {rememberMe ? '7 dias' : '24 horas'}
+              </span>
+            </div>
+          </div>
+
           {/* Submit Button */}
           <button
             type="submit"
@@ -221,76 +248,76 @@ const LoginScreen = ({ onLogin }: { onLogin: (username: string) => void }) => {
         
         .animate-slide-up {
           animation: slideUp 0.3s ease-out;
-        }
-        
-        @keyframes slideUp {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
           }
-          to {
-            opacity: 1;
-            transform: translateY(0);
+          
+          @keyframes slideUp {
+            from {
+              opacity: 0;
+              transform: translateY(10px);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0);
+            }
           }
-        }
-        
-        .success-particles {
-          position: absolute;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          pointer-events: none;
-          overflow: hidden;
-        }
-        
-        .success-particles::before,
-        .success-particles::after {
-          content: '';
-          position: absolute;
-          width: 4px;
-          height: 4px;
-          background: #10b981;
-          border-radius: 50%;
-          animation: particle 1s ease-out infinite;
-        }
-        
-        .success-particles::before {
-          top: 20%;
-          left: 20%;
-          animation-delay: 0s;
-        }
-        
-        .success-particles::after {
-          top: 30%;
-          right: 20%;
-          animation-delay: 0.3s;
-        }
-        
-        @keyframes particle {
-          0% {
-            transform: translateY(0) scale(1);
-            opacity: 1;
+          
+          .success-particles {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            overflow: hidden;
           }
-          100% {
-            transform: translateY(-20px) scale(0);
-            opacity: 0;
+          
+          .success-particles::before,
+          .success-particles::after {
+            content: '';
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: #10b981;
+            border-radius: 50%;
+            animation: particle 1s ease-out infinite;
           }
-        }
-        
-        .animate-fade-in {
-          animation: fadeIn 0.5s ease-out;
-        }
-        
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
+          
+          .success-particles::before {
+            top: 20%;
+            left: 20%;
+            animation-delay: 0s;
           }
-          to {
-            opacity: 1;
+          
+          .success-particles::after {
+            top: 30%;
+            right: 20%;
+            animation-delay: 0.3s;
           }
-        }
-      `}</style>
+          
+          @keyframes particle {
+            0% {
+              transform: translateY(0) scale(1);
+              opacity: 1;
+            }
+            100% {
+              transform: translateY(-20px) scale(0);
+              opacity: 0;
+            }
+          }
+          
+          .animate-fade-in {
+            animation: fadeIn 0.5s ease-out;
+          }
+          
+          @keyframes fadeIn {
+            from {
+              opacity: 0;
+            }
+            to {
+              opacity: 1;
+            }
+          }
+        `}</style>
     </div>
   )
 }

@@ -36,6 +36,7 @@ import OrdersExpanded from './OrdersExpanded'
 import DetailedData from './DetailedData'
 import HavaianasDashboard from './HavaianasDashboard'
 import ABTesting from './ABTesting'
+import SessionStatus from './SessionStatus'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useUrlParams } from '../hooks/useUrlParams'
 
@@ -1150,13 +1151,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   <EyeOff className="w-4 h-4" />
                 )}
               </button>
-              <button
-                onClick={onLogout}
-                className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors relative z-40 min-w-[40px] sm:min-w-auto"
-              >
-                <LogOut className="w-4 h-4" />
-                <span className="hidden sm:inline">Sair</span>
-              </button>
+              <SessionStatus onLogout={onLogout} user={user} />
             </div>
           </div>
         </div>
