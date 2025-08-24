@@ -35,6 +35,7 @@ import ConversionFunnel from './ConversionFunnel'
 import OrdersExpanded from './OrdersExpanded'
 import DetailedData from './DetailedData'
 import HavaianasDashboard from './HavaianasDashboard'
+import ABTesting from './ABTesting'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useUrlParams } from '../hooks/useUrlParams'
 
@@ -65,18 +66,6 @@ interface MetricsDataItem {
 const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) => {
   const { getUrlParams, updateUrlParams } = useUrlParams()
   
-  // Função para calcular datas dos últimos 7 dias
-  const getLast7Days = () => {
-    const endDate = new Date()
-    const startDate = new Date()
-    startDate.setDate(endDate.getDate() - 7)
-    
-    return {
-      start: startDate.toISOString().split('T')[0],
-      end: endDate.toISOString().split('T')[0]
-    }
-  }
-
   // Função para calcular datas dos últimos 30 dias
   const getLast30Days = () => {
     const endDate = new Date()
@@ -192,12 +181,12 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const [isLoading, setIsLoading] = useState(true)
   const [isTableLoading, setIsTableLoading] = useState(false)
   const [startDate, setStartDate] = useState<string>(() => {
-    const last7Days = getLast7Days()
-    return last7Days.start
+    const last30Days = getLast30Days()
+    return last30Days.start
   })
   const [endDate, setEndDate] = useState<string>(() => {
-    const last7Days = getLast7Days()
-    return last7Days.end
+    const last30Days = getLast30Days()
+    return last30Days.end
   })
   const [selectedTable, setSelectedTable] = useState<string>(() => {
     // Se o usuário tem tablename: 'all', usar um cliente padrão em vez de "all"
@@ -250,7 +239,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   // Carregar parâmetros da URL na inicialização
   useEffect(() => {
     const urlParams = getUrlParams()
-    const last7Days = getLast7Days()
+    const last30Days = getLast30Days()
     
     // Aplicar parâmetros da URL aos estados
     if (urlParams.table && urlParams.table !== 'all') {
@@ -259,12 +248,12 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     if (urlParams.startDate) {
       setStartDate(urlParams.startDate)
     } else {
-      setStartDate(last7Days.start)
+      setStartDate(last30Days.start)
     }
     if (urlParams.endDate) {
       setEndDate(urlParams.endDate)
     } else {
-      setEndDate(last7Days.end)
+      setEndDate(last30Days.end)
     }
     if (urlParams.tab) {
       setActiveTab(urlParams.tab)
@@ -1216,13 +1205,13 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 Dados Detalhados
               </div>
             </button>
-            {selectedTable === 'havaianas' && (
+                        {selectedTable === 'havaianas' && (
               <button
                 onClick={() => handleTabChange('havaianas')}
                 className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
                   activeTab === 'havaianas'
                     ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
                 <div className="flex items-center gap-2">
@@ -1231,6 +1220,19 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 </div>
               </button>
             )}
+            <button
+              onClick={() => handleTabChange('ab-testing')}
+              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'ab-testing'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Target className="w-4 h-4" />
+                Testes A/B
+              </div>
+            </button>
           </nav>
         </div>
       </div>
@@ -1958,6 +1960,15 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         {/* Havaianas Tab */}
         {activeTab === 'havaianas' && (
           <HavaianasDashboard 
+            selectedTable={selectedTable}
+            startDate={startDate}
+            endDate={endDate}
+          />
+        )}
+
+        {/* Testes A/B Tab */}
+        {activeTab === 'ab-testing' && (
+          <ABTesting 
             selectedTable={selectedTable}
             startDate={startDate}
             endDate={endDate}
