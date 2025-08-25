@@ -201,6 +201,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const [showAllRecords, setShowAllRecords] = useState(false)
   const [hideClientName, setHideClientName] = useState(false)
   const [activeTab, setActiveTab] = useState<string>('visao-geral')
+  const [showMobileTabMenu, setShowMobileTabMenu] = useState(false)
   const [filtersCollapsed, setFiltersCollapsed] = useState(true)
   const [attributionModel, setAttributionModel] = useState<string>('Último Clique Não Direto')
   
@@ -955,82 +956,136 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
     return (
       <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4 shadow-sm">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gray-100 rounded-md flex items-center justify-center">
-              <Target className="w-4 h-4 text-gray-600" />
+        {/* Header - Mobile Optimized */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-50 to-purple-50 rounded-xl flex items-center justify-center">
+              <Target className="w-5 h-5 text-blue-600" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-gray-900">Run Rate da Meta</h2>
-              <p className="text-xs text-gray-600">Projeção mensal</p>
+              <h2 className="text-lg font-bold text-gray-900">Run Rate da Meta</h2>
+              <p className="text-sm text-gray-600">Projeção mensal</p>
             </div>
           </div>
-          <div className={`px-3 py-1 rounded-md text-center ${
+          
+          {/* Status Badge - Mobile Optimized */}
+          <div className={`px-4 py-2 rounded-xl text-center shadow-sm ${
             isOnTrack 
-              ? 'bg-green-50 text-green-700 border border-green-200' 
-              : 'bg-red-50 text-red-700 border border-red-200'
+              ? 'bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 border border-green-200' 
+              : 'bg-gradient-to-r from-red-50 to-pink-50 text-red-700 border border-red-200'
           }`}>
-            <p className="text-xs font-medium">
-              {isOnTrack ? 'No caminho' : 'Atrasado'}
+            <p className="text-sm font-semibold">
+              {isOnTrack ? '✅ No caminho' : '⚠️ Atrasado'}
             </p>
-            <p className="text-xs text-gray-600">
-              {currentDay}/{daysInMonth}
+            <p className="text-xs text-gray-600 mt-1">
+              Dia {currentDay} de {daysInMonth}
             </p>
           </div>
         </div>
 
-        {/* Main Content */}
-        <div className="grid grid-cols-3 gap-4">
+        {/* Main Content - Mobile Optimized Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
           {/* Run Rate Projetado */}
-          <div className="text-center">
-            <p className="text-xs font-medium text-gray-600 mb-1">Run Rate</p>
-            <p className="text-lg font-bold text-gray-900">{formatCurrency(runRate)}</p>
+          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 text-center border border-blue-100">
+            <p className="text-sm font-medium text-blue-700 mb-2">Run Rate Projetado</p>
+            <p className="text-xl font-bold text-blue-900">{formatCurrency(runRate)}</p>
+            <p className="text-xs text-blue-600 mt-1">Projeção mensal</p>
           </div>
 
           {/* Meta Mensal */}
-          <div className="text-center">
-            <p className="text-xs font-medium text-gray-600 mb-1">Meta</p>
-            <p className="text-base font-bold text-gray-700">{formatCurrency(monthlyGoal)}</p>
+          <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 text-center border border-purple-100">
+            <p className="text-sm font-medium text-purple-700 mb-2">Meta Mensal</p>
+            <p className="text-xl font-bold text-purple-900">{formatCurrency(monthlyGoal)}</p>
+            <p className="text-xs text-purple-600 mt-1">Objetivo</p>
           </div>
 
           {/* Progresso */}
-          <div className="text-center">
-            <p className="text-xs font-medium text-gray-600 mb-1">Progresso</p>
-            <div className="flex items-center justify-center gap-1 mb-2">
-              <span className={`text-lg font-bold ${
+          <div className="bg-gradient-to-br from-gray-50 to-slate-50 rounded-xl p-4 text-center border border-gray-100">
+            <p className="text-sm font-medium text-gray-700 mb-2">Progresso</p>
+            <div className="flex items-center justify-center gap-2 mb-3">
+              <span className={`text-2xl font-bold ${
                 isOnTrack ? 'text-green-600' : 'text-red-600'
               }`}>
                 {percentageOfGoal.toFixed(1)}%
               </span>
               {isOnTrack ? (
-                <ArrowUpRight className="w-4 h-4 text-green-600" />
+                <ArrowUpRight className="w-5 h-5 text-green-600" />
               ) : (
-                <ArrowDownRight className="w-4 h-4 text-red-600" />
+                <ArrowDownRight className="w-5 h-5 text-red-600" />
               )}
             </div>
             
-            {/* Progress Bar */}
-            <div className="w-full bg-gray-200 rounded-full h-1.5">
+            {/* Progress Bar - Enhanced */}
+            <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
               <div 
-                className={`h-1.5 rounded-full transition-all duration-300 ${
-                  isOnTrack ? 'bg-green-600' : 'bg-red-600'
+                className={`h-2 rounded-full transition-all duration-500 ease-out ${
+                  isOnTrack ? 'bg-gradient-to-r from-green-500 to-emerald-500' : 'bg-gradient-to-r from-red-500 to-pink-500'
                 }`}
                 style={{ width: `${progressWidth}%` }}
               ></div>
             </div>
+            <p className="text-xs text-gray-600">
+              {progressWidth.toFixed(1)}% da meta
+            </p>
           </div>
         </div>
 
-        {/* Bottom Info */}
-        <div className="mt-3 pt-3 border-t border-gray-100">
-          <div className="flex items-center justify-between text-xs text-gray-600">
-            <span>Baseado em {currentDay} dias</span>
-            <span className={`font-medium ${
-              isOnTrack ? 'text-green-600' : 'text-red-600'
-            }`}>
-              {isOnTrack ? 'Meta será atingida' : 'Meta em risco'}
+        {/* Enhanced Progress Visualization - Mobile Optimized */}
+        <div className="bg-gradient-to-r from-gray-50 to-blue-50 rounded-xl p-4 border border-gray-200">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-medium text-gray-700">Progresso Visual</span>
+            <span className="text-xs text-gray-500">
+              {currentDay}/{daysInMonth} dias
             </span>
+          </div>
+          
+          {/* Enhanced Progress Bar */}
+          <div className="relative">
+            <div className="w-full bg-gray-200 rounded-full h-3">
+              <div 
+                className={`h-3 rounded-full transition-all duration-700 ease-out shadow-sm ${
+                  isOnTrack 
+                    ? 'bg-gradient-to-r from-green-400 via-green-500 to-emerald-500' 
+                    : 'bg-gradient-to-r from-red-400 via-red-500 to-pink-500'
+                }`}
+                style={{ width: `${progressWidth}%` }}
+              ></div>
+            </div>
+            
+            {/* Progress Indicator */}
+            <div 
+              className={`absolute top-0 w-1 h-3 rounded-full shadow-lg ${
+                isOnTrack ? 'bg-green-600' : 'bg-red-600'
+              }`}
+              style={{ left: `calc(${progressWidth}% - 2px)` }}
+            ></div>
+          </div>
+          
+          {/* Progress Labels */}
+          <div className="flex justify-between mt-2 text-xs text-gray-500">
+            <span>0%</span>
+            <span>50%</span>
+            <span>100%</span>
+          </div>
+        </div>
+
+        {/* Bottom Info - Enhanced */}
+        <div className="mt-4 pt-4 border-t border-gray-200">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="text-center sm:text-left">
+              <p className="text-sm font-medium text-gray-700">Baseado em {currentDay} dias</p>
+              <p className="text-xs text-gray-500">Dados até hoje</p>
+            </div>
+            <div className="text-center sm:text-right">
+              <p className={`text-sm font-semibold ${
+                isOnTrack ? 'text-green-600' : 'text-red-600'
+              }`}>
+                {isOnTrack ? '🎯 Meta será atingida' : '⚠️ Meta em risco'}
+              </p>
+              <p className="text-xs text-gray-500">
+                {isOnTrack ? 'Continue assim!' : 'Ação necessária'}
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -1160,7 +1215,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       {/* Tab Navigation */}
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <nav className="flex space-x-8">
+          {/* Desktop Navigation */}
+          <nav className="hidden md:flex space-x-8">
             <button
               onClick={() => handleTabChange('visao-geral')}
               className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
@@ -1200,13 +1256,13 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 Dados Detalhados
               </div>
             </button>
-                        {selectedTable === 'havaianas' && (
+            {selectedTable === 'havaianas' && (
               <button
                 onClick={() => handleTabChange('havaianas')}
                 className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
                   activeTab === 'havaianas'
                     ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
                 <div className="flex items-center gap-2">
@@ -1229,268 +1285,326 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
               </div>
             </button>
           </nav>
+
+          {/* Mobile Navigation */}
+          <div className="md:hidden">
+            {/* Mobile Tab Selector */}
+            <div className="flex items-center justify-between py-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-gray-700">Aba atual:</span>
+                <span className="text-sm text-blue-600 font-semibold">
+                  {activeTab === 'visao-geral' && 'Visão Geral'}
+                  {activeTab === 'funil-conversao' && 'Funil de Conversão'}
+                  {activeTab === 'dados-detalhados' && 'Dados Detalhados'}
+                  {activeTab === 'havaianas' && 'Product Scoring'}
+                  {activeTab === 'ab-testing' && 'Testes A/B'}
+                </span>
+              </div>
+              
+              {/* Mobile Tab Menu Button */}
+              <button
+                onClick={() => setShowMobileTabMenu(!showMobileTabMenu)}
+                className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label="Abrir menu de abas"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Mobile Tab Menu Dropdown */}
+            {showMobileTabMenu && (
+              <>
+                {/* Overlay para fechar o menu */}
+                <div 
+                  className="fixed inset-0 z-40 md:hidden" 
+                  onClick={() => setShowMobileTabMenu(false)}
+                />
+                
+                <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg z-50 md:hidden">
+                  <div className="p-2 space-y-1">
+                    <button
+                      onClick={() => {
+                        handleTabChange('visao-geral')
+                        setShowMobileTabMenu(false)
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                        activeTab === 'visao-geral'
+                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <BarChart3 className="w-5 h-5" />
+                        <span>Visão Geral</span>
+                        {activeTab === 'visao-geral' && (
+                          <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full"></div>
+                        )}
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        handleTabChange('funil-conversao')
+                        setShowMobileTabMenu(false)
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                        activeTab === 'funil-conversao'
+                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Filter className="w-5 h-5" />
+                        <span>Funil de Conversão</span>
+                        {activeTab === 'funil-conversao' && (
+                          <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full"></div>
+                        )}
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        handleTabChange('dados-detalhados')
+                        setShowMobileTabMenu(false)
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                        activeTab === 'dados-detalhados'
+                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Database className="w-5 h-5" />
+                        <span>Dados Detalhados</span>
+                        {activeTab === 'dados-detalhados' && (
+                          <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full"></div>
+                        )}
+                      </div>
+                    </button>
+
+                    {selectedTable === 'havaianas' && (
+                      <button
+                        onClick={() => {
+                          handleTabChange('havaianas')
+                          setShowMobileTabMenu(false)
+                        }}
+                        className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                          activeTab === 'havaianas'
+                            ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                            : 'text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Package className="w-5 h-5" />
+                          <span>Product Scoring</span>
+                          {activeTab === 'havaianas' && (
+                            <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full"></div>
+                          )}
+                        </div>
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        handleTabChange('ab-testing')
+                        setShowMobileTabMenu(false)
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                        activeTab === 'ab-testing'
+                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Target className="w-5 h-5" />
+                        <span>Testes A/B</span>
+                        {activeTab === 'ab-testing' && (
+                          <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full"></div>
+                        )}
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Mobile Horizontal Scroll Tabs (Alternative) */}
+            <div className="flex overflow-x-auto scrollbar-hide pb-2 -mx-4 px-4">
+              <div className="flex space-x-2 min-w-max">
+                <button
+                  onClick={() => handleTabChange('visao-geral')}
+                  className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
+                    activeTab === 'visao-geral'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-1">
+                    <BarChart3 className="w-3 h-3" />
+                    <span>Visão Geral</span>
+                  </div>
+                </button>
+                
+                <button
+                  onClick={() => handleTabChange('funil-conversao')}
+                  className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
+                    activeTab === 'funil-conversao'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-1">
+                    <Filter className="w-3 h-3" />
+                    <span>Funil</span>
+                  </div>
+                </button>
+                
+                <button
+                  onClick={() => handleTabChange('dados-detalhados')}
+                  className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
+                    activeTab === 'dados-detalhados'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-1">
+                    <Database className="w-3 h-3" />
+                    <span>Dados</span>
+                  </div>
+                </button>
+                
+                {selectedTable === 'havaianas' && (
+                  <button
+                    onClick={() => handleTabChange('havaianas')}
+                    className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
+                      activeTab === 'havaianas'
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1">
+                      <Package className="w-3 h-3" />
+                      <span>Scoring</span>
+                    </div>
+                  </button>
+                )}
+                
+                <button
+                  onClick={() => handleTabChange('ab-testing')}
+                  className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
+                    activeTab === 'ab-testing'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-1">
+                    <Target className="w-3 h-3" />
+                    <span>A/B</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Mobile Full Width Container for Big Numbers */}
-        <div className="md:hidden -mx-4 px-4">
-          {/* Run Rate Highlight Mobile */}
-          <div className="mb-6">
-            <RunRateHighlight 
-              runRateData={runRateData} 
-              isLoadingGoals={isLoadingGoals}
-              isLoadingCurrentMonth={isLoadingCurrentMonth}
-            />
-          </div>
-          
-          <div className="mb-8">
-            <MetricsCarousel
-              metrics={[
-                {
-                  title: "Sessões",
-                  value: totals.sessoes,
-                  icon: Globe,
-                  growth: calculateGrowth(totals.sessoes, previousTotals.sessoes),
-                  color: "blue"
-                },
-                {
-                  title: "Pedidos Pagos",
-                  value: totals.pedidosPagos,
-                  icon: CheckCircle,
-                  growth: calculateGrowth(totals.pedidosPagos, previousTotals.pedidosPagos),
-                  color: "green"
-                },
-                {
-                  title: "Receita Paga",
-                  value: totals.receitaPaga,
-                  icon: Coins,
-                  growth: calculateGrowth(totals.receitaPaga, previousTotals.receitaPaga),
-                  format: "currency",
-                  color: "purple"
-                },
-                {
-                  title: "Ticket Médio",
-                  value: avgOrderValue,
-                  icon: DollarSign,
-                  format: "currency",
-                  color: "orange",
-                  growth: calculateGrowth(avgOrderValue, previousAvgOrderValue)
-                },
-                {
-                  title: "Novos Clientes",
-                  value: newCustomerRate,
-                  icon: Users2,
-                  format: "percentage",
-                  color: "indigo",
-                  growth: calculateGrowth(newCustomerRate, previousNewCustomerRate)
-                },
-                {
-                  title: "Taxa de Conversão",
-                  value: conversionRate,
-                  icon: Sparkles,
-                  format: "percentage" as const,
-                  color: "red",
-                  growth: calculateGrowth(conversionRate, previousConversionRate)
-                },
-                {
-                  title: "Taxa de Adição ao Carrinho",
-                  value: addToCartRate,
-                  icon: ShoppingBag,
-                  format: "percentage" as const,
-                  color: "blue",
-                  growth: calculateGrowth(addToCartRate, previousAddToCartRate)
-                },
-                {
-                  title: "Receita por Sessão",
-                  value: revenuePerSession,
-                  icon: ArrowUpCircle,
-                  format: "currency" as const,
-                  color: "green",
-                  growth: calculateGrowth(revenuePerSession, previousRevenuePerSession)
-                }
-              ]}
-            />
-          </div>
-        </div>
-
-        {/* Alerts Row */}
-        <div className="mb-3 space-y-2">
-          {/* Cluster Filter Indicator */}
-          {selectedCluster && (
-            <div className="rounded-md border px-3 py-2 bg-blue-50 border-blue-100">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Filter className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm font-medium text-blue-700">
-                    Filtrado por: <span className="font-semibold">{selectedCluster}</span>
-                  </span>
-                </div>
-                
-                <button
-                  onClick={() => setSelectedCluster('')}
-                  className="text-sm p-1 rounded hover:bg-blue-100 transition-colors text-blue-600 hover:text-blue-700"
-                  title="Remover filtro"
-                >
-                  Limpar filtro
-                </button>
-              </div>
-            </div>
-          )}
-          {/* Cookie Loss Alert */}
-          {cookieLossPercentage >= 5 && (
-            <div className={`rounded-md border px-3 py-2 ${
-              cookieLossPercentage < 10 
-                ? 'bg-yellow-50 border-yellow-100' 
-                : 'bg-red-50 border-red-100'
-            }`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="relative group">
-                    <span 
-                      className={`text-xs font-medium cursor-help ${
-                        cookieLossPercentage < 10 
-                          ? 'text-yellow-700' 
-                          : 'text-red-700'
-                      }`}
-                    >
-                      🍪 Perda de Cookies: {cookieLossPercentage.toFixed(1)}% 
-                      {cookieLossPercentage < 10 
-                        ? ' (Moderado)'
-                        : ' (Preocupante)'
-                      }
-                    </span>
-                    
-                    {/* Custom Tooltip */}
-                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
-                      Converse com o time MyMetric para discutir formas de melhorar esse ponto
-                      <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
-                    </div>
-                  </div>
-                </div>
-                
-                <button
-                  onClick={() => setCookieLossPercentage(0)}
-                  className={`text-xs p-1 rounded hover:bg-opacity-20 transition-colors ${
-                    cookieLossPercentage < 10 
-                      ? 'text-yellow-500 hover:bg-yellow-500' 
-                      : 'text-red-500 hover:bg-red-500'
-                  }`}
-                  title="Fechar alerta"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Monthly Goal Missing Alert */}
-          {showGoalAlert && (
-            <div className="rounded-md border px-3 py-2 bg-red-50 border-red-100">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="relative group">
-                    <span className="text-xs font-medium cursor-help text-red-700">
-                      🎯 Meta do mês não cadastrada
-                    </span>
-                    
-                    {/* Custom Tooltip */}
-                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
-                      Cadastre a meta de receita paga para o mês atual para acompanhar o progresso
-                      <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
-                    </div>
-                  </div>
-                </div>
-                
-                <button
-                  onClick={() => setShowGoalAlert(false)}
-                  className="text-xs p-1 rounded hover:bg-opacity-20 transition-colors text-red-500 hover:bg-red-500"
-                  title="Fechar alerta"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Filters */}
-        <div className="mb-6">
-          {/* Mobile Collapsible Header */}
-          <div className="md:hidden mb-3">
-            <button
-              onClick={() => setFiltersCollapsed(!filtersCollapsed)}
-              className="flex items-center justify-between w-full p-4 bg-white rounded-xl border border-gray-200 shadow-sm hover:bg-gray-50 transition-all duration-200"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <BarChart3 className="w-4 h-4 text-blue-600" />
-                </div>
-                <div className="text-left">
-                  <span className="font-semibold text-gray-900 block">Filtros</span>
-                  <span className="text-xs text-gray-500">
-                    Todos os clusters • {startDate} a {endDate}
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500 font-medium">
-                  {filtersCollapsed ? 'Expandir' : 'Recolher'}
-                </span>
-                {filtersCollapsed ? (
-                  <ChevronDown className="w-5 h-5 text-gray-500" />
-                ) : (
-                  <ChevronUp className="w-5 h-5 text-gray-500" />
-                )}
-              </div>
-            </button>
-          </div>
-
-          {/* Desktop Header */}
-          <div className="hidden md:flex items-center justify-between mb-2">
-            <h2 className="text-lg font-semibold text-gray-900">Filtros</h2>
-          </div>
-          
-          {/* Filters Content */}
-          <div className={`transition-all duration-300 ease-in-out relative ${
-            filtersCollapsed ? 'md:block hidden' : 'block'
-          }`}>
-            {/* Mobile Layout - Vertical */}
-            <div className="md:hidden space-y-3">
-              {/* Date Range Picker Card */}
-              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-                <DateRangePicker
-                  startDate={startDate}
-                  endDate={endDate}
-                  onDateRangeChange={(start, end) => {
-                    setStartDate(start)
-                    setEndDate(end)
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Desktop Layout - Horizontal */}
-            <div className="hidden md:flex flex-row items-start gap-4">
-              {/* Date Range Picker */}
-              <div className="flex-1">
-                <DateRangePicker
-                  startDate={startDate}
-                  endDate={endDate}
-                  onDateRangeChange={(start, end) => {
-                    setStartDate(start)
-                    setEndDate(end)
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
         {/* Content based on active tab */}
         {activeTab === 'visao-geral' && (
           <>
+            {/* Mobile Full Width Container for Big Numbers */}
+            <div className="md:hidden -mx-4 px-4">
+              {/* Run Rate Highlight Mobile - Enhanced */}
+              <div className="mb-8 bg-gradient-to-br from-blue-50/30 to-purple-50/30 -mx-4 px-4 py-6 rounded-b-3xl">
+                <div className="mb-2">
+                  <h3 className="text-lg font-bold text-gray-800 text-center mb-1">
+                    📊 Resumo do Mês
+                  </h3>
+                  <p className="text-sm text-gray-600 text-center">
+                    Acompanhe o progresso das suas metas
+                  </p>
+                </div>
+                
+                <RunRateHighlight 
+                  runRateData={runRateData} 
+                  isLoadingGoals={isLoadingGoals}
+                  isLoadingCurrentMonth={isLoadingCurrentMonth}
+                />
+              </div>
+              
+              <div className="mb-8">
+                <MetricsCarousel
+                  metrics={[
+                    {
+                      title: "Sessões",
+                      value: totals.sessoes,
+                      icon: Globe,
+                      growth: calculateGrowth(totals.sessoes, previousTotals.sessoes),
+                      color: "blue"
+                    },
+                    {
+                      title: "Pedidos Pagos",
+                      value: totals.pedidosPagos,
+                      icon: CheckCircle,
+                      growth: calculateGrowth(totals.pedidosPagos, previousTotals.pedidosPagos),
+                      color: "green"
+                    },
+                    {
+                      title: "Receita Paga",
+                      value: totals.receitaPaga,
+                      icon: Coins,
+                      growth: calculateGrowth(totals.receitaPaga, previousTotals.receitaPaga),
+                      format: "currency",
+                      color: "purple"
+                    },
+                    {
+                      title: "Ticket Médio",
+                      value: avgOrderValue,
+                      icon: DollarSign,
+                      format: "currency",
+                      color: "orange",
+                      growth: calculateGrowth(avgOrderValue, previousAvgOrderValue)
+                    },
+                    {
+                      title: "Novos Clientes",
+                      value: newCustomerRate,
+                      icon: Users2,
+                      format: "percentage",
+                      color: "indigo",
+                      growth: calculateGrowth(newCustomerRate, previousNewCustomerRate)
+                    },
+                    {
+                      title: "Taxa de Conversão",
+                      value: conversionRate,
+                      icon: Sparkles,
+                      format: "percentage" as const,
+                      color: "red",
+                      growth: calculateGrowth(conversionRate, previousConversionRate)
+                    },
+                    {
+                      title: "Taxa de Adição ao Carrinho",
+                      value: addToCartRate,
+                      icon: ShoppingBag,
+                      format: "percentage" as const,
+                      color: "blue",
+                      growth: calculateGrowth(addToCartRate, previousAddToCartRate)
+                    },
+                    {
+                      title: "Receita por Sessão",
+                      value: revenuePerSession,
+                      icon: ArrowUpCircle,
+                      format: "currency" as const,
+                      color: "green",
+                      growth: calculateGrowth(revenuePerSession, previousRevenuePerSession)
+                    }
+                  ]}
+                />
+              </div>
+            </div>
+
             {/* No Data Message */}
             {metrics.length === 0 && !isTableLoading ? (
               <div className="bg-white rounded-xl shadow-lg p-12 text-center">
@@ -1510,12 +1624,23 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
                 {/* Metrics Grid (Desktop) */}
                 <div className="hidden md:block">
-                  {/* Run Rate Highlight */}
-                  <RunRateHighlight 
-                    runRateData={runRateData} 
-                    isLoadingGoals={isLoadingGoals}
-                    isLoadingCurrentMonth={isLoadingCurrentMonth}
-                  />
+                  {/* Run Rate Highlight - Enhanced */}
+                  <div className="mb-6 bg-gradient-to-br from-blue-50/30 to-purple-50/30 rounded-2xl p-6 border border-blue-100/50">
+                    <div className="mb-4">
+                      <h3 className="text-xl font-bold text-gray-800 mb-2">
+                        📊 Resumo do Mês
+                      </h3>
+                      <p className="text-gray-600">
+                        Acompanhe o progresso das suas metas e projeções
+                      </p>
+                    </div>
+                    
+                    <RunRateHighlight 
+                      runRateData={runRateData} 
+                      isLoadingGoals={isLoadingGoals}
+                      isLoadingCurrentMonth={isLoadingCurrentMonth}
+                    />
+                  </div>
 
                   {/* Metrics Grid - First Row */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
