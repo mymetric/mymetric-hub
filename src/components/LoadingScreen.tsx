@@ -11,7 +11,7 @@ const LoadingScreen = ({ message = 'Carregando...', showAuthStatus = false }: Lo
       <div className="text-center">
         {/* Logo animado */}
         <div className="mb-8">
-          <Logo size="2xl" />
+          <Logo size="xl" />
         </div>
         
         {/* Spinner */}

@@ -3,7 +3,6 @@ import {
   BarChart3,
   ArrowUpRight,
   ArrowDownRight,
-  LogOut,
   User,
   Globe,
   Coins,
@@ -12,8 +11,6 @@ import {
   Users2,
   CheckCircle,
   ShoppingBag,
-  ChevronDown,
-  ChevronUp,
   DollarSign,
   Target,
   Download,
@@ -21,12 +18,13 @@ import {
   Filter,
   Database,
   EyeOff,
-  Package
+  Package,
+  ShoppingCart
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
 import Logo from './Logo'
 import TableSelector from './TableSelector'
-import DateRangePicker from './DateRangePicker'
+
 import SortableHeader from './SortableHeader'
 import DebugMetrics from './DebugMetrics'
 import TimelineChart from './TimelineChart'
@@ -36,6 +34,7 @@ import OrdersExpanded from './OrdersExpanded'
 import DetailedData from './DetailedData'
 import HavaianasDashboard from './HavaianasDashboard'
 import ABTesting from './ABTesting'
+import ProductsDashboard from './ProductsDashboard'
 import SessionStatus from './SessionStatus'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useUrlParams } from '../hooks/useUrlParams'
@@ -202,7 +201,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const [hideClientName, setHideClientName] = useState(false)
   const [activeTab, setActiveTab] = useState<string>('visao-geral')
   const [showMobileTabMenu, setShowMobileTabMenu] = useState(false)
-  const [filtersCollapsed, setFiltersCollapsed] = useState(true)
+
   const [attributionModel, setAttributionModel] = useState<string>('Último Clique Não Direto')
   
   // Estado para filtro de cluster
@@ -633,33 +632,13 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     }
   })
 
-  // Calcular percentual de vendas do cluster "🍪 Perda de Cookies"
-  const cookieLossCluster = clusterTotals.find(cluster => cluster.cluster === '🍪 Perda de Cookies')
-  const calculatedCookieLossPercentage = totals.pedidos > 0 && cookieLossCluster 
-    ? (cookieLossCluster.totals.pedidos / totals.pedidos) * 100 
-    : 0
 
-  // Estado para controlar a visibilidade do alerta
-  const [cookieLossPercentage, setCookieLossPercentage] = useState(calculatedCookieLossPercentage)
 
-  // Atualizar o estado quando o cálculo mudar
-  useEffect(() => {
-    setCookieLossPercentage(calculatedCookieLossPercentage)
-  }, [calculatedCookieLossPercentage])
 
-  // Verificar se a meta do mês está cadastrada
-  const currentDate = new Date()
-  const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`
-  const monthlyGoal = goals?.goals?.metas_mensais?.[currentMonth]?.meta_receita_paga
-  const isMonthlyGoalMissing = !isLoadingGoals && !isLoadingCurrentMonth && !monthlyGoal
 
-  // Estado para controlar a visibilidade do alerta de meta
-  const [showGoalAlert, setShowGoalAlert] = useState(isMonthlyGoalMissing)
 
-  // Atualizar o estado quando a verificação da meta mudar
-  useEffect(() => {
-    setShowGoalAlert(isMonthlyGoalMissing)
-  }, [isMonthlyGoalMissing])
+
+
 
   // Função de ordenação
   const sortData = (data: typeof clusterTotals) => {
@@ -1272,6 +1251,19 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
               </button>
             )}
             <button
+              onClick={() => handleTabChange('produtos')}
+              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'produtos'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <ShoppingCart className="w-4 h-4" />
+                Produtos
+              </div>
+            </button>
+            <button
               onClick={() => handleTabChange('ab-testing')}
               className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
                 activeTab === 'ab-testing'
@@ -1297,6 +1289,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   {activeTab === 'funil-conversao' && 'Funil de Conversão'}
                   {activeTab === 'dados-detalhados' && 'Dados Detalhados'}
                   {activeTab === 'havaianas' && 'Product Scoring'}
+                  {activeTab === 'produtos' && 'Produtos'}
                   {activeTab === 'ab-testing' && 'Testes A/B'}
                 </span>
               </div>
@@ -1408,6 +1401,25 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
                     <button
                       onClick={() => {
+                        handleTabChange('produtos')
+                        setShowMobileTabMenu(false)
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                        activeTab === 'produtos'
+                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <ShoppingCart className="w-5 h-5" />
+                        <span>Produtos</span>
+                        {activeTab === 'produtos' && (
+                          <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full"></div>
+                        )}
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => {
                         handleTabChange('ab-testing')
                         setShowMobileTabMenu(false)
                       }}
@@ -1491,6 +1503,19 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   </button>
                 )}
                 
+                <button
+                  onClick={() => handleTabChange('produtos')}
+                  className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
+                    activeTab === 'produtos'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-1">
+                    <ShoppingCart className="w-3 h-3" />
+                    <span>Produtos</span>
+                  </div>
+                </button>
                 <button
                   onClick={() => handleTabChange('ab-testing')}
                   className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
@@ -2083,6 +2108,13 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
             selectedTable={selectedTable}
             startDate={startDate}
             endDate={endDate}
+          />
+        )}
+
+        {/* Produtos Tab */}
+        {activeTab === 'produtos' && (
+          <ProductsDashboard 
+            selectedTable={selectedTable}
           />
         )}
 

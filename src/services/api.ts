@@ -100,6 +100,29 @@ interface HavaianasResponse {
   data: HavaianasItem[]
 }
 
+interface ProductTrendRequest {
+  table_name: string
+  limit?: number
+}
+
+interface ProductTrendItem {
+  item_id: string
+  item_name: string
+  purchases_week_1: number
+  purchases_week_2: number
+  purchases_week_3: number
+  purchases_week_4: number
+  percent_change_w1_w2: number
+  percent_change_w2_w3: number
+  percent_change_w3_w4: number
+  trend_status: string
+  trend_consistency: string
+}
+
+interface ProductTrendResponse {
+  data: ProductTrendItem[]
+}
+
 interface MetricsDataItem {
   Data: string
   Cluster: string
@@ -396,6 +419,41 @@ export const api = {
     } catch (error) {
       console.error('❌ Havaianas fetch error:', error)
       throw new Error('Erro ao buscar dados da Havaianas.')
+    }
+  },
+
+  async getProductTrend(token: string, productData: ProductTrendRequest): Promise<ProductTrendResponse> {
+    try {
+      console.log('🌐 Product Trend API Request:', {
+        url: `${API_BASE_URL}/metrics/product-trend`,
+        method: 'POST',
+        body: productData
+      })
+
+      const response = await fetch(`${API_BASE_URL}/metrics/product-trend`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(productData),
+      })
+
+      console.log('📡 Product Trend Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        handleAuthError(response.status)
+        const errorText = await response.text()
+        console.error('❌ Product Trend API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('📦 Product Trend API Response data:', data)
+      return data
+    } catch (error) {
+      console.error('❌ Product Trend fetch error:', error)
+      throw new Error('Erro ao buscar dados de tendência de produtos.')
     }
   }
 } 

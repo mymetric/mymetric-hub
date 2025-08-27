@@ -89,7 +89,7 @@ const SessionStatus = ({ onLogout, user }: SessionStatusProps) => {
               </div>
               {user?.admin && (
                 <div className="ml-auto">
-                  <Shield className="w-5 h-5 text-yellow-600" title="Administrador" />
+                  <Shield className="w-5 h-5 text-yellow-600" />
                 </div>
               )}
             </div>
