@@ -103,6 +103,8 @@ interface HavaianasResponse {
 interface ProductTrendRequest {
   table_name: string
   limit?: number
+  offset?: number
+  order_by?: string
 }
 
 interface ProductTrendItem {

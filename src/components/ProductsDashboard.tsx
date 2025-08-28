@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -9,7 +9,8 @@ import {
   ArrowDownRight,
   Search,
   SortAsc,
-  SortDesc
+  SortDesc,
+  Loader2
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
 
@@ -39,42 +40,70 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [filterTrend, setFilterTrend] = useState<string>('all')
   const [limit, setLimit] = useState(100)
+  const [totalLoaded, setTotalLoaded] = useState(0)
+  const [isAutoLoading, setIsAutoLoading] = useState(false)
 
-  // Buscar dados de produtos
-  useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        const token = localStorage.getItem('auth-token')
-        if (!token || !selectedTable) return
+  // Função para carregar produtos com paginação automática
+  const loadProducts = useCallback(async (currentOffset = 0) => {
+    try {
+      const token = localStorage.getItem('auth-token')
+      if (!token || !selectedTable) return
 
-        // Validar que selectedTable não é "all"
-        if (!validateTableName(selectedTable)) {
-          return
-        }
-
-        setIsLoading(true)
-        console.log('🔄 Fetching product trends for table:', selectedTable)
-        
-        const response = await api.getProductTrend(token, {
-          table_name: selectedTable,
-          limit
-        })
-
-        console.log('✅ Product trends response:', response)
-        setProducts(response.data || [])
-      } catch (error) {
-        console.error('❌ Error fetching product trends:', error)
-        setProducts([])
-      } finally {
-        setIsLoading(false)
+      // Validar que selectedTable não é "all"
+      if (!validateTableName(selectedTable)) {
+        return
       }
+
+      console.log('🔄 Fetching product trends for table:', selectedTable, 'offset:', currentOffset, 'limit:', limit)
+      
+      const response = await api.getProductTrend(token, {
+        table_name: selectedTable,
+        limit,
+        offset: currentOffset,
+        order_by: sortField
+      })
+
+      console.log('✅ Product trends response:', response)
+      const newProducts = response.data || []
+      
+      setProducts(prev => [...prev, ...newProducts])
+      setTotalLoaded(prev => prev + newProducts.length)
+      
+      // Se ainda há mais dados, continuar carregando automaticamente
+      if (newProducts.length === limit) {
+        setIsAutoLoading(true)
+        // Pequeno delay para não sobrecarregar a API
+        setTimeout(() => {
+          loadProducts(currentOffset + limit)
+        }, 500)
+      } else {
+        // Finalizou o carregamento automático
+        setIsAutoLoading(false)
+      }
+      
+    } catch (error) {
+      console.error('❌ Error fetching product trends:', error)
+      setIsAutoLoading(false)
+    }
+  }, [selectedTable, limit, sortField])
+
+  // Carregar dados iniciais
+  useEffect(() => {
+    const initializeLoading = async () => {
+      setIsLoading(true)
+      setProducts([])
+      setTotalLoaded(0)
+      setIsAutoLoading(false)
+      
+      await loadProducts(0)
+      setIsLoading(false)
     }
 
-    fetchProducts()
-  }, [selectedTable, limit])
+    initializeLoading()
+  }, [selectedTable, limit, sortField, loadProducts])
 
-  // Filtrar e ordenar produtos
-  const filteredAndSortedProducts = products
+  // Filtrar produtos
+  const filteredProducts = products
     .filter(product => {
       const matchesSearch = product.item_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            product.item_id.includes(searchTerm)
@@ -85,56 +114,6 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
                           (filterTrend === 'stable' && product.trend_consistency.includes('Stable'))
       
       return matchesSearch && matchesTrend
-    })
-    .sort((a, b) => {
-      let aValue: any
-      let bValue: any
-
-      switch (sortField) {
-        case 'item_name':
-          aValue = a.item_name.toLowerCase()
-          bValue = b.item_name.toLowerCase()
-          break
-        case 'purchases_week_1':
-          aValue = a.purchases_week_1
-          bValue = b.purchases_week_1
-          break
-        case 'purchases_week_2':
-          aValue = a.purchases_week_2
-          bValue = b.purchases_week_2
-          break
-        case 'purchases_week_3':
-          aValue = a.purchases_week_3
-          bValue = b.purchases_week_3
-          break
-        case 'purchases_week_4':
-          aValue = a.purchases_week_4
-          bValue = b.purchases_week_4
-          break
-        case 'percent_change_w1_w2':
-          aValue = a.percent_change_w1_w2
-          bValue = b.percent_change_w1_w2
-          break
-        case 'percent_change_w2_w3':
-          aValue = a.percent_change_w2_w3
-          bValue = b.percent_change_w2_w3
-          break
-        case 'percent_change_w3_w4':
-          aValue = a.percent_change_w3_w4
-          bValue = b.percent_change_w3_w4
-          break
-        default:
-          aValue = a.purchases_week_1
-          bValue = b.purchases_week_1
-      }
-
-      if (typeof aValue === 'string') {
-        return sortDirection === 'asc' 
-          ? aValue.localeCompare(bValue)
-          : bValue.localeCompare(aValue)
-      }
-
-      return sortDirection === 'asc' ? aValue - bValue : bValue - aValue
     })
 
   // Função para lidar com ordenação
@@ -187,11 +166,12 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
 
 
 
-  if (isLoading) {
+  if (isLoading && products.length === 0) {
     return (
       <div className="bg-white rounded-xl shadow-lg p-12 text-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
         <p className="text-gray-600">Carregando dados de produtos...</p>
+        <p className="text-sm text-gray-500 mt-2">Carregando automaticamente em lotes de {limit} produtos</p>
       </div>
     )
   }
@@ -216,6 +196,24 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
               <Calendar className="w-4 h-4 text-gray-500" />
               <span className="text-sm text-gray-600">Últimas 4 semanas</span>
             </div>
+            
+            {/* Indicador de carregamento automático */}
+            {isAutoLoading && (
+              <div className="flex items-center gap-2 text-sm text-blue-600">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Carregando automaticamente...</span>
+                <span className="text-gray-500">({totalLoaded} produtos)</span>
+              </div>
+            )}
+            
+            {/* Indicador de conclusão */}
+            {!isAutoLoading && totalLoaded > 0 && (
+              <div className="flex items-center gap-2 text-sm text-green-600">
+                <Package className="w-4 h-4" />
+                <span>Carregamento concluído</span>
+                <span className="text-gray-500">({totalLoaded} produtos)</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -396,7 +394,7 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredAndSortedProducts.length === 0 ? (
+              {filteredProducts.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="px-6 py-12 text-center text-gray-500">
                     <Package className="w-12 h-12 mx-auto mb-4 text-gray-300" />
@@ -405,7 +403,7 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
                   </td>
                 </tr>
               ) : (
-                filteredAndSortedProducts.map((product) => (
+                filteredProducts.map((product) => (
                   <tr key={product.item_id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div>
@@ -490,19 +488,54 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
                   </tr>
                 ))
               )}
+              
+              {/* Indicador de carregamento automático */}
+              {isAutoLoading && (
+                <tr>
+                  <td colSpan={10} className="px-6 py-6 text-center bg-blue-50">
+                    <div className="flex items-center justify-center gap-3">
+                      <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                      <span className="text-blue-600 font-medium">Carregando mais produtos automaticamente...</span>
+                      <span className="text-sm text-gray-500">({totalLoaded} carregados até agora)</span>
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
 
         {/* Footer com estatísticas */}
         <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
-          <div className="flex items-center justify-between text-sm text-gray-600">
-            <span>
-              Mostrando {filteredAndSortedProducts.length} de {totalProducts} produtos
-            </span>
-            <span>
-              {searchTerm && `Filtrado por: "${searchTerm}"`}
-            </span>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm text-gray-600">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+              <span>
+                Total carregado: {totalLoaded} produtos
+              </span>
+              <span>
+                Mostrando {filteredProducts.length} produtos filtrados
+              </span>
+              {searchTerm && (
+                <span className="text-blue-600">
+                  Filtrado por: "{searchTerm}"
+                </span>
+              )}
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {isAutoLoading && (
+                <span className="text-blue-600 flex items-center gap-1">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Carregando...
+                </span>
+              )}
+              {!isAutoLoading && totalLoaded > 0 && (
+                <span className="text-green-600 flex items-center gap-1">
+                  <Package className="w-3 h-3" />
+                  Carregamento completo
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>
