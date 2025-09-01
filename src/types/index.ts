@@ -44,4 +44,59 @@ export interface HavaianasTimelineData {
   avgSizeScore: number
   avgPromoLabel: number
   itemCount: number
+}
+
+// Tipos para Mídia Paga
+export interface AdsCampaignData {
+  platform: string
+  campaign_name: string
+  date: string
+  cost: number
+  impressions: number
+  clicks: number
+  leads: number
+  transactions: number
+  revenue: number
+  transactions_first: number
+  revenue_first: number
+  transactions_origin_stack: number
+  revenue_origin_stack: number
+  transactions_first_origin_stack: number
+  revenue_first_origin_stack: number
+}
+
+export interface AdsCampaignRequest {
+  start_date: string
+  end_date: string
+  table_name: string
+}
+
+export interface AdsCampaignResponse {
+  data: AdsCampaignData[]
+}
+
+// Tipos para Dados em Tempo Real
+export interface RealtimeDataItem {
+  event_timestamp: string
+  session_id: string
+  transaction_id: string
+  item_category: string
+  item_name: string
+  quantity: number
+  item_revenue: number
+  source: string
+  medium: string
+  traffic_category?: string
+  campaign: string
+  content: string
+  term: string
+  page_location: string
+}
+
+export interface RealtimeDataRequest {
+  table_name: string
+}
+
+export interface RealtimeDataResponse {
+  data: RealtimeDataItem[]
 } 

@@ -19,11 +19,14 @@ import {
   Database,
   EyeOff,
   Package,
-  ShoppingCart
+  ShoppingCart,
+  TrendingUp,
+  Activity
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
 import Logo from './Logo'
 import TableSelector from './TableSelector'
+import DateRangePicker from './DateRangePicker'
 
 import SortableHeader from './SortableHeader'
 import DebugMetrics from './DebugMetrics'
@@ -35,6 +38,8 @@ import DetailedData from './DetailedData'
 import HavaianasDashboard from './HavaianasDashboard'
 import ABTesting from './ABTesting'
 import ProductsDashboard from './ProductsDashboard'
+import PaidMediaDashboard from './PaidMediaDashboard'
+import RealtimeData from './RealtimeData'
 import SessionStatus from './SessionStatus'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useUrlParams } from '../hooks/useUrlParams'
@@ -66,11 +71,37 @@ interface MetricsDataItem {
 const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) => {
   const { getUrlParams, updateUrlParams } = useUrlParams()
   
-  // Função para calcular datas dos últimos 30 dias
-  const getLast30Days = () => {
+
+
+  // Função para calcular datas do mês atual
+  const getCurrentMonth = () => {
     const endDate = new Date()
     const startDate = new Date()
-    startDate.setDate(endDate.getDate() - 30)
+    startDate.setDate(1) // Primeiro dia do mês atual
+    
+    return {
+      start: startDate.toISOString().split('T')[0],
+      end: endDate.toISOString().split('T')[0]
+    }
+  }
+
+  // Função para calcular datas dos últimos 60 dias
+  const getLast60Days = () => {
+    const endDate = new Date()
+    const startDate = new Date()
+    startDate.setDate(endDate.getDate() - 60)
+    
+    return {
+      start: startDate.toISOString().split('T')[0],
+      end: endDate.toISOString().split('T')[0]
+    }
+  }
+
+  // Função para calcular datas dos últimos 7 dias
+  const getLast7Days = () => {
+    const endDate = new Date()
+    const startDate = new Date()
+    startDate.setDate(endDate.getDate() - 7)
     
     return {
       start: startDate.toISOString().split('T')[0],
@@ -181,12 +212,12 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const [isLoading, setIsLoading] = useState(true)
   const [isTableLoading, setIsTableLoading] = useState(false)
   const [startDate, setStartDate] = useState<string>(() => {
-    const last30Days = getLast30Days()
-    return last30Days.start
+    const currentMonth = getCurrentMonth()
+    return currentMonth.start
   })
   const [endDate, setEndDate] = useState<string>(() => {
-    const last30Days = getLast30Days()
-    return last30Days.end
+    const currentMonth = getCurrentMonth()
+    return currentMonth.end
   })
   const [selectedTable, setSelectedTable] = useState<string>(() => {
     // Se o usuário tem tablename: 'all', usar um cliente padrão em vez de "all"
@@ -240,24 +271,40 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   // Carregar parâmetros da URL na inicialização
   useEffect(() => {
     const urlParams = getUrlParams()
-    const last30Days = getLast30Days()
     
     // Aplicar parâmetros da URL aos estados
     if (urlParams.table && urlParams.table !== 'all') {
       setSelectedTable(urlParams.table)
     }
-    if (urlParams.startDate) {
-      setStartDate(urlParams.startDate)
-    } else {
-      setStartDate(last30Days.start)
-    }
-    if (urlParams.endDate) {
-      setEndDate(urlParams.endDate)
-    } else {
-      setEndDate(last30Days.end)
-    }
     if (urlParams.tab) {
       setActiveTab(urlParams.tab)
+    }
+    
+    // Definir datas baseado na aba ativa ou parâmetros da URL
+    if (urlParams.startDate && urlParams.endDate) {
+      setStartDate(urlParams.startDate)
+      setEndDate(urlParams.endDate)
+    } else {
+      // Usar período padrão baseado na aba ativa
+      const currentTab = urlParams.tab || 'visao-geral'
+      if (currentTab === 'visao-geral') {
+        const currentMonth = getCurrentMonth()
+        setStartDate(currentMonth.start)
+        setEndDate(currentMonth.end)
+      } else if (currentTab === 'funil-conversao') {
+        const last60Days = getLast60Days()
+        setStartDate(last60Days.start)
+        setEndDate(last60Days.end)
+      } else if (currentTab === 'dados-detalhados') {
+        const last7Days = getLast7Days()
+        setStartDate(last7Days.start)
+        setEndDate(last7Days.end)
+      } else {
+        // Fallback para outras abas
+        const currentMonth = getCurrentMonth()
+        setStartDate(currentMonth.start)
+        setEndDate(currentMonth.end)
+      }
     }
   }, []) // Removendo getUrlParams da dependência para evitar loop
 
@@ -293,11 +340,19 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const handleTabChange = (tab: string) => {
     setActiveTab(tab)
     
-    // Se for a aba do funil de conversão, definir período padrão de 30 dias
-    if (tab === 'funil-conversao') {
-      const last30Days = getLast30Days()
-      setStartDate(last30Days.start)
-      setEndDate(last30Days.end)
+    // Definir período padrão baseado na aba selecionada
+    if (tab === 'visao-geral') {
+      const currentMonth = getCurrentMonth()
+      setStartDate(currentMonth.start)
+      setEndDate(currentMonth.end)
+    } else if (tab === 'funil-conversao') {
+      const last60Days = getLast60Days()
+      setStartDate(last60Days.start)
+      setEndDate(last60Days.end)
+    } else if (tab === 'dados-detalhados') {
+      const last7Days = getLast7Days()
+      setStartDate(last7Days.start)
+      setEndDate(last7Days.end)
     }
   }
 
@@ -1210,6 +1265,19 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
               </div>
             </button>
             <button
+              onClick={() => handleTabChange('midia-paga')}
+              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'midia-paga'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-4 h-4" />
+                Mídia Paga
+              </div>
+            </button>
+            <button
               onClick={() => handleTabChange('funil-conversao')}
               className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
                 activeTab === 'funil-conversao'
@@ -1276,6 +1344,19 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 Testes A/B
               </div>
             </button>
+            <button
+              onClick={() => handleTabChange('tempo-real')}
+              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'tempo-real'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Activity className="w-4 h-4" />
+                Tempo Real
+              </div>
+            </button>
           </nav>
 
           {/* Mobile Navigation */}
@@ -1286,11 +1367,13 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 <span className="text-sm font-medium text-gray-700">Aba atual:</span>
                 <span className="text-sm text-blue-600 font-semibold">
                   {activeTab === 'visao-geral' && 'Visão Geral'}
+                  {activeTab === 'midia-paga' && 'Mídia Paga'}
                   {activeTab === 'funil-conversao' && 'Funil de Conversão'}
                   {activeTab === 'dados-detalhados' && 'Dados Detalhados'}
                   {activeTab === 'havaianas' && 'Product Scoring'}
                   {activeTab === 'produtos' && 'Produtos'}
                   {activeTab === 'ab-testing' && 'Testes A/B'}
+                  {activeTab === 'tempo-real' && 'Tempo Real'}
                 </span>
               </div>
               
@@ -1332,6 +1415,26 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                         <BarChart3 className="w-5 h-5" />
                         <span>Visão Geral</span>
                         {activeTab === 'visao-geral' && (
+                          <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full"></div>
+                        )}
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        handleTabChange('midia-paga')
+                        setShowMobileTabMenu(false)
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                        activeTab === 'midia-paga'
+                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <TrendingUp className="w-5 h-5" />
+                        <span>Mídia Paga</span>
+                        {activeTab === 'midia-paga' && (
                           <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full"></div>
                         )}
                       </div>
@@ -1437,6 +1540,26 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                         )}
                       </div>
                     </button>
+
+                    <button
+                      onClick={() => {
+                        handleTabChange('tempo-real')
+                        setShowMobileTabMenu(false)
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                        activeTab === 'tempo-real'
+                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Activity className="w-5 h-5" />
+                        <span>Tempo Real</span>
+                        {activeTab === 'tempo-real' && (
+                          <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full"></div>
+                        )}
+                      </div>
+                    </button>
                   </div>
                 </div>
               </>
@@ -1456,6 +1579,20 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   <div className="flex items-center gap-1">
                     <BarChart3 className="w-3 h-3" />
                     <span>Visão Geral</span>
+                  </div>
+                </button>
+                
+                <button
+                  onClick={() => handleTabChange('midia-paga')}
+                  className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
+                    activeTab === 'midia-paga'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-1">
+                    <TrendingUp className="w-3 h-3" />
+                    <span>Mídia</span>
                   </div>
                 </button>
                 
@@ -1529,6 +1666,20 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                     <span>A/B</span>
                   </div>
                 </button>
+
+                <button
+                  onClick={() => handleTabChange('tempo-real')}
+                  className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
+                    activeTab === 'tempo-real'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-1">
+                    <Activity className="w-3 h-3" />
+                    <span>Live</span>
+                  </div>
+                </button>
               </div>
             </div>
           </div>
@@ -1537,6 +1688,33 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Filtros de Data - Global para todas as abas (exceto tempo-real) */}
+        {activeTab !== 'tempo-real' && (
+          <div className="mb-6 bg-white rounded-xl shadow-lg p-4 border border-gray-200">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-1">Filtros de Período</h3>
+                <p className="text-sm text-gray-600">
+                  {activeTab === 'visao-geral' && 'Padrão: Mês atual até hoje'}
+                  {activeTab === 'funil-conversao' && 'Padrão: Últimos 60 dias até hoje'}
+                  {activeTab === 'dados-detalhados' && 'Padrão: Últimos 7 dias até hoje'}
+                  {!['visao-geral', 'funil-conversao', 'dados-detalhados'].includes(activeTab) && 'Padrão: Mês atual até hoje'}
+                </p>
+              </div>
+              <div className="flex items-center gap-4">
+                <DateRangePicker
+                  startDate={startDate}
+                  endDate={endDate}
+                  onDateRangeChange={(start, end) => {
+                    setStartDate(start)
+                    setEndDate(end)
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Content based on active tab */}
         {activeTab === 'visao-geral' && (
           <>
@@ -1737,6 +1915,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                     />
                   </div>
                 </div>
+
+
 
 
 
@@ -2124,6 +2304,22 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
             selectedTable={selectedTable}
             startDate={startDate}
             endDate={endDate}
+          />
+        )}
+
+        {/* Mídia Paga Tab */}
+        {activeTab === 'midia-paga' && (
+          <PaidMediaDashboard 
+            selectedTable={selectedTable}
+            startDate={startDate}
+            endDate={endDate}
+          />
+        )}
+
+        {/* Dados em Tempo Real Tab */}
+        {activeTab === 'tempo-real' && (
+          <RealtimeData 
+            selectedTable={selectedTable}
           />
         )}
       </main>

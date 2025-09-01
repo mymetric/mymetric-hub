@@ -1,3 +1,5 @@
+import { AdsCampaignRequest, AdsCampaignResponse } from '../types'
+
 const API_BASE_URL = 'https://api.mymetric.app'
 
 // Função para validar table_name - não permite "all" como valor válido para consultas
@@ -123,6 +125,34 @@ interface ProductTrendItem {
 
 interface ProductTrendResponse {
   data: ProductTrendItem[]
+}
+
+
+
+
+
+interface RealtimeDataRequest {
+  table_name: string
+}
+
+interface RealtimeDataItem {
+  event_timestamp: string
+  session_id: string
+  transaction_id: string
+  item_category: string
+  item_name: string
+  quantity: number
+  item_revenue: number
+  source: string
+  medium: string
+  campaign: string
+  content: string
+  term: string
+  page_location: string
+}
+
+interface RealtimeDataResponse {
+  data: RealtimeDataItem[]
 }
 
 interface MetricsDataItem {
@@ -456,6 +486,76 @@ export const api = {
     } catch (error) {
       console.error('❌ Product Trend fetch error:', error)
       throw new Error('Erro ao buscar dados de tendência de produtos.')
+    }
+  },
+
+  async getAdsCampaigns(token: string, adsData: AdsCampaignRequest): Promise<AdsCampaignResponse> {
+    try {
+      console.log('🌐 Ads Campaigns API Request:', {
+        url: `${API_BASE_URL}/metrics/ads-campaigns-results`,
+        method: 'POST',
+        body: adsData
+      })
+
+      const response = await fetch(`${API_BASE_URL}/metrics/ads-campaigns-results`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(adsData),
+      })
+
+      console.log('📡 Ads Campaigns Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        handleAuthError(response.status)
+        const errorText = await response.text()
+        console.error('❌ Ads Campaigns API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('📦 Ads Campaigns API Response data:', data)
+      return data
+    } catch (error) {
+      console.error('❌ Ads Campaigns fetch error:', error)
+      throw new Error('Erro ao buscar dados de campanhas de ads.')
+    }
+  },
+
+  async getRealtimeData(token: string, realtimeData: RealtimeDataRequest): Promise<RealtimeDataResponse> {
+    try {
+      console.log('🌐 Realtime Data API Request:', {
+        url: `${API_BASE_URL}/metrics/realtime`,
+        method: 'POST',
+        body: realtimeData
+      })
+
+      const response = await fetch(`${API_BASE_URL}/metrics/realtime`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(realtimeData),
+      })
+
+      console.log('📡 Realtime Data Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        handleAuthError(response.status)
+        const errorText = await response.text()
+        console.error('❌ Realtime Data API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('📦 Realtime Data API Response data:', data)
+      return data
+    } catch (error) {
+      console.error('❌ Realtime Data fetch error:', error)
+      throw new Error('Erro ao buscar dados em tempo real.')
     }
   }
 } 
