@@ -1214,10 +1214,6 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
             </div>
             
             <div className="flex items-center gap-8 sm:gap-10 relative z-30">
-              <div className="hidden sm:flex items-center gap-2 text-sm text-gray-600">
-                <User className="w-4 h-4" />
-                <span>{user?.username || 'Usuário'}</span>
-              </div>
               <div className="w-28 sm:w-48">
                 <TableSelector
                   currentTable={selectedTable}
