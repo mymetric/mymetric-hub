@@ -222,11 +222,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     return currentMonth.end
   })
   const [selectedTable, setSelectedTable] = useState<string>(() => {
-    // Se o usuário tem tablename: 'all', usar um cliente padrão em vez de "all"
-    if (user?.tablename === 'all') {
-      return 'coffeemais' // Cliente padrão para usuários com acesso total
-    }
-    return user?.tablename || 'coffeemais'
+    // Inicializar vazio e deixar o useEffect definir o valor correto quando o user for carregado
+    return ''
   })
   const [sortField, setSortField] = useState<string>('receita')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
@@ -314,21 +311,43 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   useEffect(() => {
     if (user) {
       console.log('🔄 Updating selectedTable based on user:', {
+        email: user.email,
         tablename: user.tablename,
         access_control: user.access_control,
         admin: user.admin
       })
       
-      // Se o usuário tem tablename: 'all', usar um cliente padrão em vez de "all"
-      if (user.tablename === 'all') {
-        setSelectedTable('coffeemais') // Cliente padrão para usuários com acesso total
-      } else if (user.tablename) {
-        setSelectedTable(user.tablename)
+      // Se o usuário NÃO é accounts@mymetric.com.br, sempre usar o tablename específico
+      if (user.email !== 'accounts@mymetric.com.br') {
+        if (user.tablename && user.tablename !== 'all') {
+          setSelectedTable(user.tablename)
+        } else {
+          console.error('❌ Usuário sem acesso ao dropdown deve ter tablename válido:', user.tablename)
+          // Para usuários sem acesso ao dropdown, não deve haver fallback
+          setSelectedTable('')
+        }
       } else {
-        setSelectedTable('coffeemais') // Fallback
+        // Para accounts@mymetric.com.br, usar a lógica normal
+        if (user.tablename === 'all') {
+          setSelectedTable('coffeemais') // Cliente padrão para usuários com acesso total
+        } else if (user.tablename) {
+          setSelectedTable(user.tablename)
+        } else {
+          setSelectedTable('coffeemais') // Fallback apenas para usuários com acesso total
+        }
       }
     }
   }, [user])
+
+  // Garantir que selectedTable nunca fique vazio para usuários sem acesso ao dropdown
+  useEffect(() => {
+    if (user && user.email !== 'accounts@mymetric.com.br' && (!selectedTable || selectedTable.trim() === '')) {
+      console.log('🔄 Garantindo selectedTable válido para usuário sem dropdown:', user.tablename)
+      if (user.tablename && user.tablename !== 'all') {
+        setSelectedTable(user.tablename)
+      }
+    }
+  }, [user, selectedTable])
 
   // Debug: Log das props do TableSelector
   useEffect(() => {

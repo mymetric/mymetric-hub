@@ -159,7 +159,10 @@ const UsersConfig = ({ selectedTable }: UsersConfigProps) => {
       newErrors.email = 'Email inválido'
     }
 
-
+    // Validar se temos uma tabela válida
+    if (!selectedTable || selectedTable.trim() === '') {
+      newErrors.general = 'Nenhuma tabela selecionada. Selecione uma tabela antes de criar/editar usuários.'
+    }
 
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
@@ -174,18 +177,26 @@ const UsersConfig = ({ selectedTable }: UsersConfigProps) => {
       const token = localStorage.getItem('auth-token')
       if (!token) return
 
-      // Garantir que teremos uma tabela válida (selectedTable, formData.tablename ou a do usuário editado)
-      const effectiveTable = (selectedTable && selectedTable.trim())
-        ? selectedTable
+      // Garantir que teremos uma tabela válida (priorizar selectedTable)
+      const effectiveTable = selectedTable && selectedTable.trim() 
+        ? selectedTable 
         : (formData.tablename && formData.tablename.trim())
           ? formData.tablename
           : (editingUser && editingUser.tablename)
             ? editingUser.tablename
             : ''
+      
       if (!effectiveTable) {
         setErrors({ general: 'Tabela não definida. Selecione uma tabela e tente novamente.' })
         return
       }
+
+      console.log('🔍 Determinação da tabela efetiva:', {
+        selectedTable,
+        formDataTablename: formData.tablename,
+        editingUserTablename: editingUser?.tablename,
+        effectiveTable
+      })
 
 
       // Usar o mesmo endpoint para criação e edição

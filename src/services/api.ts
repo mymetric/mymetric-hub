@@ -2,8 +2,12 @@ import { AdsCampaignRequest, AdsCampaignResponse } from '../types'
 
 const API_BASE_URL = 'https://api.mymetric.app'
 
-// Função para validar table_name - não permite "all" como valor válido para consultas
+// Função para validar table_name - não permite "all" ou strings vazias como valores válidos para consultas
 export const validateTableName = (tableName: string): boolean => {
+  if (!tableName || tableName.trim() === '') {
+    console.log('⚠️ Tentativa de consultar table_name vazio bloqueada')
+    return false
+  }
   if (tableName === 'all') {
     console.log('⚠️ Tentativa de consultar table_name = "all" bloqueada')
     return false
