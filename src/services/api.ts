@@ -155,6 +155,41 @@ interface RealtimeDataResponse {
   data: RealtimeDataItem[]
 }
 
+interface User {
+  id?: string
+  email: string
+  username: string
+  admin: boolean
+  access_control: string
+  tablename: string
+  lastLogin?: string
+  created_at?: string
+
+}
+
+interface UsersResponse {
+  users: User[]
+}
+
+interface CreateUserRequest {
+  email: string
+  table_name: string
+  admin?: boolean
+  username?: string
+  access_control?: string
+  password?: string
+}
+
+interface CreateUserResponse {
+  message: string
+  user: User
+  generated_password?: string
+  note?: string
+  email_sent: boolean
+}
+
+
+
 interface MetricsDataItem {
   Data: string
   Cluster: string
@@ -556,6 +591,109 @@ export const api = {
     } catch (error) {
       console.error('❌ Realtime Data fetch error:', error)
       throw new Error('Erro ao buscar dados em tempo real.')
+    }
+  },
+
+  // Funções para gerenciamento de usuários
+  async getUsers(token: string, tableName: string): Promise<UsersResponse> {
+    try {
+      console.log('🌐 Users API Request:', {
+        url: `${API_BASE_URL}/users`,
+        method: 'GET',
+        tableName
+      })
+
+      const response = await fetch(`${API_BASE_URL}/users?table_name=${encodeURIComponent(tableName)}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+
+      console.log('📡 Users Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        handleAuthError(response.status)
+        const errorText = await response.text()
+        console.error('❌ Users API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('📦 Users API Response data:', data)
+      return data
+    } catch (error) {
+      console.error('❌ Users fetch error:', error)
+      throw new Error('Erro ao buscar usuários.')
+    }
+  },
+
+  async createUser(token: string, userData: CreateUserRequest): Promise<CreateUserResponse> {
+    try {
+      console.log('🌐 Create User API Request:', {
+        url: `${API_BASE_URL}/create-user`,
+        method: 'POST',
+        body: userData
+      })
+
+      const response = await fetch(`${API_BASE_URL}/create-user`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(userData),
+      })
+
+      console.log('📡 Create User Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        handleAuthError(response.status)
+        const errorText = await response.text()
+        console.error('❌ Create User API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('📦 Create User API Response data:', data)
+      return data
+    } catch (error) {
+      console.error('❌ Create User error:', error)
+      throw new Error('Erro ao criar usuário.')
+    }
+  },
+
+
+
+  async deleteUser(token: string, userId: string): Promise<void> {
+    try {
+      console.log('🌐 Delete User API Request:', {
+        url: `${API_BASE_URL}/users/${userId}`,
+        method: 'DELETE'
+      })
+
+      const response = await fetch(`${API_BASE_URL}/users/${userId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+
+      console.log('📡 Delete User Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        handleAuthError(response.status)
+        const errorText = await response.text()
+        console.error('❌ Delete User API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      console.log('✅ User deleted successfully')
+    } catch (error) {
+      console.error('❌ Delete User error:', error)
+      throw new Error('Erro ao remover usuário.')
     }
   }
 } 
