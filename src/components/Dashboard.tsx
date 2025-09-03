@@ -317,37 +317,24 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         admin: user.admin
       })
       
-      // Se o usuário NÃO é accounts@mymetric.com.br, sempre usar o tablename específico
-      if (user.email !== 'accounts@mymetric.com.br') {
-        if (user.tablename && user.tablename !== 'all') {
-          setSelectedTable(user.tablename)
-        } else {
-          console.error('❌ Usuário sem acesso ao dropdown deve ter tablename válido:', user.tablename)
-          // Para usuários sem acesso ao dropdown, não deve haver fallback
-          setSelectedTable('')
-        }
+      // Se o usuário tem table_name = "all" OU access_control = "all", mostrar dropdown e usar cliente padrão
+      if (user.tablename === 'all' || user.access_control === 'all') {
+        setSelectedTable('coffeemais') // Cliente padrão para usuários com acesso total
+        console.log('🎯 Usuário com acesso total, cliente padrão definido:', 'coffeemais')
+      } else if (user.tablename) {
+        // Usuário tem acesso específico a um cliente - direcionar diretamente
+        setSelectedTable(user.tablename)
+        console.log('🎯 Usuário direcionado diretamente para cliente:', user.tablename)
       } else {
-        // Para accounts@mymetric.com.br, usar a lógica normal
-        if (user.tablename === 'all') {
-          setSelectedTable('coffeemais') // Cliente padrão para usuários com acesso total
-        } else if (user.tablename) {
-          setSelectedTable(user.tablename)
-        } else {
-          setSelectedTable('coffeemais') // Fallback apenas para usuários com acesso total
-        }
+        console.error('❌ Usuário sem tablename válido:', user.tablename)
+        setSelectedTable('')
       }
+    } else {
+      console.log('⚠️ No user data available for selectedTable initialization')
     }
   }, [user])
 
-  // Garantir que selectedTable nunca fique vazio para usuários sem acesso ao dropdown
-  useEffect(() => {
-    if (user && user.email !== 'accounts@mymetric.com.br' && (!selectedTable || selectedTable.trim() === '')) {
-      console.log('🔄 Garantindo selectedTable válido para usuário sem dropdown:', user.tablename)
-      if (user.tablename && user.tablename !== 'all') {
-        setSelectedTable(user.tablename)
-      }
-    }
-  }, [user, selectedTable])
+
 
   // Debug: Log das props do TableSelector
   useEffect(() => {
@@ -396,6 +383,13 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
   // Função para lidar com mudança de aba
   const handleTabChange = (tab: string) => {
+    // Verificar se usuário não-admin está tentando acessar aba de configuração
+    if (tab === 'configuracao' && !user?.admin) {
+      console.log('🚫 Usuário não-admin tentou acessar aba de configuração, redirecionando...')
+      setActiveTab('visao-geral') // Redirecionar para visão geral
+      return
+    }
+    
     setActiveTab(tab)
     
     // Definir período padrão baseado na aba selecionada
@@ -1270,30 +1264,35 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
             </div>
             
             <div className="flex items-center gap-8 sm:gap-10 relative z-30">
-              <div className="w-28 sm:w-48">
-                <TableSelector
-                  currentTable={selectedTable}
-                  onTableChange={setSelectedTable}
-                  useCSV={user?.admin || user?.access_control === 'all' || user?.tablename === 'all'} // Usar CSV para usuários admin ou com acesso total
-                  availableTables={
-                    user?.admin || user?.access_control === 'all' || user?.tablename === 'all'
-                      ? [] // Deixar vazio para usar apenas o CSV via useClientList
-                      : [user?.tablename || '']
-                  }
-                  hideClientName={hideClientName}
-                />
-              </div>
-              <button
-                onClick={() => setHideClientName(!hideClientName)}
-                className="flex items-center justify-center p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-md transition-colors relative z-40"
-                title={hideClientName ? "Mostrar nome do cliente" : "Ocultar nome do cliente"}
-              >
-                {hideClientName ? (
-                  <Eye className="w-4 h-4" />
-                ) : (
-                  <EyeOff className="w-4 h-4" />
-                )}
-              </button>
+              {/* Dropdown de clientes e botão de ocultar nome - apenas para usuários com acesso total */}
+              {(user?.tablename === 'all' || user?.access_control === 'all') && (
+                <>
+                  <div className="w-28 sm:w-48">
+                    <TableSelector
+                      currentTable={selectedTable}
+                      onTableChange={setSelectedTable}
+                      useCSV={user?.admin || user?.access_control === 'all' || user?.tablename === 'all'} // Usar CSV para usuários admin ou com acesso total
+                      availableTables={
+                        user?.admin || user?.access_control === 'all' || user?.tablename === 'all'
+                          ? [] // Deixar vazio para usar apenas o CSV via useClientList
+                          : [user?.tablename || '']
+                      }
+                      hideClientName={hideClientName}
+                    />
+                  </div>
+                  <button
+                    onClick={() => setHideClientName(!hideClientName)}
+                    className="flex items-center justify-center p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-md transition-colors relative z-40"
+                    title={hideClientName ? "Mostrar nome do cliente" : "Ocultar nome do cliente"}
+                  >
+                    {hideClientName ? (
+                      <Eye className="w-4 h-4" />
+                    ) : (
+                      <EyeOff className="w-4 h-4" />
+                    )}
+                  </button>
+                </>
+              )}
               <SessionStatus onLogout={onLogout} user={user} />
             </div>
           </div>
@@ -1411,19 +1410,22 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 Tempo Real
               </div>
             </button>
-            <button
-              onClick={() => handleTabChange('configuracao')}
-              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'configuracao'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <Users className="w-4 h-4" />
-                Configuração
-              </div>
-            </button>
+            {/* Aba de Configuração - apenas para usuários admin */}
+            {user?.admin && (
+              <button
+                onClick={() => handleTabChange('configuracao')}
+                className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  activeTab === 'configuracao'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4" />
+                  Configuração
+                </div>
+              </button>
+            )}
           </nav>
 
           {/* Mobile Navigation */}
@@ -1441,7 +1443,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   {activeTab === 'produtos' && 'Produtos'}
                   {activeTab === 'ab-testing' && 'Testes A/B'}
                   {activeTab === 'tempo-real' && 'Tempo Real'}
-                  {activeTab === 'configuracao' && 'Configuração'}
+                  {activeTab === 'configuracao' && user?.admin && 'Configuração'}
                 </span>
               </div>
               
@@ -1769,19 +1771,22 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   </div>
                 </button>
 
-                <button
-                  onClick={() => handleTabChange('configuracao')}
-                  className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
-                    activeTab === 'configuracao'
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  <div className="flex items-center gap-1">
-                    <Users className="w-3 h-3" />
-                    <span>Config</span>
-                  </div>
-                </button>
+                {/* Botão de Configuração - apenas para usuários admin */}
+                {user?.admin && (
+                  <button
+                    onClick={() => handleTabChange('configuracao')}
+                    className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
+                      activeTab === 'configuracao'
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1">
+                      <Users className="w-3 h-3" />
+                      <span>Config</span>
+                    </div>
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -2427,8 +2432,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
           />
         )}
 
-        {/* Configuração Tab */}
-        {activeTab === 'configuracao' && (
+        {/* Configuração Tab - apenas para usuários admin */}
+        {activeTab === 'configuracao' && user?.admin && (
           <UsersConfig 
             selectedTable={selectedTable}
           />

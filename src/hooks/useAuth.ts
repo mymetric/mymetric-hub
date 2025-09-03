@@ -101,47 +101,54 @@ export const useAuth = () => {
     setIsLoading(true)
     
     try {
+      // O LoginScreen já fez o login na API, então vamos buscar o token e dados do localStorage
       const token = localStorage.getItem('auth-token')
+      const loginResponseStr = localStorage.getItem('login-response')
       
-      if (token) {
-        // Buscar dados do perfil da API
-        const profile = await api.getProfile(token)
-        
-        const newAuthData: AuthData = {
-          isAuthenticated: true,
-          user: {
-            email: profile.email,
-            admin: profile.admin,
-            access_control: profile.access_control,
-            tablename: profile.tablename,
-            username,
-            lastLogin: new Date().toISOString()
-          }
-        }
-        
-        setAuthData(newAuthData)
-        
-        // Calcular expiração do token
-        const expiresAt = rememberMe 
-          ? Date.now() + (7 * 24 * 60 * 60 * 1000) // 7 dias
-          : Date.now() + (24 * 60 * 60 * 1000) // 24 horas
-        
-        // Salvar dados completos de autenticação
-        const completeAuthData: StoredAuthData = {
-          authData: newAuthData,
-          token,
-          rememberMe,
-          expiresAt
-        }
-        
-        localStorage.setItem('mymetric-auth-complete', JSON.stringify(completeAuthData))
-        localStorage.setItem('mymetric-auth', JSON.stringify(newAuthData))
-        
-        console.log('✅ Login successful, auth data saved')
-      } else {
-        console.error('❌ No token found for login')
+      if (!token) {
         throw new Error('Token de autenticação não encontrado')
       }
+      
+      if (!loginResponseStr) {
+        throw new Error('Dados de login não encontrados')
+      }
+      
+      // Usar os dados da resposta de login em vez de fazer chamada adicional
+      const loginResponse = JSON.parse(loginResponseStr)
+      
+      // Criar dados de autenticação baseados na resposta de login
+      const newAuthData: AuthData = {
+        isAuthenticated: true,
+        user: {
+          email: username,
+          admin: loginResponse.admin || false,
+          access_control: loginResponse.access_control || '[]',
+          tablename: loginResponse.table_name || 'all',
+          username,
+          lastLogin: new Date().toISOString()
+        }
+      }
+      
+      setAuthData(newAuthData)
+      
+      // Calcular expiração do token
+      const expiresAt = rememberMe 
+        ? Date.now() + (7 * 24 * 60 * 60 * 1000) // 7 dias
+        : Date.now() + (24 * 60 * 60 * 1000) // 24 horas
+      
+      // Salvar dados completos de autenticação
+      const completeAuthData: StoredAuthData = {
+        authData: newAuthData,
+        token,
+        rememberMe,
+        expiresAt
+      }
+      
+      localStorage.setItem('mymetric-auth-complete', JSON.stringify(completeAuthData))
+      localStorage.setItem('mymetric-auth', JSON.stringify(newAuthData))
+      
+      console.log('✅ Login successful, auth data saved:', newAuthData)
+      console.log('📦 Login response data used:', loginResponse)
     } catch (error) {
       console.error('❌ Login error:', error)
       throw error

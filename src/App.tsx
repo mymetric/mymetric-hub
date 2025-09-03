@@ -20,10 +20,17 @@ function App() {
       try {
         const response = await originalFetch(...args)
         
-        // Se for erro 401, deslogar o usuário
+        // Se for erro 401, deslogar o usuário (exceto durante login)
         if (response.status === 401) {
-          console.log('🔐 Erro 401 detectado, deslogando usuário...')
-          logout()
+          const url = args[0]?.toString() || ''
+          const isLoginRequest = url.includes('/login')
+          
+          if (!isLoginRequest) {
+            console.log('🔐 Erro 401 detectado, deslogando usuário...')
+            logout()
+          } else {
+            console.log('🔐 Erro 401 durante login - não deslogando usuário')
+          }
         }
         
         return response

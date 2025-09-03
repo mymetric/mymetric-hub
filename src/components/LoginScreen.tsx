@@ -44,8 +44,16 @@ const LoginScreen = ({ onLogin }: { onLogin: (username: string, rememberMe: bool
       if (response.access_token) {
         setLoginStatus('success')
         
-        // Salvar token no localStorage
+        console.log('🔐 Login response received:', response)
+        
+        // Salvar token e dados completos da resposta da API
         localStorage.setItem('auth-token', response.access_token)
+        localStorage.setItem('login-response', JSON.stringify(response))
+        
+        console.log('💾 Data saved to localStorage:', {
+          token: response.access_token,
+          loginResponse: response
+        })
         
         // Efeito visual mais elaborado antes de redirecionar
         setTimeout(() => {

@@ -34,6 +34,9 @@ interface LoginData {
 interface LoginResponse {
   access_token: string
   token_type: string
+  table_name?: string
+  access_control?: string
+  admin?: boolean
 }
 
 interface ProfileResponse {
@@ -216,6 +219,15 @@ interface MetricsResponse {
 export const api = {
   async login(loginData: LoginData): Promise<LoginResponse> {
     try {
+      console.log('🌐 Login API Request:', {
+        url: `${API_BASE_URL}/login`,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: loginData
+      })
+
       const response = await fetch(`${API_BASE_URL}/login`, {
         method: 'POST',
         headers: {
@@ -224,11 +236,16 @@ export const api = {
         body: JSON.stringify(loginData),
       })
 
+      console.log('📡 Login Response status:', response.status, response.statusText)
+
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        const errorText = await response.text()
+        console.error('❌ Login API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
       }
 
       const data = await response.json()
+      console.log('📦 Login API Response data:', data)
       return data
     } catch (error) {
       console.error('Login error:', error)
