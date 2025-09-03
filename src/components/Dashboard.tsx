@@ -310,6 +310,43 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     }
   }, []) // Removendo getUrlParams da dependência para evitar loop
 
+  // Atualizar selectedTable quando o user for carregado
+  useEffect(() => {
+    if (user) {
+      console.log('🔄 Updating selectedTable based on user:', {
+        tablename: user.tablename,
+        access_control: user.access_control,
+        admin: user.admin
+      })
+      
+      // Se o usuário tem tablename: 'all', usar um cliente padrão em vez de "all"
+      if (user.tablename === 'all') {
+        setSelectedTable('coffeemais') // Cliente padrão para usuários com acesso total
+      } else if (user.tablename) {
+        setSelectedTable(user.tablename)
+      } else {
+        setSelectedTable('coffeemais') // Fallback
+      }
+    }
+  }, [user])
+
+  // Debug: Log das props do TableSelector
+  useEffect(() => {
+    console.log('🔍 Dashboard - TableSelector props:', {
+      currentTable: selectedTable,
+      useCSV: user?.admin || user?.access_control === 'all' || user?.tablename === 'all',
+      availableTables: user?.admin || user?.access_control === 'all' || user?.tablename === 'all'
+        ? [] // Deixar vazio para usar apenas o CSV via useClientList
+        : [user?.tablename || ''],
+      user: user ? {
+        email: user.email,
+        access_control: user.access_control,
+        tablename: user.tablename,
+        admin: user.admin
+      } : null
+    })
+  }, [selectedTable, user])
+
   // Sincronizar mudanças de estado com a URL
   useEffect(() => {
     updateUrlParams({

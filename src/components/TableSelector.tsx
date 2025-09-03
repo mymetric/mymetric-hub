@@ -175,7 +175,8 @@ const TableSelector = ({ currentTable, onTableChange, availableTables = [], useC
               </div>
             ) : error ? (
               <div className="px-3 sm:px-4 py-2.5 sm:py-3 text-sm text-red-500 text-center">
-                Erro ao carregar clientes
+                <div className="text-red-500">Erro ao carregar clientes</div>
+                <div className="text-xs text-gray-500 mt-1">{error}</div>
               </div>
             ) : filteredTables.length > 0 ? (
               filteredTables.map((table) => (
@@ -194,7 +195,7 @@ const TableSelector = ({ currentTable, onTableChange, availableTables = [], useC
               ))
             ) : (
               <div className="px-3 sm:px-4 py-2.5 sm:py-3 text-sm text-gray-500 text-center">
-                Nenhum cliente encontrado
+                {tables.length === 0 ? 'Nenhum cliente disponível' : 'Nenhum cliente encontrado'}
               </div>
             )}
           </div>

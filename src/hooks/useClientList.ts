@@ -13,12 +13,18 @@ export const useClientList = (shouldFetch: boolean = true): UseClientListReturn 
   const [isLoading, setIsLoading] = useState(shouldFetch) // Iniciar loading apenas se deve fazer fetch
   const [error, setError] = useState<string | null>(null)
 
+  // Debug: Log do parâmetro shouldFetch
+  console.log('🔍 useClientList - shouldFetch:', shouldFetch)
+
   useEffect(() => {
     // Se não deve fazer fetch, retornar imediatamente
     if (!shouldFetch) {
+      console.log('⏭️ useClientList - shouldFetch is false, skipping fetch')
       setIsLoading(false)
       return
     }
+
+    console.log('🚀 useClientList - Starting fetch...')
 
     const fetchClients = async () => {
       try {
