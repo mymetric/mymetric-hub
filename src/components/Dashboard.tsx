@@ -1255,9 +1255,9 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 <TableSelector
                   currentTable={selectedTable}
                   onTableChange={setSelectedTable}
-                  useCSV={user?.access_control === 'all' || user?.tablename === 'all'} // Usar CSV para usuários com acesso total
+                  useCSV={user?.admin || user?.access_control === 'all' || user?.tablename === 'all'} // Usar CSV para usuários admin ou com acesso total
                   availableTables={
-                    user?.access_control === 'all' || user?.tablename === 'all'
+                    user?.admin || user?.access_control === 'all' || user?.tablename === 'all'
                       ? [] // Deixar vazio para usar apenas o CSV via useClientList
                       : [user?.tablename || '']
                   }
