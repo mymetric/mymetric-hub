@@ -10,7 +10,11 @@ import {
   Search,
   SortAsc,
   SortDesc,
-  Loader2
+  Loader2,
+  X,
+  AlertTriangle,
+  CheckCircle,
+  Info
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
 
@@ -26,6 +30,12 @@ interface ProductTrendItem {
   percent_change_w3_w4: number
   trend_status: string
   trend_consistency: string
+  // Campos específicos para Havaianas (podem ser null para outros clientes)
+  size_score_week_1?: number | null
+  size_score_week_2?: number | null
+  size_score_week_3?: number | null
+  size_score_week_4?: number | null
+  size_score_trend_status?: string | null
 }
 
 interface ProductsDashboardProps {
@@ -42,6 +52,9 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
   const [limit, setLimit] = useState(100)
   const [totalLoaded, setTotalLoaded] = useState(0)
   const [isAutoLoading, setIsAutoLoading] = useState(false)
+  const [selectedProduct, setSelectedProduct] = useState<ProductTrendItem | null>(null)
+  const [showProductDetail, setShowProductDetail] = useState(false)
+  const [isFullWidth, setIsFullWidth] = useState(false)
 
   // Função para carregar produtos com paginação automática
   const loadProducts = useCallback(async (currentOffset = 0) => {
@@ -223,6 +236,27 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
     }
   }
 
+  // Função para abrir modal de detalhamento
+  const openProductDetail = (product: ProductTrendItem) => {
+    console.log('🔍 Product detail data:', {
+      item_id: product.item_id,
+      item_name: product.item_name,
+      size_score_week_1: product.size_score_week_1,
+      size_score_week_2: product.size_score_week_2,
+      size_score_week_3: product.size_score_week_3,
+      size_score_week_4: product.size_score_week_4,
+      size_score_trend_status: product.size_score_trend_status
+    })
+    setSelectedProduct(product)
+    setShowProductDetail(true)
+  }
+
+  // Função para fechar modal
+  const closeProductDetail = () => {
+    setShowProductDetail(false)
+    setSelectedProduct(null)
+  }
+
   // Calcular estatísticas
   const totalProducts = products.length
   const growingProducts = products.filter(p => p.trend_consistency.includes('Growth')).length
@@ -242,7 +276,7 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className={`${isFullWidth ? 'fixed inset-0 z-50 bg-white overflow-auto p-6' : 'space-y-6'}`}>
       {/* Header */}
       <div className="bg-white rounded-xl shadow-lg p-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -385,6 +419,34 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
               <option value={200}>200 itens</option>
             </select>
           </div>
+
+          {/* Botão Full Width */}
+          <div className="lg:w-auto">
+            <button
+              onClick={() => setIsFullWidth(!isFullWidth)}
+              className={`w-full px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
+                isFullWidth 
+                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
+              }`}
+            >
+              {isFullWidth ? (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9V4.5M9 9H4.5M9 9L3.5 3.5M15 9V4.5M15 9h4.5M15 9l5.5-5.5M9 15v4.5M9 15H4.5M9 15l-5.5 5.5M15 15v4.5M15 15h4.5M15 15l5.5 5.5" />
+                  </svg>
+                  Tela Normal
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                  </svg>
+                  Tela Cheia
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -456,12 +518,32 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Consistência
                 </th>
+                                                      {selectedTable === 'havaianas' && products.some(product => 
+                  product.size_score_week_1 !== null || 
+                  product.size_score_week_2 !== null || 
+                  product.size_score_week_3 !== null || 
+                  product.size_score_week_4 !== null ||
+                  product.size_score_trend_status !== null
+                ) && (
+                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Score de Grade
+                  </th>
+                )}
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Ações
+                      </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={selectedTable === 'havaianas' && products.some(p => 
+                    p.size_score_week_1 !== null || 
+                    p.size_score_week_2 !== null || 
+                    p.size_score_week_3 !== null || 
+                    p.size_score_week_4 !== null ||
+                    p.size_score_trend_status !== null
+                  ) ? 12 : 11} className="px-6 py-12 text-center text-gray-500">
                     <Package className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                     <p className="text-lg font-medium">Nenhum produto encontrado</p>
                     <p className="text-sm">Tente ajustar os filtros ou a busca</p>
@@ -550,6 +632,30 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
                         </span>
                       </div>
                     </td>
+                    {selectedTable === 'havaianas' && products.some(p => 
+                      p.size_score_week_1 !== null || 
+                      p.size_score_week_2 !== null || 
+                      p.size_score_week_3 !== null || 
+                      p.size_score_week_4 !== null ||
+                      p.size_score_trend_status !== null
+                    ) && (
+                      <td className="px-3 py-4 whitespace-nowrap">
+                        {product.size_score_trend_status ? (
+                          <span className="text-sm font-medium text-gray-900">
+                            {product.size_score_trend_status}
+                          </span>
+                        ) : null}
+                      </td>
+                    )}
+                    <td className="px-3 py-4 whitespace-nowrap">
+                      <button
+                        onClick={() => openProductDetail(product)}
+                        className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-1"
+                      >
+                        <Info className="w-3 h-3" />
+                        Ver Detalhes
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
@@ -557,7 +663,13 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
               {/* Indicador de carregamento automático */}
               {isAutoLoading && (
                 <tr>
-                  <td colSpan={10} className="px-6 py-6 text-center bg-blue-50">
+                  <td colSpan={selectedTable === 'havaianas' && products.some(p => 
+                    p.size_score_week_1 !== null || 
+                    p.size_score_week_2 !== null || 
+                    p.size_score_week_3 !== null || 
+                    p.size_score_week_4 !== null ||
+                    p.size_score_trend_status !== null
+                  ) ? 12 : 11} className="px-6 py-6 text-center bg-blue-50">
                     <div className="flex items-center justify-center gap-3">
                       <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
                       <span className="text-blue-600 font-medium">Carregando mais produtos automaticamente...</span>
@@ -604,6 +716,197 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
           </div>
         </div>
       </div>
+
+      {/* Modal de Detalhamento do Produto */}
+      {showProductDetail && selectedProduct && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Header do Modal */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">{selectedProduct.item_name}</h2>
+                <p className="text-sm text-gray-600">ID: {selectedProduct.item_id}</p>
+              </div>
+              <button
+                onClick={closeProductDetail}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Conteúdo do Modal */}
+            <div className="p-6 space-y-6">
+              {/* Análise de Tendência de Vendas */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5" />
+                  Análise de Tendência de Vendas
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="text-center">
+                    <p className="text-sm text-gray-600">W1 (22-29 dias atrás)</p>
+                    <p className="text-lg font-bold text-gray-900">{formatNumber(selectedProduct.purchases_week_1)}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm text-gray-600">W2 (15-22 dias atrás)</p>
+                    <p className="text-lg font-bold text-gray-900">{formatNumber(selectedProduct.purchases_week_2)}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm text-gray-600">W3 (8-15 dias atrás)</p>
+                    <p className="text-lg font-bold text-gray-900">{formatNumber(selectedProduct.purchases_week_3)}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm text-gray-600">W4 (1-7 dias atrás)</p>
+                    <p className="text-lg font-bold text-gray-900">{formatNumber(selectedProduct.purchases_week_4)}</p>
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <p className="text-sm text-gray-600 mb-2">Status da Tendência:</p>
+                  <div className="flex items-center gap-2">
+                    {getTrendIcon(selectedProduct.trend_consistency)}
+                    <span className={`text-sm px-2 py-1 rounded-full border ${getTrendColor(selectedProduct.trend_consistency)}`}>
+                      {selectedProduct.trend_consistency.replace('🔴', '').replace('🟢', '').replace('⚪', '').trim()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Análise de Score de Grade (apenas para Havaianas e quando há dados) */}
+              {selectedTable === 'havaianas' && (
+                selectedProduct.size_score_week_1 !== null || 
+                selectedProduct.size_score_week_2 !== null || 
+                selectedProduct.size_score_week_3 !== null || 
+                selectedProduct.size_score_week_4 !== null
+              ) && (
+                <div className="bg-blue-50 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                    <Package className="w-5 h-5" />
+                    Análise de Score de Grade de Tamanhos
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    <div className="text-center">
+                      <p className="text-sm text-gray-600">W1</p>
+                      <p className="text-lg font-bold text-gray-900">
+                        {selectedProduct.size_score_week_1 !== null ? `${(selectedProduct.size_score_week_1 * 100).toFixed(1)}%` : 'N/A'}
+                      </p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm text-gray-600">W2</p>
+                      <p className="text-lg font-bold text-gray-900">
+                        {selectedProduct.size_score_week_2 !== null ? `${(selectedProduct.size_score_week_2 * 100).toFixed(1)}%` : 'N/A'}
+                      </p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm text-gray-600">W3</p>
+                      <p className="text-lg font-bold text-gray-900">
+                        {selectedProduct.size_score_week_3 !== null ? `${(selectedProduct.size_score_week_3 * 100).toFixed(1)}%` : 'N/A'}
+                      </p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm text-gray-600">W4</p>
+                      <p className="text-lg font-bold text-gray-900">
+                        {selectedProduct.size_score_week_4 !== null ? `${(selectedProduct.size_score_week_4 * 100).toFixed(1)}%` : 'N/A'}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  {/* Análise de Problemas de Estoque */}
+                  <div className="bg-white rounded-lg p-4 border border-blue-200">
+                    <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4" />
+                      Análise de Possíveis Problemas de Estoque
+                    </h4>
+                    {(() => {
+                      const scores = [
+                        selectedProduct.size_score_week_1,
+                        selectedProduct.size_score_week_2,
+                        selectedProduct.size_score_week_3,
+                        selectedProduct.size_score_week_4
+                      ].filter(score => score !== null && score !== undefined) as number[]
+                      
+                      const avgScore = scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length) * 100 : 0
+                      const hasLowScore = avgScore < 50
+                      const isDeclining = selectedProduct.trend_consistency.includes('Decline')
+                      
+                      if (hasLowScore && isDeclining) {
+                        return (
+                          <div className="flex items-start gap-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                            <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                            <div>
+                              <p className="font-medium text-red-800">⚠️ Possível problema de estoque identificado</p>
+                              <p className="text-sm text-red-700 mt-1">
+                                O produto apresenta score de grade baixo ({avgScore.toFixed(1)}%) e tendência de declínio nas vendas. 
+                                Isso pode indicar falta de tamanhos específicos no estoque.
+                              </p>
+                            </div>
+                          </div>
+                        )
+                      } else if (hasLowScore) {
+                        return (
+                          <div className="flex items-start gap-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                            <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+                            <div>
+                              <p className="font-medium text-yellow-800">⚠️ Score de grade baixo</p>
+                              <p className="text-sm text-yellow-700 mt-1">
+                                O produto apresenta score de grade baixo ({avgScore.toFixed(1)}%). 
+                                Monitore o estoque de tamanhos específicos.
+                              </p>
+                            </div>
+                          </div>
+                        )
+                      } else {
+                        return (
+                          <div className="flex items-start gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                            <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
+                            <div>
+                              <p className="font-medium text-green-800">✅ Score de grade adequado</p>
+                              <p className="text-sm text-green-700 mt-1">
+                                O produto apresenta score de grade adequado ({avgScore.toFixed(1)}%). 
+                                O estoque de tamanhos parece estar bem distribuído.
+                              </p>
+                            </div>
+                          </div>
+                        )
+                      }
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {/* Recomendações */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <Info className="w-5 h-5" />
+                  Recomendações
+                </h3>
+                <div className="space-y-2 text-sm text-gray-700">
+                  {selectedProduct.trend_consistency.includes('Decline') && (
+                    <p>• <strong>Declínio nas vendas:</strong> Considere promoções ou ajustes de preço</p>
+                  )}
+                  {selectedProduct.trend_consistency.includes('Growth') && (
+                    <p>• <strong>Crescimento nas vendas:</strong> Aumente o estoque para aproveitar a demanda</p>
+                  )}
+                  {selectedProduct.size_score_week_1 !== null && selectedProduct.size_score_week_1 < 0.5 && (
+                    <p>• <strong>Score de grade baixo:</strong> Verifique a disponibilidade de tamanhos específicos</p>
+                  )}
+                  <p>• <strong>Monitoramento:</strong> Acompanhe as métricas semanalmente para identificar tendências</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer do Modal */}
+            <div className="flex justify-end p-6 border-t border-gray-200">
+              <button
+                onClick={closeProductDetail}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
