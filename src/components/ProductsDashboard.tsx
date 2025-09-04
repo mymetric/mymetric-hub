@@ -36,7 +36,7 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
   const [products, setProducts] = useState<ProductTrendItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
-  const [sortField, setSortField] = useState<string>('purchases_week_1')
+  const [sortField, setSortField] = useState<string>('purchases_week_4')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [filterTrend, setFilterTrend] = useState<string>('all')
   const [limit, setLimit] = useState(100)
@@ -66,7 +66,12 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
       console.log('✅ Product trends response:', response)
       const newProducts = response.data || []
       
-      setProducts(prev => [...prev, ...newProducts])
+      // Evitar duplicatas baseado no item_id
+      setProducts(prev => {
+        const existingIds = new Set(prev.map(p => p.item_id))
+        const uniqueNewProducts = newProducts.filter(p => !existingIds.has(p.item_id))
+        return [...prev, ...uniqueNewProducts]
+      })
       setTotalLoaded(prev => prev + newProducts.length)
       
       // Se ainda há mais dados, continuar carregando automaticamente
@@ -90,17 +95,77 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
   // Carregar dados iniciais
   useEffect(() => {
     const initializeLoading = async () => {
+      console.log('🔄 ProductsDashboard useEffect triggered:', {
+        selectedTable,
+        limit,
+        sortField,
+        isLoading
+      })
+      
       setIsLoading(true)
       setProducts([])
       setTotalLoaded(0)
       setIsAutoLoading(false)
       
-      await loadProducts(0)
-      setIsLoading(false)
+      try {
+        const token = localStorage.getItem('auth-token')
+        console.log('🔍 Token and selectedTable check:', { hasToken: !!token, selectedTable })
+        
+        if (!token || !selectedTable) {
+          console.log('❌ Missing token or selectedTable, aborting')
+          setIsLoading(false)
+          return
+        }
+
+        // Validar que selectedTable não é "all"
+        if (!validateTableName(selectedTable)) {
+          console.log('❌ Invalid table name, aborting:', selectedTable)
+          setIsLoading(false)
+          return
+        }
+
+        console.log('🔄 Fetching product trends for table:', selectedTable, 'offset: 0, limit:', limit)
+        
+        const response = await api.getProductTrend(token, {
+          table_name: selectedTable,
+          limit,
+          offset: 0,
+          order_by: sortField
+        })
+
+        console.log('✅ Product trends response:', response)
+        const newProducts = response.data || []
+        
+        // Garantir que não há duplicatas mesmo no carregamento inicial
+        const uniqueProducts = newProducts.filter((product, index, self) => 
+          index === self.findIndex(p => p.item_id === product.item_id)
+        )
+        
+        setProducts(uniqueProducts)
+        setTotalLoaded(uniqueProducts.length)
+        
+        // Se ainda há mais dados, continuar carregando automaticamente
+        if (newProducts.length === limit) {
+          setIsAutoLoading(true)
+          // Pequeno delay para não sobrecarregar a API
+          setTimeout(() => {
+            loadProducts(limit)
+          }, 500)
+        } else {
+          // Finalizou o carregamento automático
+          setIsAutoLoading(false)
+        }
+        
+      } catch (error) {
+        console.error('❌ Error fetching product trends:', error)
+        setIsAutoLoading(false)
+      } finally {
+        setIsLoading(false)
+      }
     }
 
     initializeLoading()
-  }, [selectedTable, limit, sortField, loadProducts])
+  }, [selectedTable, limit, sortField, loadProducts]) // Adicionado loadProducts de volta, mas com proteção contra duplicação
 
   // Filtrar produtos
   const filteredProducts = products
@@ -226,16 +291,16 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
             <div className="text-xs text-gray-600 mb-2">Períodos analisados (excluindo hoje)</div>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
               <div className="text-gray-700">
-                <span className="font-medium">W1:</span> 1-7 dias atrás
+                <span className="font-medium">W1:</span> 22-29 dias atrás
               </div>
               <div className="text-gray-700">
-                <span className="font-medium">W2:</span> 8-15 dias atrás
+                <span className="font-medium">W2:</span> 15-22 dias atrás
               </div>
               <div className="text-gray-700">
-                <span className="font-medium">W3:</span> 15-22 dias atrás
+                <span className="font-medium">W3:</span> 8-15 dias atrás
               </div>
               <div className="text-gray-700">
-                <span className="font-medium">W4:</span> 22-29 dias atrás
+                <span className="font-medium">W4:</span> 1-7 dias atrás
               </div>
             </div>
           </div>

@@ -22,7 +22,8 @@ import {
   ShoppingCart,
   TrendingUp,
   Activity,
-  Users
+  Users,
+  ChevronDown
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
 import Logo from './Logo'
@@ -231,6 +232,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const [hideClientName, setHideClientName] = useState(false)
   const [activeTab, setActiveTab] = useState<string>('visao-geral')
   const [showMobileTabMenu, setShowMobileTabMenu] = useState(false)
+  const [showSubmenu, setShowSubmenu] = useState(false)
 
   const [attributionModel, setAttributionModel] = useState<string>('Último Clique Não Direto')
   
@@ -267,11 +269,47 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   // Estados para controle de dados
   const [totalRecords, setTotalRecords] = useState(0)
   
-  // Carregar parâmetros da URL na inicialização
+  // Atualizar selectedTable baseado no localStorage login-response
+  useEffect(() => {
+    try {
+      const loginResponseStr = localStorage.getItem('login-response')
+      
+      if (loginResponseStr) {
+        const loginResponse = JSON.parse(loginResponseStr)
+        
+        console.log('🔄 Updating selectedTable based on login-response:', {
+          table_name: loginResponse.table_name,
+          access_control: loginResponse.access_control,
+          admin: loginResponse.admin
+        })
+        
+        // Se o usuário tem table_name = "all" OU access_control = "all", mostrar dropdown e usar cliente padrão
+        if (loginResponse.table_name === 'all' || loginResponse.access_control === 'all') {
+          setSelectedTable('coffeemais') // Cliente padrão para usuários com acesso total
+          console.log('🎯 Usuário com acesso total, cliente padrão definido:', 'coffeemais')
+        } else if (loginResponse.table_name) {
+          // Usuário tem acesso específico a um cliente - direcionar diretamente
+          setSelectedTable(loginResponse.table_name)
+          console.log('🎯 Usuário direcionado diretamente para cliente:', loginResponse.table_name)
+        } else {
+          console.error('❌ Usuário sem table_name válido no login-response:', loginResponse.table_name)
+          setSelectedTable('')
+        }
+      } else {
+        console.log('⚠️ No login-response found in localStorage')
+        setSelectedTable('')
+      }
+    } catch (error) {
+      console.error('❌ Error parsing login-response:', error)
+      setSelectedTable('')
+    }
+  }, []) // Executar apenas uma vez na inicialização
+
+  // Carregar parâmetros da URL na inicialização (após a definição do selectedTable baseado no login-response)
   useEffect(() => {
     const urlParams = getUrlParams()
     
-    // Aplicar parâmetros da URL aos estados
+    // Aplicar parâmetros da URL aos estados (apenas se não for "all")
     if (urlParams.table && urlParams.table !== 'all') {
       setSelectedTable(urlParams.table)
     }
@@ -305,53 +343,33 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         setEndDate(currentMonth.end)
       }
     }
-  }, []) // Removendo getUrlParams da dependência para evitar loop
-
-  // Atualizar selectedTable quando o user for carregado
-  useEffect(() => {
-    if (user) {
-      console.log('🔄 Updating selectedTable based on user:', {
-        email: user.email,
-        tablename: user.tablename,
-        access_control: user.access_control,
-        admin: user.admin
-      })
-      
-      // Se o usuário tem table_name = "all" OU access_control = "all", mostrar dropdown e usar cliente padrão
-      if (user.tablename === 'all' || user.access_control === 'all') {
-        setSelectedTable('coffeemais') // Cliente padrão para usuários com acesso total
-        console.log('🎯 Usuário com acesso total, cliente padrão definido:', 'coffeemais')
-      } else if (user.tablename) {
-        // Usuário tem acesso específico a um cliente - direcionar diretamente
-        setSelectedTable(user.tablename)
-        console.log('🎯 Usuário direcionado diretamente para cliente:', user.tablename)
-      } else {
-        console.error('❌ Usuário sem tablename válido:', user.tablename)
-        setSelectedTable('')
-      }
-    } else {
-      console.log('⚠️ No user data available for selectedTable initialization')
-    }
-  }, [user])
+  }, []) // Executar apenas uma vez na inicialização
 
 
 
   // Debug: Log das props do TableSelector
   useEffect(() => {
-    console.log('🔍 Dashboard - TableSelector props:', {
-      currentTable: selectedTable,
-      useCSV: user?.admin || user?.access_control === 'all' || user?.tablename === 'all',
-      availableTables: user?.admin || user?.access_control === 'all' || user?.tablename === 'all'
-        ? [] // Deixar vazio para usar apenas o CSV via useClientList
-        : [user?.tablename || ''],
-      user: user ? {
-        email: user.email,
-        access_control: user.access_control,
-        tablename: user.tablename,
-        admin: user.admin
-      } : null
-    })
-  }, [selectedTable, user])
+    try {
+      const loginResponseStr = localStorage.getItem('login-response')
+      const loginResponse = loginResponseStr ? JSON.parse(loginResponseStr) : null
+      
+      console.log('🔍 Dashboard - TableSelector props:', {
+        currentTable: selectedTable,
+        useCSV: loginResponse?.admin || loginResponse?.access_control === 'all' || loginResponse?.table_name === 'all',
+        availableTables: loginResponse?.admin || loginResponse?.access_control === 'all' || loginResponse?.table_name === 'all'
+          ? [] // Deixar vazio para usar apenas o CSV via useClientList
+          : [loginResponse?.table_name || ''],
+        loginResponse: loginResponse ? {
+          email: loginResponse.email,
+          access_control: loginResponse.access_control,
+          table_name: loginResponse.table_name,
+          admin: loginResponse.admin
+        } : null
+      })
+    } catch (error) {
+      console.error('❌ Error parsing login-response for TableSelector:', error)
+    }
+  }, [selectedTable])
 
   // Sincronizar mudanças de estado com a URL
   useEffect(() => {
@@ -1253,6 +1271,23 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     )
   }
 
+  // Definir abas visíveis baseado no cliente e permissões do usuário
+  const visibleTabs = [
+    'visao-geral',
+    'midia-paga',
+    'funil-conversao',
+    'dados-detalhados',
+    'produtos',
+    'tempo-real'
+  ]
+
+  // Abas que ficam no submenu
+  const submenuTabs = [
+    ...(selectedTable === 'havaianas' ? ['havaianas'] : []),
+    'ab-testing',
+    ...(user?.admin ? ['configuracao'] : [])
+  ]
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       {/* Header */}
@@ -1265,34 +1300,45 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
             
             <div className="flex items-center gap-8 sm:gap-10 relative z-30">
               {/* Dropdown de clientes e botão de ocultar nome - apenas para usuários com acesso total */}
-              {(user?.tablename === 'all' || user?.access_control === 'all') && (
-                <>
-                  <div className="w-28 sm:w-48">
-                    <TableSelector
-                      currentTable={selectedTable}
-                      onTableChange={setSelectedTable}
-                      useCSV={user?.admin || user?.access_control === 'all' || user?.tablename === 'all'} // Usar CSV para usuários admin ou com acesso total
-                      availableTables={
-                        user?.admin || user?.access_control === 'all' || user?.tablename === 'all'
-                          ? [] // Deixar vazio para usar apenas o CSV via useClientList
-                          : [user?.tablename || '']
-                      }
-                      hideClientName={hideClientName}
-                    />
-                  </div>
-                  <button
-                    onClick={() => setHideClientName(!hideClientName)}
-                    className="flex items-center justify-center p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-md transition-colors relative z-40"
-                    title={hideClientName ? "Mostrar nome do cliente" : "Ocultar nome do cliente"}
-                  >
-                    {hideClientName ? (
-                      <Eye className="w-4 h-4" />
-                    ) : (
-                      <EyeOff className="w-4 h-4" />
-                    )}
-                  </button>
-                </>
-              )}
+              {(() => {
+                try {
+                  const loginResponseStr = localStorage.getItem('login-response')
+                  const loginResponse = loginResponseStr ? JSON.parse(loginResponseStr) : null
+                  const hasAccessToAll = loginResponse?.table_name === 'all' || loginResponse?.access_control === 'all'
+                  
+                  return hasAccessToAll && (
+                    <>
+                      <div className="w-28 sm:w-48">
+                        <TableSelector
+                          currentTable={selectedTable}
+                          onTableChange={setSelectedTable}
+                          useCSV={loginResponse?.admin || loginResponse?.access_control === 'all' || loginResponse?.table_name === 'all'} // Usar CSV para usuários admin ou com acesso total
+                          availableTables={
+                            loginResponse?.admin || loginResponse?.access_control === 'all' || loginResponse?.table_name === 'all'
+                              ? [] // Deixar vazio para usar apenas o CSV via useClientList
+                              : [loginResponse?.table_name || '']
+                          }
+                          hideClientName={hideClientName}
+                        />
+                      </div>
+                      <button
+                        onClick={() => setHideClientName(!hideClientName)}
+                        className="flex items-center justify-center p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-md transition-colors relative z-40"
+                        title={hideClientName ? "Mostrar nome do cliente" : "Ocultar nome do cliente"}
+                      >
+                        {hideClientName ? (
+                          <Eye className="w-4 h-4" />
+                        ) : (
+                          <EyeOff className="w-4 h-4" />
+                        )}
+                      </button>
+                    </>
+                  )
+                } catch (error) {
+                  console.error('❌ Error parsing login-response for TableSelector display:', error)
+                  return null
+                }
+              })()}
               <SessionStatus onLogout={onLogout} user={user} />
             </div>
           </div>
@@ -1304,127 +1350,91 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Desktop Navigation */}
           <nav className="hidden md:flex space-x-8">
-            <button
-              onClick={() => handleTabChange('visao-geral')}
-              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'visao-geral'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <BarChart3 className="w-4 h-4" />
-                Visão Geral
+            {/* Abas visíveis */}
+            {visibleTabs.map((tabId) => {
+              const tabConfig = {
+                'visao-geral': { label: 'Visão Geral', icon: BarChart3 },
+                'midia-paga': { label: 'Mídia Paga', icon: TrendingUp },
+                'funil-conversao': { label: 'Funil de Conversão', icon: Filter },
+                'dados-detalhados': { label: 'Dados Detalhados', icon: Database },
+                'produtos': { label: 'Produtos', icon: ShoppingCart },
+                'tempo-real': { label: 'Tempo Real', icon: Activity }
+              }[tabId]
+
+              if (!tabConfig) return null
+
+              const IconComponent = tabConfig.icon
+              const isActive = activeTab === tabId
+
+              return (
+                <button
+                  key={tabId}
+                  onClick={() => handleTabChange(tabId)}
+                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
+                    isActive
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <IconComponent className="w-4 h-4" />
+                    {tabConfig.label}
+                  </div>
+                </button>
+              )
+            })}
+
+            {/* Submenu para abas adicionais */}
+            {submenuTabs.length > 0 && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowSubmenu(!showSubmenu)}
+                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap flex items-center gap-2 ${
+                    submenuTabs.includes(activeTab)
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <span>Mais</span>
+                  <ChevronDown className={`w-4 h-4 transition-transform ${showSubmenu ? 'rotate-180' : ''}`} />
+                </button>
+
+                {/* Dropdown do submenu */}
+                {showSubmenu && (
+                  <div className="absolute top-full left-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                    {submenuTabs.map((tabId) => {
+                      const tabConfig = {
+                        'havaianas': { label: 'Product Scoring', icon: Package },
+                        'ab-testing': { label: 'Testes A/B', icon: Target },
+                        'configuracao': { label: 'Configuração', icon: Users }
+                      }[tabId]
+
+                      if (!tabConfig) return null
+
+                      const IconComponent = tabConfig.icon
+                      const isActive = activeTab === tabId
+
+                      return (
+                        <button
+                          key={tabId}
+                          onClick={() => {
+                            handleTabChange(tabId)
+                            setShowSubmenu(false)
+                          }}
+                          className={`w-full px-4 py-3 text-left text-sm transition-colors flex items-center gap-3 ${
+                            isActive
+                              ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-500'
+                              : 'text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          <IconComponent className="w-4 h-4" />
+                          {tabConfig.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
-            </button>
-            <button
-              onClick={() => handleTabChange('midia-paga')}
-              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'midia-paga'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <TrendingUp className="w-4 h-4" />
-                Mídia Paga
-              </div>
-            </button>
-            <button
-              onClick={() => handleTabChange('funil-conversao')}
-              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'funil-conversao'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <Filter className="w-4 h-4" />
-                Funil de Conversão
-              </div>
-            </button>
-            <button
-              onClick={() => handleTabChange('dados-detalhados')}
-              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'dados-detalhados'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <Database className="w-4 h-4" />
-                Dados Detalhados
-              </div>
-            </button>
-            {selectedTable === 'havaianas' && (
-              <button
-                onClick={() => handleTabChange('havaianas')}
-                className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                  activeTab === 'havaianas'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <Package className="w-4 h-4" />
-                  Product Scoring
-                </div>
-              </button>
-            )}
-            <button
-              onClick={() => handleTabChange('produtos')}
-              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'produtos'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <ShoppingCart className="w-4 h-4" />
-                Produtos
-              </div>
-            </button>
-            <button
-              onClick={() => handleTabChange('ab-testing')}
-              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'ab-testing'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <Target className="w-4 h-4" />
-                Testes A/B
-              </div>
-            </button>
-            <button
-              onClick={() => handleTabChange('tempo-real')}
-              className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'tempo-real'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <Activity className="w-4 h-4" />
-                Tempo Real
-              </div>
-            </button>
-            {/* Aba de Configuração - apenas para usuários admin */}
-            {user?.admin && (
-              <button
-                onClick={() => handleTabChange('configuracao')}
-                className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                  activeTab === 'configuracao'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <Users className="w-4 h-4" />
-                  Configuração
-                </div>
-              </button>
             )}
           </nav>
 
@@ -2402,9 +2412,12 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
         {/* Produtos Tab */}
         {activeTab === 'produtos' && (
-          <ProductsDashboard 
-            selectedTable={selectedTable}
-          />
+          <>
+            {console.log('🔄 Rendering ProductsDashboard with selectedTable:', selectedTable)}
+            <ProductsDashboard 
+              selectedTable={selectedTable}
+            />
+          </>
         )}
 
         {/* Testes A/B Tab */}
