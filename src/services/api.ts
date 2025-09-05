@@ -15,16 +15,7 @@ export const validateTableName = (tableName: string): boolean => {
   return true
 }
 
-// Função para verificar se é um erro de autenticação e deslogar se necessário
-const handleAuthError = (status: number) => {
-  if (status === 401) {
-    console.log('🔐 Token inválido detectado, deslogando usuário...')
-    localStorage.removeItem('auth-token')
-    localStorage.removeItem('mymetric-auth')
-    // Redirecionar para a página de login
-    window.location.href = '/'
-  }
-}
+// Função removida - o tratamento de erro 401 é feito pelo interceptor global no App.tsx
 
 interface LoginData {
   email: string
@@ -264,7 +255,6 @@ export const api = {
       })
 
       if (!response.ok) {
-        handleAuthError(response.status)
         throw new Error(`HTTP error! status: ${response.status}`)
       }
 
@@ -296,7 +286,6 @@ export const api = {
       console.log('📡 Response status:', response.status, response.statusText)
 
       if (!response.ok) {
-        handleAuthError(response.status)
         const errorText = await response.text()
         console.error('❌ API Error:', errorText)
         throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
@@ -354,7 +343,6 @@ export const api = {
       console.log('📡 Funnel Response status:', response.status, response.statusText)
 
       if (!response.ok) {
-        handleAuthError(response.status)
         const errorText = await response.text()
         console.error('❌ Funnel API Error:', errorText)
         throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
@@ -390,7 +378,6 @@ export const api = {
       console.log('📡 Orders Response status:', response.status, response.statusText)
 
       if (!response.ok) {
-        handleAuthError(response.status)
         const errorText = await response.text()
         console.error('❌ Orders API Error:', errorText)
         throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
@@ -425,7 +412,6 @@ export const api = {
       console.log('📡 Goals Response status:', response.status, response.statusText)
 
       if (!response.ok) {
-        handleAuthError(response.status)
         const errorText = await response.text()
         console.error('❌ Goals API Error:', errorText)
         throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
@@ -460,7 +446,6 @@ export const api = {
       console.log('📡 Detailed Data Response status:', response.status, response.statusText)
 
       if (!response.ok) {
-        handleAuthError(response.status)
         const errorText = await response.text()
         console.error('❌ Detailed Data API Error:', errorText)
         throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
@@ -495,7 +480,6 @@ export const api = {
       console.log('📡 Havaianas Response status:', response.status, response.statusText)
 
       if (!response.ok) {
-        handleAuthError(response.status)
         const errorText = await response.text()
         console.error('❌ Havaianas API Error:', errorText)
         throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
@@ -530,7 +514,6 @@ export const api = {
       console.log('📡 Product Trend Response status:', response.status, response.statusText)
 
       if (!response.ok) {
-        handleAuthError(response.status)
         const errorText = await response.text()
         console.error('❌ Product Trend API Error:', errorText)
         throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
@@ -565,7 +548,6 @@ export const api = {
       console.log('📡 Ads Campaigns Response status:', response.status, response.statusText)
 
       if (!response.ok) {
-        handleAuthError(response.status)
         const errorText = await response.text()
         console.error('❌ Ads Campaigns API Error:', errorText)
         throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
@@ -600,7 +582,6 @@ export const api = {
       console.log('📡 Realtime Data Response status:', response.status, response.statusText)
 
       if (!response.ok) {
-        handleAuthError(response.status)
         const errorText = await response.text()
         console.error('❌ Realtime Data API Error:', errorText)
         throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
@@ -635,7 +616,6 @@ export const api = {
       console.log('📡 Users Response status:', response.status, response.statusText)
 
       if (!response.ok) {
-        handleAuthError(response.status)
         const errorText = await response.text()
         console.error('❌ Users API Error:', errorText)
         throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
@@ -670,7 +650,6 @@ export const api = {
       console.log('📡 Create User Response status:', response.status, response.statusText)
 
       if (!response.ok) {
-        handleAuthError(response.status)
         const errorText = await response.text()
         console.error('❌ Create User API Error:', errorText)
         throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
@@ -705,7 +684,6 @@ export const api = {
       console.log('📡 Delete User Response status:', response.status, response.statusText)
 
       if (!response.ok) {
-        handleAuthError(response.status)
         const errorText = await response.text()
         console.error('❌ Delete User API Error:', errorText)
         throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)

@@ -9,6 +9,7 @@ import {
   Monitor,
   Smartphone
 } from 'lucide-react'
+import TimelineAB from './TimelineAB'
 
 interface ExperimentData {
   event_date: string
@@ -58,6 +59,7 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
   const [aggregatedExperiments, setAggregatedExperiments] = useState<AggregatedExperiment[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [selectedExperimentForTimeline, setSelectedExperimentForTimeline] = useState<string>('')
 
 
   // Buscar dados dos experimentos
@@ -425,6 +427,15 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
           Exportar CSV
         </button>
       </div>
+
+      {/* Timeline de Experimentos */}
+      {experiments.length > 0 && (
+        <TimelineAB 
+          data={experiments}
+          selectedExperimentId={selectedExperimentForTimeline}
+          onExperimentSelect={setSelectedExperimentForTimeline}
+        />
+      )}
 
 
 
