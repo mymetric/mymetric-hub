@@ -26,6 +26,14 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, attributionModel 
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [visibleSeries, setVisibleSeries] = useState({
+    // Séries absolutas
+    'Visualizações (absoluto)': false,
+    'Carrinho (absoluto)': false,
+    'Checkout (absoluto)': false,
+    'Frete (absoluto)': false,
+    'Pagamento (absoluto)': false,
+    'Pedidos (absoluto)': false,
+    // Séries de conversão
     'Visualização → Carrinho': false,
     'Carrinho → Checkout': false,
     'Checkout → Frete': false,
@@ -34,6 +42,7 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, attributionModel 
     'Checkout → Pedido': false,
     'Visualização → Pedido': true
   })
+  const [showAbsoluteValues, setShowAbsoluteValues] = useState(false)
 
   // Função para alternar série selecionada
   const toggleSeries = (seriesName: string) => {
@@ -175,6 +184,14 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, attributionModel 
 
     return {
       data: formatDate(item.Data),
+      // Valores absolutos
+      'Visualizações (absoluto)': item.Visualizacao_de_Item,
+      'Carrinho (absoluto)': item.Adicionar_ao_Carrinho,
+      'Checkout (absoluto)': item.Iniciar_Checkout,
+      'Frete (absoluto)': item.Adicionar_Informacao_de_Frete,
+      'Pagamento (absoluto)': item.Adicionar_Informacao_de_Pagamento,
+      'Pedidos (absoluto)': item.Pedido,
+      // Taxas de conversão (percentuais)
       'Visualização → Carrinho': parseFloat(visualizacaoParaCarrinho.toFixed(2)),
       'Carrinho → Checkout': parseFloat(carrinhoParaCheckout.toFixed(2)),
       'Checkout → Frete': parseFloat(checkoutParaFrete.toFixed(2)),
@@ -292,6 +309,12 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, attributionModel 
 
   // Definir tipo para as chaves das séries
   type SeriesKey =
+    | 'Visualizações (absoluto)'
+    | 'Carrinho (absoluto)'
+    | 'Checkout (absoluto)'
+    | 'Frete (absoluto)'
+    | 'Pagamento (absoluto)'
+    | 'Pedidos (absoluto)'
     | 'Visualização → Carrinho'
     | 'Carrinho → Checkout'
     | 'Checkout → Frete'
@@ -303,6 +326,8 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, attributionModel 
   // Calcular domínio dinâmico do eixo Y conforme as séries visíveis
   const getYAxisDomain = () => {
     const activeKeys = Object.keys(visibleSeries).filter((key) => visibleSeries[key as SeriesKey]) as SeriesKey[]
+    const hasAbsoluteValues = activeKeys.some(key => key.includes('(absoluto)'))
+    
     let min = Infinity
     let max = -Infinity
     chartData.forEach((item) => {
@@ -314,11 +339,21 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, attributionModel 
         }
       })
     })
-    // Se não houver dados, use [0, 100] como padrão
-    if (!isFinite(min) || !isFinite(max)) return [0, 100]
+    
+    // Se não houver dados
+    if (!isFinite(min) || !isFinite(max)) {
+      return hasAbsoluteValues ? [0, 1000] : [0, 100]
+    }
+    
     // Se min == max, expanda um pouco para visualização
-    if (min === max) return [Math.max(0, min - 5), max + 5]
-    // Para taxas, garanta que o eixo comece em 0 e vá até no máximo 100
+    if (min === max) return [Math.max(0, min - (hasAbsoluteValues ? 10 : 5)), max + (hasAbsoluteValues ? 10 : 5)]
+    
+    // Para valores absolutos, use domínio mais flexível
+    if (hasAbsoluteValues) {
+      return [Math.max(0, Math.floor(min * 0.9)), Math.ceil(max * 1.1)]
+    }
+    
+    // Para taxas percentuais, garanta que o eixo comece em 0 e vá até no máximo 100
     return [Math.max(0, Math.floor(min)), Math.min(100, Math.ceil(max))]
   }
 
@@ -460,15 +495,44 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, attributionModel 
         
         {/* Controles das Séries */}
         <div className="mb-6 p-6 bg-gradient-to-r from-slate-50 to-blue-50 rounded-xl border border-slate-100">
-          <h4 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-            Selecionar Métricas para Comparar
-          </h4>
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+              Selecionar Métricas para Comparar
+            </h4>
+            <button
+              onClick={() => setShowAbsoluteValues(!showAbsoluteValues)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                showAbsoluteValues
+                  ? 'bg-green-100 text-green-700 border-2 border-green-300'
+                  : 'bg-blue-100 text-blue-700 border-2 border-blue-300'
+              }`}
+            >
+              {showAbsoluteValues ? '📊 Valores Absolutos' : '📈 Taxas de Conversão'}
+            </button>
+          </div>
+          
           <div className="flex flex-wrap gap-2">
-            {Object.keys(visibleSeries).map((seriesName) => {
+            {Object.keys(visibleSeries)
+              .filter(seriesName => {
+                if (showAbsoluteValues) {
+                  return seriesName.includes('(absoluto)')
+                } else {
+                  return !seriesName.includes('(absoluto)')
+                }
+              })
+              .map((seriesName) => {
               const isSelected = visibleSeries[seriesName as keyof typeof visibleSeries]
               const getSeriesColor = (name: string) => {
                 switch (name) {
+                  // Cores para valores absolutos
+                  case 'Visualizações (absoluto)': return '#3b82f6'
+                  case 'Carrinho (absoluto)': return '#1d4ed8'
+                  case 'Checkout (absoluto)': return '#6366f1'
+                  case 'Frete (absoluto)': return '#475569'
+                  case 'Pagamento (absoluto)': return '#1e40af'
+                  case 'Pedidos (absoluto)': return '#0f172a'
+                  // Cores para taxas de conversão
                   case 'Visualização → Carrinho': return '#3b82f6'
                   case 'Carrinho → Checkout': return '#1d4ed8'
                   case 'Checkout → Frete': return '#6366f1'
@@ -486,7 +550,9 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, attributionModel 
                   onClick={() => toggleSeries(seriesName)}
                   className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                     isSelected
-                      ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
+                      ? showAbsoluteValues 
+                        ? 'bg-green-100 text-green-700 border-2 border-green-300'
+                        : 'bg-blue-100 text-blue-700 border-2 border-blue-300'
                       : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
                   }`}
                 >
@@ -500,7 +566,10 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, attributionModel 
             })}
           </div>
           <p className="text-xs text-gray-600 mt-3">
-            Clique nas métricas para selecionar/deselecionar. Compare múltiplas taxas de conversão simultaneamente.
+            {showAbsoluteValues 
+              ? 'Clique nas métricas para selecionar/deselecionar. Compare valores absolutos de cada etapa do funil.'
+              : 'Clique nas métricas para selecionar/deselecionar. Compare múltiplas taxas de conversão simultaneamente.'
+            }
           </p>
         </div>
         
@@ -517,13 +586,85 @@ const ConversionFunnel = ({ selectedTable, startDate, endDate, attributionModel 
                 tick={{ fontSize: 12 }}
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={(value) => `${value}%`}
+                tickFormatter={(value) => {
+                  const activeKeys = Object.keys(visibleSeries).filter((key) => visibleSeries[key as SeriesKey]) as SeriesKey[]
+                  const hasAbsoluteValues = activeKeys.some(key => key.includes('(absoluto)'))
+                  return hasAbsoluteValues ? formatNumber(value) : `${value}%`
+                }}
                 domain={getYAxisDomain()}
               />
               <Tooltip 
-                formatter={(value: number) => [`${value.toFixed(2)}%`, 'Taxa']}
+                formatter={(value: number, name: string) => {
+                  const activeKeys = Object.keys(visibleSeries).filter((key) => visibleSeries[key as SeriesKey]) as SeriesKey[]
+                  const hasAbsoluteValues = activeKeys.some(key => key.includes('(absoluto)'))
+                  return hasAbsoluteValues 
+                    ? [formatNumber(value), name] 
+                    : [`${value.toFixed(2)}%`, name]
+                }}
                 labelFormatter={(label) => `Data: ${label}`}
               />
+              {/* Séries Absolutas */}
+              {visibleSeries['Visualizações (absoluto)'] && (
+                <Line 
+                  type="monotone" 
+                  dataKey="Visualizações (absoluto)" 
+                  stroke="#3b82f6" 
+                  strokeWidth={2}
+                  dot={getDot('Visualizações (absoluto)', '#3b82f6')}
+                  activeDot={{ r: 6 }}
+                />
+              )}
+              {visibleSeries['Carrinho (absoluto)'] && (
+                <Line 
+                  type="monotone" 
+                  dataKey="Carrinho (absoluto)" 
+                  stroke="#1d4ed8" 
+                  strokeWidth={2}
+                  dot={getDot('Carrinho (absoluto)', '#1d4ed8')}
+                  activeDot={{ r: 6 }}
+                />
+              )}
+              {visibleSeries['Checkout (absoluto)'] && (
+                <Line 
+                  type="monotone" 
+                  dataKey="Checkout (absoluto)" 
+                  stroke="#6366f1" 
+                  strokeWidth={2}
+                  dot={getDot('Checkout (absoluto)', '#6366f1')}
+                  activeDot={{ r: 6 }}
+                />
+              )}
+              {visibleSeries['Frete (absoluto)'] && (
+                <Line 
+                  type="monotone" 
+                  dataKey="Frete (absoluto)" 
+                  stroke="#475569" 
+                  strokeWidth={2}
+                  dot={getDot('Frete (absoluto)', '#475569')}
+                  activeDot={{ r: 6 }}
+                />
+              )}
+              {visibleSeries['Pagamento (absoluto)'] && (
+                <Line 
+                  type="monotone" 
+                  dataKey="Pagamento (absoluto)" 
+                  stroke="#1e40af" 
+                  strokeWidth={2}
+                  dot={getDot('Pagamento (absoluto)', '#1e40af')}
+                  activeDot={{ r: 6 }}
+                />
+              )}
+              {visibleSeries['Pedidos (absoluto)'] && (
+                <Line 
+                  type="monotone" 
+                  dataKey="Pedidos (absoluto)" 
+                  stroke="#0f172a" 
+                  strokeWidth={3}
+                  dot={getDot('Pedidos (absoluto)', '#0f172a')}
+                  activeDot={{ r: 7 }}
+                />
+              )}
+              {/* Séries de Conversão */}
               {visibleSeries['Visualização → Carrinho'] && (
                 <Line 
                   type="monotone" 
