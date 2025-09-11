@@ -1322,7 +1322,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Desktop Navigation */}
-          <nav className="hidden md:flex space-x-8">
+          <nav className="hidden md:flex">
             {/* Abas visíveis */}
             {visibleTabs.map((tabId) => {
               const tabConfig = {
@@ -1344,13 +1344,13 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 <button
                   key={tabId}
                   onClick={() => handleTabChange(tabId)}
-                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
+                  className={`flex-1 py-3 px-6 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
                     isActive
                       ? 'border-blue-500 text-blue-600'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center gap-2">
                     <IconComponent className="w-4 h-4" />
                     {tabConfig.label}
                   </div>
@@ -1360,10 +1360,10 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
             {/* Submenu para abas adicionais */}
             {submenuTabs.length > 0 && (
-              <div className="relative">
+              <div className="relative flex-1">
                 <button
                   onClick={() => setShowSubmenu(!showSubmenu)}
-                  className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap flex items-center gap-2 ${
+                  className={`w-full py-3 px-6 border-b-2 font-medium text-sm transition-colors whitespace-nowrap flex items-center justify-center gap-2 ${
                     submenuTabs.includes(activeTab)
                       ? 'border-blue-500 text-blue-600'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
