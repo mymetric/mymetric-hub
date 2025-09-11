@@ -23,7 +23,8 @@ import {
   TrendingUp,
   Activity,
   Users,
-  ChevronDown
+  ChevronDown,
+  Truck
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
 import Logo from './Logo'
@@ -41,6 +42,7 @@ import HavaianasDashboard from './HavaianasDashboard'
 import ABTesting from './ABTesting'
 import ProductsDashboard from './ProductsDashboard'
 import PaidMediaDashboard from './PaidMediaDashboard'
+import FreteDashboard from './FreteDashboard'
 import RealtimeData from './RealtimeData'
 import SessionStatus from './SessionStatus'
 import UsersConfig from './UsersConfig'
@@ -1284,6 +1286,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   // Abas que ficam no submenu
   const submenuTabs = [
     ...(selectedTable === 'havaianas' ? ['havaianas'] : []),
+    'frete',
     'ab-testing',
     ...(user?.admin ? ['configuracao'] : [])
   ]
@@ -1357,6 +1360,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 'midia-paga': { label: 'Mídia Paga', icon: TrendingUp },
                 'funil-conversao': { label: 'Funil de Conversão', icon: Filter },
                 'dados-detalhados': { label: 'Dados Detalhados', icon: Database },
+                'frete': { label: 'Frete', icon: Truck },
                 'produtos': { label: 'Produtos', icon: ShoppingCart },
                 'tempo-real': { label: 'Tempo Real', icon: Activity }
               }[tabId]
@@ -1405,6 +1409,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                     {submenuTabs.map((tabId) => {
                       const tabConfig = {
                         'havaianas': { label: 'Product Scoring', icon: Package },
+                        'frete': { label: 'Frete', icon: Truck },
                         'ab-testing': { label: 'Testes A/B', icon: Target },
                         'configuracao': { label: 'Configuração', icon: Users }
                       }[tabId]
@@ -1449,6 +1454,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   {activeTab === 'midia-paga' && 'Mídia Paga'}
                   {activeTab === 'funil-conversao' && 'Funil de Conversão'}
                   {activeTab === 'dados-detalhados' && 'Dados Detalhados'}
+                  {activeTab === 'frete' && 'Frete'}
                   {activeTab === 'havaianas' && 'Product Scoring'}
                   {activeTab === 'produtos' && 'Produtos'}
                   {activeTab === 'ab-testing' && 'Testes A/B'}
@@ -1555,6 +1561,26 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                         <Database className="w-5 h-5" />
                         <span>Dados Detalhados</span>
                         {activeTab === 'dados-detalhados' && (
+                          <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full"></div>
+                        )}
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        handleTabChange('frete')
+                        setShowMobileTabMenu(false)
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                        activeTab === 'frete'
+                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Truck className="w-5 h-5" />
+                        <span>Frete</span>
+                        {activeTab === 'frete' && (
                           <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full"></div>
                         )}
                       </div>
@@ -1721,6 +1747,20 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   <div className="flex items-center gap-1">
                     <Database className="w-3 h-3" />
                     <span>Dados</span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => handleTabChange('frete')}
+                  className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
+                    activeTab === 'frete'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-1">
+                    <Truck className="w-3 h-3" />
+                    <span>Frete</span>
                   </div>
                 </button>
                 
@@ -2432,6 +2472,15 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         {/* Mídia Paga Tab */}
         {activeTab === 'midia-paga' && (
           <PaidMediaDashboard 
+            selectedTable={selectedTable}
+            startDate={startDate}
+            endDate={endDate}
+          />
+        )}
+
+        {/* Frete Tab */}
+        {activeTab === 'frete' && (
+          <FreteDashboard 
             selectedTable={selectedTable}
             startDate={startDate}
             endDate={endDate}

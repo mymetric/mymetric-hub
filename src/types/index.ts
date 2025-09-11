@@ -99,4 +99,25 @@ export interface RealtimeDataRequest {
 
 export interface RealtimeDataResponse {
   data: RealtimeDataItem[]
+}
+
+// Tipos para dados de Frete
+export interface FreteDataItem {
+  event_date: string
+  zipcode: string
+  zipcode_region: string
+  calculations: number
+  transactions: number
+  revenue: number | null
+}
+
+export interface FreteRequest {
+  start_date: string
+  end_date: string
+  table_name: string
+}
+
+export interface FreteResponse {
+  data: FreteDataItem[]
+  total_rows?: number
 } 

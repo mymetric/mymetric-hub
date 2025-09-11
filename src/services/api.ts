@@ -1,4 +1,4 @@
-import { AdsCampaignRequest, AdsCampaignResponse } from '../types'
+import { AdsCampaignRequest, AdsCampaignResponse, FreteRequest, FreteResponse } from '../types'
 
 const API_BASE_URL = 'https://api.mymetric.app'
 
@@ -693,6 +693,40 @@ export const api = {
     } catch (error) {
       console.error('❌ Delete User error:', error)
       throw new Error('Erro ao remover usuário.')
+    }
+  },
+
+  async getFreteData(token: string, freteData: FreteRequest): Promise<FreteResponse> {
+    try {
+      console.log('🌐 Frete API Request:', {
+        url: `${API_BASE_URL}/metrics/shipping-calc-analytics`,
+        method: 'POST',
+        body: freteData
+      })
+
+      const response = await fetch(`${API_BASE_URL}/metrics/shipping-calc-analytics`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(freteData),
+      })
+
+      console.log('📡 Frete Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Frete API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('📦 Frete API Response data:', data)
+      return data
+    } catch (error) {
+      console.error('❌ Frete fetch error:', error)
+      throw new Error('Erro ao buscar dados de frete.')
     }
   }
 } 
