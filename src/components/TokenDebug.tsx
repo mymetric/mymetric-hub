@@ -61,7 +61,6 @@ const TokenDebug = () => {
           <p>Exp: {tokenInfo.accessToken?.exp ? new Date(tokenInfo.accessToken.exp * 1000).toLocaleString() : 'N/A'}</p>
           <p>Stored Exp: {new Date(tokenInfo.stored.expiresAt).toLocaleString()}</p>
           <p>Expired: <span className={tokenInfo.accessTokenExpired ? 'text-red-600' : 'text-green-600'}>{tokenInfo.accessTokenExpired ? 'Yes' : 'No'}</span></p>
-          <p>Time until expiry: {Math.round(tokenInfo.timeUntilAccessExpiry / (1000 * 60))} minutes</p>
         </div>
 
         <div className="p-3 bg-gray-50 rounded">
@@ -69,7 +68,6 @@ const TokenDebug = () => {
           <p>Exp: {tokenInfo.refreshToken?.exp ? new Date(tokenInfo.refreshToken.exp * 1000).toLocaleString() : 'N/A'}</p>
           <p>Stored Exp: {new Date(tokenInfo.stored.refreshExpiresAt).toLocaleString()}</p>
           <p>Expired: <span className={tokenInfo.refreshTokenExpired ? 'text-red-600' : 'text-green-600'}>{tokenInfo.refreshTokenExpired ? 'Yes' : 'No'}</span></p>
-          <p>Time until expiry: {Math.round(tokenInfo.timeUntilRefreshExpiry / (1000 * 60 * 60 * 24))} days</p>
         </div>
 
         <div className="p-3 bg-gray-50 rounded">

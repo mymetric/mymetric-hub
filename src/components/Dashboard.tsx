@@ -1271,7 +1271,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
               <Logo size="xl" />
             </div>
             
-            <div className="flex items-center gap-8 sm:gap-10 relative z-30">
+            <div className="flex items-center gap-2 sm:gap-4 relative z-30">
               {/* Dropdown de clientes e botão de ocultar nome - apenas para usuários com acesso total */}
               {(() => {
                 try {
@@ -1279,8 +1279,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   const loginResponse = loginResponseStr ? JSON.parse(loginResponseStr) : null
                   const hasAccessToAll = loginResponse?.table_name === 'all' || loginResponse?.access_control === 'all'
                   
-                  return hasAccessToAll && (
-                    <>
+                  return hasAccessToAll && !hideClientName && (
+                    <div className="flex items-center gap-3">
                       <div className="w-28 sm:w-48">
                         <TableSelector
                           currentTable={selectedTable}
@@ -1297,21 +1297,39 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       <button
                         onClick={() => setHideClientName(!hideClientName)}
                         className="flex items-center justify-center p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-md transition-colors relative z-40"
-                        title={hideClientName ? "Mostrar nome do cliente" : "Ocultar nome do cliente"}
+                        title="Ocultar dropdown de clientes"
                       >
-                        {hideClientName ? (
-                          <Eye className="w-4 h-4" />
-                        ) : (
-                          <EyeOff className="w-4 h-4" />
-                        )}
+                        <EyeOff className="w-4 h-4" />
                       </button>
-                    </>
+                    </div>
                   )
                 } catch (error) {
                   console.error('❌ Error parsing login-response for TableSelector display:', error)
                   return null
                 }
               })()}
+              
+              {/* Botão para mostrar dropdown quando oculto */}
+              {(() => {
+                try {
+                  const loginResponseStr = localStorage.getItem('login-response')
+                  const loginResponse = loginResponseStr ? JSON.parse(loginResponseStr) : null
+                  const hasAccessToAll = loginResponse?.table_name === 'all' || loginResponse?.access_control === 'all'
+
+                  return hasAccessToAll && hideClientName && (
+                    <button
+                      onClick={() => setHideClientName(false)}
+                      className="flex items-center justify-center p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-md transition-colors relative z-40"
+                      title="Mostrar dropdown de clientes"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                  )
+                } catch (error) {
+                  return null
+                }
+              })()}
+              
               <SessionStatus onLogout={onLogout} user={user} />
             </div>
           </div>

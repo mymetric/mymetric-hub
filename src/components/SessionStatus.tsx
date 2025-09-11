@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { LogOut, Clock, User, Shield } from 'lucide-react'
+import { useState } from 'react'
+import { LogOut, User, Shield } from 'lucide-react'
 
 interface SessionStatusProps {
   onLogout: () => void
@@ -12,41 +12,7 @@ interface SessionStatusProps {
 }
 
 const SessionStatus = ({ onLogout, user }: SessionStatusProps) => {
-  const [timeLeft, setTimeLeft] = useState<string>('')
   const [showDetails, setShowDetails] = useState(false)
-
-  useEffect(() => {
-    const updateTimeLeft = () => {
-      const storedData = localStorage.getItem('mymetric-auth-complete')
-      if (storedData) {
-        try {
-          const parsed = JSON.parse(storedData)
-          const now = Date.now()
-          const timeUntilExpiry = parsed.expiresAt - now
-          
-          if (timeUntilExpiry > 0) {
-            const hours = Math.floor(timeUntilExpiry / (1000 * 60 * 60))
-            const minutes = Math.floor((timeUntilExpiry % (1000 * 60 * 60)) / (1000 * 60))
-            
-            if (hours > 0) {
-              setTimeLeft(`${hours}h ${minutes}m`)
-            } else {
-              setTimeLeft(`${minutes}m`)
-            }
-          } else {
-            setTimeLeft('Expirado')
-          }
-        } catch (error) {
-          setTimeLeft('--')
-        }
-      }
-    }
-
-    updateTimeLeft()
-    const interval = setInterval(updateTimeLeft, 60000) // Atualizar a cada minuto
-
-    return () => clearInterval(interval)
-  }, [])
 
   const formatLastLogin = (lastLogin: string) => {
     const date = new Date(lastLogin)
@@ -68,10 +34,6 @@ const SessionStatus = ({ onLogout, user }: SessionStatusProps) => {
       >
         <User className="w-4 h-4" />
         <span className="hidden sm:inline">{user?.username || 'Usuário'}</span>
-        <Clock className="w-4 h-4 text-blue-600" />
-        <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-          {timeLeft}
-        </span>
       </button>
 
       {/* Dropdown de detalhes */}
@@ -102,39 +64,13 @@ const SessionStatus = ({ onLogout, user }: SessionStatusProps) => {
                   {user?.lastLogin ? formatLastLogin(user.lastLogin) : '--'}
                 </span>
               </div>
-              
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600">Tempo restante:</span>
-                <span className={`font-medium ${
-                  timeLeft === 'Expirado' ? 'text-red-600' : 'text-green-600'
-                }`}>
-                  {timeLeft}
-                </span>
-              </div>
-              
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600">Status:</span>
-                <span className={`px-2 py-1 rounded-full text-xs ${
-                  timeLeft === 'Expirado' 
-                    ? 'bg-red-100 text-red-800' 
-                    : 'bg-green-100 text-green-800'
-                }`}>
-                  {timeLeft === 'Expirado' ? 'Expirada' : 'Ativa'}
-                </span>
-              </div>
             </div>
 
             {/* Ações */}
             <div className="flex gap-2">
               <button
-                onClick={() => window.location.reload()}
-                className="flex-1 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Renovar Sessão
-              </button>
-              <button
                 onClick={onLogout}
-                className="flex-1 px-3 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
+                className="w-full px-3 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
               >
                 <LogOut className="w-4 h-4" />
                 Sair
