@@ -200,6 +200,14 @@ interface CreateUserResponse {
   email_sent: boolean
 }
 
+interface ForgotPasswordRequest {
+  email: string
+}
+
+interface ForgotPasswordResponse {
+  message: string
+}
+
 
 
 interface MetricsDataItem {
@@ -773,6 +781,39 @@ export const api = {
     } catch (error) {
       console.error('❌ Frete fetch error:', error)
       throw new Error('Erro ao buscar dados de frete.')
+    }
+  },
+
+  async forgotPassword(forgotPasswordData: ForgotPasswordRequest): Promise<ForgotPasswordResponse> {
+    try {
+      console.log('🌐 Forgot Password API Request:', {
+        url: `${API_BASE_URL}/forgot-password`,
+        method: 'POST',
+        body: forgotPasswordData
+      })
+
+      const response = await fetch(`${API_BASE_URL}/forgot-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(forgotPasswordData),
+      })
+
+      console.log('📡 Forgot Password Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Forgot Password API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('📦 Forgot Password API Response data:', data)
+      return data
+    } catch (error) {
+      console.error('❌ Forgot Password error:', error)
+      throw new Error('Erro ao solicitar recuperação de senha.')
     }
   }
 } 

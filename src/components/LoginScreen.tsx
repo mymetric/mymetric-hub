@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { Eye, EyeOff, User, Lock, CheckCircle, AlertCircle } from 'lucide-react'
+import { Eye, EyeOff, User, Lock, CheckCircle, AlertCircle, ArrowLeft, Mail } from 'lucide-react'
 import Logo from './Logo'
 import { api } from '../services/api'
 
@@ -10,6 +10,10 @@ interface LoginForm {
   rememberMe: boolean
 }
 
+interface ForgotPasswordForm {
+  email: string
+}
+
 const LoginScreen = ({ onLogin }: { onLogin: (username: string, rememberMe: boolean) => void }) => {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -17,6 +21,10 @@ const LoginScreen = ({ onLogin }: { onLogin: (username: string, rememberMe: bool
   const [errorMessage, setErrorMessage] = useState('')
   const [showTransition, setShowTransition] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
+  const [showForgotPassword, setShowForgotPassword] = useState(false)
+  const [forgotPasswordStatus, setForgotPasswordStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [forgotPasswordMessage, setForgotPasswordMessage] = useState('')
+  const [isForgotPasswordLoading, setIsForgotPasswordLoading] = useState(false)
 
   const {
     register,
@@ -25,8 +33,50 @@ const LoginScreen = ({ onLogin }: { onLogin: (username: string, rememberMe: bool
     reset
   } = useForm<LoginForm>()
 
+  const {
+    register: registerForgotPassword,
+    handleSubmit: handleForgotPasswordSubmit,
+    formState: { errors: forgotPasswordErrors },
+    reset: resetForgotPassword
+  } = useForm<ForgotPasswordForm>()
+
   const handleRememberMeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setRememberMe(e.target.checked)
+  }
+
+  const handleForgotPassword = () => {
+    setShowForgotPassword(true)
+    setForgotPasswordStatus('idle')
+    setForgotPasswordMessage('')
+    resetForgotPassword()
+  }
+
+  const handleBackToLogin = () => {
+    setShowForgotPassword(false)
+    setForgotPasswordStatus('idle')
+    setForgotPasswordMessage('')
+    resetForgotPassword()
+  }
+
+  const onForgotPasswordSubmit = async (data: ForgotPasswordForm) => {
+    setIsForgotPasswordLoading(true)
+    setForgotPasswordStatus('idle')
+    setForgotPasswordMessage('')
+
+    try {
+      const response = await api.forgotPassword({
+        email: data.email
+      })
+
+      setForgotPasswordStatus('success')
+      setForgotPasswordMessage('Nova senha foi criada e enviada para seu email.')
+      resetForgotPassword()
+    } catch (error) {
+      setForgotPasswordStatus('error')
+      setForgotPasswordMessage(error instanceof Error ? error.message : 'Erro ao solicitar recuperação de senha.')
+    }
+
+    setIsForgotPasswordLoading(false)
   }
 
   const onSubmit = async (data: LoginForm) => {
@@ -100,12 +150,19 @@ const LoginScreen = ({ onLogin }: { onLogin: (username: string, rememberMe: bool
           <div className="flex justify-center mb-6">
             <Logo size="xl" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Bem-vindo</h1>
-          <p className="text-gray-600">Faça login para acessar sua conta</p>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">
+            {showForgotPassword ? 'Recuperar Senha' : 'Bem-vindo'}
+          </h1>
+          <p className="text-gray-600">
+            {showForgotPassword 
+              ? 'Digite seu email para criar uma nova senha' 
+              : 'Faça login para acessar sua conta'
+            }
+          </p>
         </div>
 
         {/* Status Messages */}
-        {loginStatus === 'success' && (
+        {!showForgotPassword && loginStatus === 'success' && (
           <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3 animate-slide-up">
             <CheckCircle className="w-5 h-5 text-green-600 animate-bounce" />
             <span className="text-green-800 font-medium">Login realizado com sucesso!</span>
@@ -113,15 +170,31 @@ const LoginScreen = ({ onLogin }: { onLogin: (username: string, rememberMe: bool
           </div>
         )}
 
-        {loginStatus === 'error' && (
+        {!showForgotPassword && loginStatus === 'error' && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3 animate-slide-up">
             <AlertCircle className="w-5 h-5 text-red-600" />
             <span className="text-red-800 font-medium">{errorMessage}</span>
           </div>
         )}
 
-        {/* Login Form */}
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        {showForgotPassword && forgotPasswordStatus === 'success' && (
+          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3 animate-slide-up">
+            <CheckCircle className="w-5 h-5 text-green-600 animate-bounce" />
+            <span className="text-green-800 font-medium">{forgotPasswordMessage}</span>
+          </div>
+        )}
+
+        {showForgotPassword && forgotPasswordStatus === 'error' && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3 animate-slide-up">
+            <AlertCircle className="w-5 h-5 text-red-600" />
+            <span className="text-red-800 font-medium">{forgotPasswordMessage}</span>
+          </div>
+        )}
+
+        {/* Forms */}
+        {!showForgotPassword ? (
+          /* Login Form */
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           {/* Username Field */}
           <div>
             <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
@@ -183,18 +256,28 @@ const LoginScreen = ({ onLogin }: { onLogin: (username: string, rememberMe: bool
           </div>
 
           {/* Remember Me Checkbox */}
-          <div className="flex items-center">
-            <input
-              {...register('rememberMe')}
-              type="checkbox"
-              id="rememberMe"
-              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              checked={rememberMe}
-              onChange={handleRememberMeChange}
-            />
-            <label htmlFor="rememberMe" className="ml-2 block text-sm text-gray-700">
-              Lembrar de mim
-            </label>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <input
+                {...register('rememberMe')}
+                type="checkbox"
+                id="rememberMe"
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                checked={rememberMe}
+                onChange={handleRememberMeChange}
+              />
+              <label htmlFor="rememberMe" className="ml-2 block text-sm text-gray-700">
+                Lembrar de mim
+              </label>
+            </div>
+            <button
+              type="button"
+              onClick={handleForgotPassword}
+              className="text-sm text-blue-600 hover:text-blue-800 transition-colors"
+              disabled={isLoading}
+            >
+              Esqueci minha senha
+            </button>
           </div>
 
           {/* Submit Button */}
@@ -215,6 +298,66 @@ const LoginScreen = ({ onLogin }: { onLogin: (username: string, rememberMe: bool
             )}
           </button>
         </form>
+        ) : (
+          /* Forgot Password Form */
+          <form onSubmit={handleForgotPasswordSubmit(onForgotPasswordSubmit)} className="space-y-6">
+            {/* Email Field */}
+            <div>
+              <label htmlFor="forgotEmail" className="block text-sm font-medium text-gray-700 mb-2">
+                Email
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  {...registerForgotPassword('email', { 
+                    required: 'Email é obrigatório',
+                    pattern: {
+                      value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+                      message: 'Email inválido'
+                    }
+                  })}
+                  type="email"
+                  id="forgotEmail"
+                  placeholder="Digite seu email"
+                  className="input-field pl-10"
+                  disabled={isForgotPasswordLoading}
+                />
+              </div>
+              {forgotPasswordErrors.email && (
+                <p className="mt-1 text-sm text-red-600 animate-slide-up">
+                  {forgotPasswordErrors.email.message}
+                </p>
+              )}
+            </div>
+
+            {/* Submit Button */}
+            <button
+              type="submit"
+              disabled={isForgotPasswordLoading}
+              className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+            >
+              {isForgotPasswordLoading ? (
+                <div className="flex items-center justify-center gap-2">
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Criando...
+                </div>
+              ) : (
+                'Criar Nova Senha'
+              )}
+            </button>
+
+            {/* Back to Login Button */}
+            <button
+              type="button"
+              onClick={handleBackToLogin}
+              className="w-full flex items-center justify-center gap-2 text-sm text-gray-600 hover:text-gray-800 transition-colors py-2"
+              disabled={isForgotPasswordLoading}
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Voltar ao login
+            </button>
+          </form>
+        )}
 
         {/* Footer */}
         <div className="mt-8 text-center">
