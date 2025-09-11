@@ -49,6 +49,7 @@ import UsersConfig from './UsersConfig'
 import TokenDebug from './TokenDebug'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useUrlParams } from '../hooks/useUrlParams'
+import { getDefaultPeriodForTab, getDatePresets, formatDateToString } from '../utils/dateUtils'
 
 interface User {
   email: string
@@ -79,39 +80,31 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   
 
 
-  // Função para calcular datas do mês atual
+  // Função para calcular datas do mês atual (mantida para compatibilidade)
   const getCurrentMonth = () => {
-    const endDate = new Date()
-    const startDate = new Date()
-    startDate.setDate(1) // Primeiro dia do mês atual
-    
+    const presets = getDatePresets()
     return {
-      start: startDate.toISOString().split('T')[0],
-      end: endDate.toISOString().split('T')[0]
+      start: presets.thisMonth.start,
+      end: presets.thisMonth.end
     }
   }
 
-  // Função para calcular datas dos últimos 60 dias
+  // Função para calcular datas dos últimos 60 dias (mantida para compatibilidade)
   const getLast60Days = () => {
-    const endDate = new Date()
-    const startDate = new Date()
-    startDate.setDate(endDate.getDate() - 60)
-    
+    const today = new Date()
+    const startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 59)
     return {
-      start: startDate.toISOString().split('T')[0],
-      end: endDate.toISOString().split('T')[0]
+      start: formatDateToString(startDate),
+      end: formatDateToString(today)
     }
   }
 
-  // Função para calcular datas dos últimos 7 dias
+  // Função para calcular datas dos últimos 7 dias (mantida para compatibilidade)
   const getLast7Days = () => {
-    const endDate = new Date()
-    const startDate = new Date()
-    startDate.setDate(endDate.getDate() - 7)
-    
+    const presets = getDatePresets()
     return {
-      start: startDate.toISOString().split('T')[0],
-      end: endDate.toISOString().split('T')[0]
+      start: presets.last7days.start,
+      end: presets.last7days.end
     }
   }
 
@@ -217,14 +210,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const [metrics, setMetrics] = useState<MetricsDataItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isTableLoading, setIsTableLoading] = useState(false)
-  const [startDate, setStartDate] = useState<string>(() => {
-    const currentMonth = getCurrentMonth()
-    return currentMonth.start
-  })
-  const [endDate, setEndDate] = useState<string>(() => {
-    const currentMonth = getCurrentMonth()
-    return currentMonth.end
-  })
+  const [startDate, setStartDate] = useState<string>('')
+  const [endDate, setEndDate] = useState<string>('')
   const [selectedTable, setSelectedTable] = useState<string>(() => {
     // Inicializar vazio e deixar o useEffect definir o valor correto quando o user for carregado
     return ''
@@ -327,24 +314,9 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     } else {
       // Usar período padrão baseado na aba ativa
       const currentTab = urlParams.tab || 'visao-geral'
-      if (currentTab === 'visao-geral') {
-        const currentMonth = getCurrentMonth()
-        setStartDate(currentMonth.start)
-        setEndDate(currentMonth.end)
-      } else if (currentTab === 'funil-conversao') {
-        const last60Days = getLast60Days()
-        setStartDate(last60Days.start)
-        setEndDate(last60Days.end)
-      } else if (currentTab === 'dados-detalhados') {
-        const last7Days = getLast7Days()
-        setStartDate(last7Days.start)
-        setEndDate(last7Days.end)
-      } else {
-        // Fallback para outras abas
-        const currentMonth = getCurrentMonth()
-        setStartDate(currentMonth.start)
-        setEndDate(currentMonth.end)
-      }
+      const defaultPeriod = getDefaultPeriodForTab(currentTab)
+      setStartDate(defaultPeriod.start)
+      setEndDate(defaultPeriod.end)
     }
   }, []) // Executar apenas uma vez na inicialização
 
@@ -414,19 +386,9 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     setActiveTab(tab)
     
     // Definir período padrão baseado na aba selecionada
-    if (tab === 'visao-geral') {
-      const currentMonth = getCurrentMonth()
-      setStartDate(currentMonth.start)
-      setEndDate(currentMonth.end)
-    } else if (tab === 'funil-conversao') {
-      const last60Days = getLast60Days()
-      setStartDate(last60Days.start)
-      setEndDate(last60Days.end)
-    } else if (tab === 'dados-detalhados') {
-      const last7Days = getLast7Days()
-      setStartDate(last7Days.start)
-      setEndDate(last7Days.end)
-    }
+    const defaultPeriod = getDefaultPeriodForTab(tab)
+    setStartDate(defaultPeriod.start)
+    setEndDate(defaultPeriod.end)
   }
 
   // Título dinâmico baseado no estado do dashboard
@@ -715,7 +677,14 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       newCustomerRevenue: number;
       investment: number;
     }[])
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .sort((a, b) => {
+      // Ordenar datas de forma segura para evitar problemas de timezone
+      const [yearA, monthA, dayA] = a.date.split('-').map(Number)
+      const [yearB, monthB, dayB] = b.date.split('-').map(Number)
+      const dateA = new Date(yearA, monthA - 1, dayA)
+      const dateB = new Date(yearB, monthB - 1, dayB)
+      return dateA.getTime() - dateB.getTime()
+    })
 
   // Agrupar dados por cluster
   const groupedMetrics = filteredMetrics.reduce((acc, item) => {

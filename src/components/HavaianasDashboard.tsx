@@ -80,9 +80,16 @@ const HavaianasDashboard = ({ selectedTable, startDate, endDate }: HavaianasDash
 
   // Filtrar dados por data
   const filteredByDate = havaianasData.filter(item => {
-    const itemDate = new Date(item.event_date)
-    const start = new Date(startDate)
-    const end = new Date(endDate)
+    // Converter datas de forma segura para evitar problemas de timezone
+    const [itemYear, itemMonth, itemDay] = item.event_date.split('-').map(Number)
+    const itemDate = new Date(itemYear, itemMonth - 1, itemDay)
+    
+    const [startYear, startMonth, startDay] = startDate.split('-').map(Number)
+    const start = new Date(startYear, startMonth - 1, startDay)
+    
+    const [endYear, endMonth, endDay] = endDate.split('-').map(Number)
+    const end = new Date(endYear, endMonth - 1, endDay)
+    
     return itemDate >= start && itemDate <= end
   })
 
@@ -174,7 +181,14 @@ const HavaianasDashboard = ({ selectedTable, startDate, endDate }: HavaianasDash
       avgPromo: number;
       itemCount: number;
     }[])
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .sort((a, b) => {
+      // Ordenar datas de forma segura para evitar problemas de timezone
+      const [yearA, monthA, dayA] = a.date.split('-').map(Number)
+      const [yearB, monthB, dayB] = b.date.split('-').map(Number)
+      const dateA = new Date(yearA, monthA - 1, dayA)
+      const dateB = new Date(yearB, monthB - 1, dayB)
+      return dateA.getTime() - dateB.getTime()
+    })
     .map(item => ({
       ...item,
       avgScore: item.itemCount > 0 ? (item.avgScore / item.itemCount) * 100 : 0, // Converter para porcentagem
@@ -280,10 +294,15 @@ const HavaianasDashboard = ({ selectedTable, startDate, endDate }: HavaianasDash
                   fontSize={12}
                   tickLine={false}
                   axisLine={false}
-                  tickFormatter={(value) => new Date(value).toLocaleDateString('pt-BR', { 
-                    day: '2-digit', 
-                    month: '2-digit' 
-                  })}
+                  tickFormatter={(value) => {
+                    // Converter data de forma segura para evitar problemas de timezone
+                    const [year, month, day] = value.split('-').map(Number)
+                    const date = new Date(year, month - 1, day)
+                    return date.toLocaleDateString('pt-BR', { 
+                      day: '2-digit', 
+                      month: '2-digit' 
+                    })
+                  }}
                 />
                 <YAxis 
                   yAxisId="left"
@@ -322,7 +341,12 @@ const HavaianasDashboard = ({ selectedTable, startDate, endDate }: HavaianasDash
                      }
                      return [value, name]
                    }}
-                  labelFormatter={(label) => new Date(label).toLocaleDateString('pt-BR')}
+                  labelFormatter={(label) => {
+                    // Converter data de forma segura para evitar problemas de timezone
+                    const [year, month, day] = label.split('-').map(Number)
+                    const date = new Date(year, month - 1, day)
+                    return date.toLocaleDateString('pt-BR')
+                  }}
                 />
                 
                 <Line

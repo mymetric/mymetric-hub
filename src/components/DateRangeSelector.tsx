@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Calendar, ChevronDown, X, CalendarDays, Clock } from 'lucide-react'
+import { getDatePresets, validateDateRange, getTodayString } from '../utils/dateUtils'
 
 interface DateRangeSelectorProps {
   onDateRangeChange: (startDate: string, endDate: string) => void
@@ -13,6 +14,12 @@ const DateRangeSelector = ({ onDateRangeChange, startDate, endDate }: DateRangeS
   const [localEndDate, setLocalEndDate] = useState(endDate)
   const [errors, setErrors] = useState<{start?: string, end?: string}>({})
   const dropdownRef = useRef<HTMLDivElement>(null)
+  
+  // Forçar sincronização imediata quando as props mudarem
+  useEffect(() => {
+    setLocalStartDate(startDate)
+    setLocalEndDate(endDate)
+  }, [startDate, endDate])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -25,15 +32,12 @@ const DateRangeSelector = ({ onDateRangeChange, startDate, endDate }: DateRangeS
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Sincronizar estados locais com props
-  useEffect(() => {
-    setLocalStartDate(startDate)
-    setLocalEndDate(endDate)
-  }, [startDate, endDate])
 
   const formatDate = (dateString: string) => {
     if (!dateString) return ''
-    const date = new Date(dateString)
+    // Criar data de forma mais segura para evitar problemas de timezone
+    const [year, month, day] = dateString.split('-').map(Number)
+    const date = new Date(year, month - 1, day)
     return date.toLocaleDateString('pt-BR', {
       day: '2-digit',
       month: '2-digit',
@@ -42,29 +46,19 @@ const DateRangeSelector = ({ onDateRangeChange, startDate, endDate }: DateRangeS
   }
 
   const validateDates = (start: string, end: string) => {
-    const newErrors: {start?: string, end?: string} = {}
-    const today = new Date().toISOString().split('T')[0]
-    
-    if (start && start > today) {
-      newErrors.start = 'Data inicial não pode ser futura'
-    }
-    
-    if (end && end > today) {
-      newErrors.end = 'Data final não pode ser futura'
-    }
-    
-    if (start && end && start > end) {
-      newErrors.end = 'Data final deve ser posterior à inicial'
-    }
-
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
+    const validation = validateDateRange(start, end)
+    setErrors(validation.errors)
+    return validation.isValid
   }
 
   const handleStartDateChange = (value: string) => {
     setLocalStartDate(value)
     if (validateDates(value, localEndDate)) {
       onDateRangeChange(value, localEndDate)
+      // Fechar dropdown após seleção se ambas as datas estão preenchidas
+      if (value && localEndDate) {
+        setIsOpen(false)
+      }
     }
   }
 
@@ -72,44 +66,22 @@ const DateRangeSelector = ({ onDateRangeChange, startDate, endDate }: DateRangeS
     setLocalEndDate(value)
     if (validateDates(localStartDate, value)) {
       onDateRangeChange(localStartDate, value)
+      // Fechar dropdown após seleção se ambas as datas estão preenchidas
+      if (localStartDate && value) {
+        setIsOpen(false)
+      }
     }
   }
 
   const handleQuickSelect = (preset: string) => {
-    const today = new Date()
-    let start: Date
-    let end: Date = new Date(today)
-
-    switch (preset) {
-      case 'today':
-        start = new Date(today)
-        break
-      case 'yesterday':
-        start = new Date(today)
-        start.setDate(start.getDate() - 1)
-        end = new Date(start)
-        break
-      case 'last7days':
-        start = new Date(today)
-        start.setDate(start.getDate() - 6)
-        break
-      case 'last30days':
-        start = new Date(today)
-        start.setDate(start.getDate() - 29)
-        break
-      case 'thisMonth':
-        start = new Date(today.getFullYear(), today.getMonth(), 1)
-        break
-      default:
-        return
-    }
-
-    const startStr = start.toISOString().split('T')[0]
-    const endStr = end.toISOString().split('T')[0]
+    const presets = getDatePresets()
+    const selectedPreset = presets[preset as keyof typeof presets]
     
-    setLocalStartDate(startStr)
-    setLocalEndDate(endStr)
-    onDateRangeChange(startStr, endStr)
+    if (!selectedPreset) return
+
+    setLocalStartDate(selectedPreset.start)
+    setLocalEndDate(selectedPreset.end)
+    onDateRangeChange(selectedPreset.start, selectedPreset.end)
     setIsOpen(false)
   }
 
@@ -207,9 +179,9 @@ const DateRangeSelector = ({ onDateRangeChange, startDate, endDate }: DateRangeS
                 </label>
                 <input
                   type="date"
-                  value={localStartDate}
+                  value={localStartDate || ''}
                   onChange={(e) => handleStartDateChange(e.target.value)}
-                  max={new Date().toISOString().split('T')[0]}
+                  max={getTodayString()}
                   className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
                     errors.start ? 'border-red-300 bg-red-50' : 'border-gray-300'
                   }`}
@@ -222,10 +194,10 @@ const DateRangeSelector = ({ onDateRangeChange, startDate, endDate }: DateRangeS
                 </label>
                 <input
                   type="date"
-                  value={localEndDate}
+                  value={localEndDate || ''}
                   onChange={(e) => handleEndDateChange(e.target.value)}
                   min={localStartDate}
-                  max={new Date().toISOString().split('T')[0]}
+                  max={getTodayString()}
                   className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
                     errors.end ? 'border-red-300 bg-red-50' : 'border-gray-300'
                   }`}

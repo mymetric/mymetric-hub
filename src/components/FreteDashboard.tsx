@@ -146,8 +146,11 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
       let bValue = b[detailSortField as keyof FreteDataItem]
       
       if (detailSortField === 'event_date') {
-        aValue = new Date(aValue as string).getTime()
-        bValue = new Date(bValue as string).getTime()
+        // Converter datas de forma segura para evitar problemas de timezone
+        const [yearA, monthA, dayA] = (aValue as string).split('-').map(Number)
+        const [yearB, monthB, dayB] = (bValue as string).split('-').map(Number)
+        aValue = new Date(yearA, monthA - 1, dayA).getTime()
+        bValue = new Date(yearB, monthB - 1, dayB).getTime()
       } else if (detailSortField === 'zipcode') {
         aValue = (aValue as string).toLowerCase()
         bValue = (bValue as string).toLowerCase()
@@ -565,7 +568,12 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     <div className="flex items-center">
                       <Calendar className="w-4 h-4 text-gray-400 mr-2" />
-                      {new Date(item.event_date).toLocaleDateString('pt-BR')}
+                      {(() => {
+                        // Converter data de forma segura para evitar problemas de timezone
+                        const [year, month, day] = item.event_date.split('-').map(Number)
+                        const date = new Date(year, month - 1, day)
+                        return date.toLocaleDateString('pt-BR')
+                      })()}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">

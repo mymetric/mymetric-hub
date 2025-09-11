@@ -63,10 +63,15 @@ const TimelineChart = ({ data, title }: TimelineChartProps) => {
   // Preparar dados para o gráfico
   const chartData = data.map(item => ({
     ...item,
-    date: new Date(item.date).toLocaleDateString('pt-BR', { 
-      day: '2-digit', 
-      month: '2-digit' 
-    }),
+    date: (() => {
+      // Converter data de forma segura para evitar problemas de timezone
+      const [year, month, day] = item.date.split('-').map(Number)
+      const date = new Date(year, month - 1, day)
+      return date.toLocaleDateString('pt-BR', { 
+        day: '2-digit', 
+        month: '2-digit' 
+      })
+    })(),
     sessionsFormatted: new Intl.NumberFormat('pt-BR').format(item.sessions),
     revenueFormatted: new Intl.NumberFormat('pt-BR', {
       style: 'currency',
