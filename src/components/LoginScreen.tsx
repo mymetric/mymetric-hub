@@ -41,17 +41,18 @@ const LoginScreen = ({ onLogin }: { onLogin: (username: string, rememberMe: bool
         password: data.password
       })
 
-      if (response.access_token) {
+      if (response.access_token && response.refresh_token) {
         setLoginStatus('success')
         
         console.log('🔐 Login response received:', response)
         
-        // Salvar token e dados completos da resposta da API
+        // Salvar tokens e dados completos da resposta da API
         localStorage.setItem('auth-token', response.access_token)
         localStorage.setItem('login-response', JSON.stringify(response))
         
         console.log('💾 Data saved to localStorage:', {
-          token: response.access_token,
+          accessToken: response.access_token,
+          refreshToken: response.refresh_token,
           loginResponse: response
         })
         
@@ -194,11 +195,6 @@ const LoginScreen = ({ onLogin }: { onLogin: (username: string, rememberMe: bool
             <label htmlFor="rememberMe" className="ml-2 block text-sm text-gray-700">
               Lembrar de mim
             </label>
-            <div className="ml-auto">
-              <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                {rememberMe ? '7 dias' : '24 horas'}
-              </span>
-            </div>
           </div>
 
           {/* Submit Button */}

@@ -46,6 +46,7 @@ import FreteDashboard from './FreteDashboard'
 import RealtimeData from './RealtimeData'
 import SessionStatus from './SessionStatus'
 import UsersConfig from './UsersConfig'
+import TokenDebug from './TokenDebug'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useUrlParams } from '../hooks/useUrlParams'
 
@@ -1837,6 +1838,24 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                     </div>
                   </button>
                 )}
+
+                {/* Botão de Token Debug - apenas para usuários admin */}
+                {user?.admin && (
+                  <button
+                    onClick={() => handleTabChange('tokendebug')}
+                    className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
+                      activeTab === 'tokendebug'
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1">
+                      <CheckCircle className="w-3 h-3" />
+                      <span>Token Debug</span>
+                    </div>
+                  </button>
+                )}
+
               </div>
             </div>
           </div>
@@ -2500,6 +2519,12 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
             selectedTable={selectedTable}
           />
         )}
+
+        {/* Token Debug Tab - apenas para usuários admin */}
+        {activeTab === 'tokendebug' && user?.admin && (
+          <TokenDebug />
+        )}
+
       </main>
       <DebugMetrics 
         metrics={metrics}

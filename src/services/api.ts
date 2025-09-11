@@ -24,6 +24,20 @@ interface LoginData {
 
 interface LoginResponse {
   access_token: string
+  refresh_token: string
+  token_type: string
+  table_name?: string
+  access_control?: string
+  admin?: boolean
+}
+
+interface RefreshTokenRequest {
+  refresh_token: string
+}
+
+interface RefreshTokenResponse {
+  access_token: string
+  refresh_token: string
   token_type: string
   table_name?: string
   access_control?: string
@@ -241,6 +255,38 @@ export const api = {
     } catch (error) {
       console.error('Login error:', error)
       throw new Error('Erro ao conectar com o servidor. Verifique se a API está rodando.')
+    }
+  },
+
+  async refreshToken(refreshToken: string): Promise<RefreshTokenResponse> {
+    try {
+      console.log('🔄 Refresh Token API Request:', {
+        url: `${API_BASE_URL}/refresh-token`,
+        method: 'POST'
+      })
+
+      const response = await fetch(`${API_BASE_URL}/refresh-token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      })
+
+      console.log('📡 Refresh Token Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Refresh Token API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('📦 Refresh Token API Response data:', data)
+      return data
+    } catch (error) {
+      console.error('❌ Refresh Token error:', error)
+      throw new Error('Erro ao renovar token de autenticação.')
     }
   },
 
