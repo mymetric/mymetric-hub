@@ -94,6 +94,52 @@ interface GoalsResponse {
   message: string
 }
 
+interface TrafficCategoriesRequest {
+  table_name: string
+}
+
+interface TrafficCategoriesResponse {
+  data: Array<{
+    nome: string
+    descricao: string
+    regras: {
+      type: string
+      rules: {
+        [key: string]: string
+      }
+    }
+  }>
+  total_rows: number
+}
+
+interface DeleteGoalRequest {
+  table_name: string
+  month: string
+  goal_type: string
+}
+
+interface DeleteTrafficCategoryRequest {
+  category_name: string
+  table_name: string
+}
+
+interface SaveMonthlyGoalRequest {
+  table_name: string
+  month: string
+  goal_value: number
+  goal_type: string
+}
+
+interface SaveTrafficCategoryRequest {
+  category_name: string
+  description: string
+  rules: {
+    type: string
+    rules: Record<string, string>
+  }
+  table_name: string
+}
+
 interface HavaianasRequest {
   table_name: string
 }
@@ -477,6 +523,168 @@ export const api = {
     } catch (error) {
       console.error('❌ Goals fetch error:', error)
       throw new Error('Erro ao buscar metas.')
+    }
+  },
+
+  async getTrafficCategories(token: string, trafficData: TrafficCategoriesRequest): Promise<TrafficCategoriesResponse> {
+    try {
+      console.log('🌐 Traffic Categories API Request:', {
+        url: `${API_BASE_URL}/admin/load-traffic-categories`,
+        method: 'POST',
+        body: trafficData
+      })
+
+      const response = await fetch(`${API_BASE_URL}/admin/load-traffic-categories`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(trafficData),
+      })
+
+      console.log('📡 Traffic Categories Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Traffic Categories API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('📦 Traffic Categories API Response data:', data)
+      return data
+    } catch (error) {
+      console.error('❌ Traffic Categories fetch error:', error)
+      throw new Error('Erro ao buscar categorias de tráfego.')
+    }
+  },
+
+  async deleteGoal(token: string, deleteGoalData: DeleteGoalRequest): Promise<void> {
+    try {
+      console.log('🌐 Delete Goal API Request:', {
+        url: `${API_BASE_URL}/admin/delete-goal`,
+        method: 'DELETE',
+        body: deleteGoalData
+      })
+
+      const response = await fetch(`${API_BASE_URL}/admin/delete-goal`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(deleteGoalData),
+      })
+
+      console.log('📡 Delete Goal Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Delete Goal API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      console.log('✅ Goal deleted successfully')
+    } catch (error) {
+      console.error('❌ Delete Goal error:', error)
+      throw new Error('Erro ao deletar meta.')
+    }
+  },
+
+  async deleteTrafficCategory(token: string, deleteCategoryData: DeleteTrafficCategoryRequest): Promise<void> {
+    try {
+      console.log('🌐 Delete Traffic Category API Request:', {
+        url: `${API_BASE_URL}/admin/traffic-categories`,
+        method: 'DELETE',
+        body: deleteCategoryData
+      })
+
+      const response = await fetch(`${API_BASE_URL}/admin/traffic-categories`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(deleteCategoryData),
+      })
+
+      console.log('📡 Delete Traffic Category Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Delete Traffic Category API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      console.log('✅ Traffic Category deleted successfully')
+    } catch (error) {
+      console.error('❌ Delete Traffic Category error:', error)
+      throw new Error('Erro ao deletar categoria de tráfego.')
+    }
+  },
+
+  async saveMonthlyGoal(token: string, goalData: SaveMonthlyGoalRequest): Promise<void> {
+    try {
+      console.log('🌐 Save Monthly Goal API Request:', {
+        url: `${API_BASE_URL}/admin/save-monthly-goal`,
+        method: 'POST',
+        body: goalData
+      })
+
+      const response = await fetch(`${API_BASE_URL}/admin/save-monthly-goal`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(goalData),
+      })
+
+      console.log('📡 Save Monthly Goal Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Save Monthly Goal API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      console.log('✅ Monthly Goal saved successfully')
+    } catch (error) {
+      console.error('❌ Save Monthly Goal error:', error)
+      throw new Error('Erro ao salvar meta.')
+    }
+  },
+
+  async saveTrafficCategory(token: string, categoryData: SaveTrafficCategoryRequest): Promise<void> {
+    try {
+      console.log('🌐 Save Traffic Category API Request:', {
+        url: `${API_BASE_URL}/admin/traffic-categories`,
+        method: 'POST',
+        body: categoryData
+      })
+
+      const response = await fetch(`${API_BASE_URL}/admin/traffic-categories`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(categoryData),
+      })
+
+      console.log('📡 Save Traffic Category Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Save Traffic Category API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      console.log('✅ Traffic Category saved successfully')
+    } catch (error) {
+      console.error('❌ Save Traffic Category error:', error)
+      throw new Error('Erro ao salvar categoria de tráfego.')
     }
   },
 

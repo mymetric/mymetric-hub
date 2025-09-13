@@ -45,7 +45,7 @@ import PaidMediaDashboard from './PaidMediaDashboard'
 import FreteDashboard from './FreteDashboard'
 import RealtimeData from './RealtimeData'
 import SessionStatus from './SessionStatus'
-import UsersConfig from './UsersConfig'
+import Configuracao from './UsersConfig'
 import TokenDebug from './TokenDebug'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useUrlParams } from '../hooks/useUrlParams'
@@ -2502,7 +2502,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
         {/* Configuração Tab - apenas para usuários admin */}
         {activeTab === 'configuracao' && user?.admin && (
-          <UsersConfig 
+          <Configuracao 
             selectedTable={selectedTable}
           />
         )}
