@@ -66,13 +66,40 @@ export interface AdsCampaignData {
 }
 
 export interface AdsCampaignRequest {
-  start_date: string
-  end_date: string
+  start_date?: string
+  end_date?: string
   table_name: string
+  last_cache?: boolean
+}
+
+export interface CacheInfo {
+  source: string
+  cached_at: string
+  ttl_hours: number
+}
+
+export interface AdsCampaignSummary {
+  total_cost: number
+  total_revenue: number
+  total_impressions: number
+  total_clicks: number
+  total_leads: number
+  total_transactions: number
+  ctr: number
+  cpm: number
+  cpc: number
+  conversion_rate: number
+  roas: number
+  periodo: string
+  tablename: string
+  user_access: string
 }
 
 export interface AdsCampaignResponse {
   data: AdsCampaignData[]
+  total_rows?: number
+  summary?: AdsCampaignSummary
+  cache_info?: CacheInfo
 }
 
 // Tipos para Dados em Tempo Real

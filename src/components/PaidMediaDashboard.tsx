@@ -13,7 +13,7 @@ import {
   ChevronUp
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
-import { AdsCampaignData } from '../types'
+import { AdsCampaignData, AdsCampaignResponse, CacheInfo, AdsCampaignSummary } from '../types'
 import SortableHeader from './SortableHeader'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 
@@ -33,6 +33,10 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
   const [showAllRecords, setShowAllRecords] = useState(false)
   const [attributionModel, setAttributionModel] = useState<'origin_stack' | 'last_non_direct'>('origin_stack')
   const [isComparisonExpanded, setIsComparisonExpanded] = useState(false)
+  const [cacheInfo, setCacheInfo] = useState<CacheInfo | null>(null)
+  const [summary, setSummary] = useState<AdsCampaignSummary | null>(null)
+  const [useCache, setUseCache] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   useEffect(() => {
     const fetchAdsCampaigns = async () => {
@@ -47,14 +51,20 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
         setIsLoading(true)
         console.log('🔄 Fetching ads campaigns for table:', selectedTable)
         
-        const response = await api.getAdsCampaigns(token, {
-          start_date: startDate,
-          end_date: endDate,
-          table_name: selectedTable
-        })
+        const requestData = useCache 
+          ? { table_name: selectedTable, last_cache: true }
+          : { 
+              start_date: startDate, 
+              end_date: endDate, 
+              table_name: selectedTable 
+            }
+
+        const response = await api.getAdsCampaigns(token, requestData)
 
         console.log('✅ Ads campaigns response:', response)
         setCampaignData(response.data || [])
+        setCacheInfo(response.cache_info || null)
+        setSummary(response.summary || null)
       } catch (error) {
         console.error('❌ Error fetching ads campaigns:', error)
         setCampaignData([])
@@ -64,7 +74,27 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
     }
 
     fetchAdsCampaigns()
-  }, [selectedTable, startDate, endDate, attributionModel])
+  }, [selectedTable, attributionModel, useCache, startDate, endDate])
+
+  // Função para verificar se o cache é antigo (mais de 4 horas)
+  const isCacheOld = () => {
+    if (!cacheInfo) return false
+    const cacheDate = new Date(cacheInfo.cached_at + 'Z')
+    const now = new Date()
+    const diffHours = (now.getTime() - cacheDate.getTime()) / (1000 * 60 * 60)
+    return diffHours > 4
+  }
+
+  // Função para atualizar dados (sem cache)
+  const refreshData = async () => {
+    setIsRefreshing(true)
+    setUseCache(false)
+    // O useEffect será executado automaticamente devido à mudança do useCache
+    setTimeout(() => {
+      setUseCache(true) // Volta para o modo cache após a atualização
+      setIsRefreshing(false)
+    }, 1000)
+  }
 
   // Filtrar dados por plataforma e termo de busca
   const filteredData = campaignData.filter(item => {
@@ -374,6 +404,57 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
 
   return (
     <div className="space-y-6">
+      {/* Informações do Cache e Botão Atualizar */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+            <span className="text-sm font-medium text-blue-800">
+              {useCache ? 'Dados do Cache' : 'Dados Atualizados'}
+            </span>
+            {cacheInfo && useCache && (
+              <span className={`text-xs ${isCacheOld() ? 'text-orange-600' : 'text-blue-600'}`}>
+                de {new Date(cacheInfo.cached_at + 'Z').toLocaleString('pt-BR', {
+                  timeZone: 'America/Sao_Paulo',
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit'
+                }).replace(',', '')}
+                {isCacheOld() && (
+                  <span className="ml-1 text-orange-500">(desatualizado)</span>
+                )}
+              </span>
+            )}
+          </div>
+          {(isCacheOld() || isRefreshing) && (
+            <button
+              onClick={refreshData}
+              disabled={isRefreshing}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                isRefreshing
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+            >
+              {isRefreshing ? (
+                <>
+                  <div className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                  Atualizando...
+                </>
+              ) : (
+                <>
+                  <TrendingUp className="w-3 h-3" />
+                  Atualizar Dados
+                </>
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Funil de Conversão Compacto */}
       <div className="bg-gradient-to-br from-slate-50 to-blue-50 rounded-2xl p-6 border border-slate-200">
         <div className="text-center mb-4">
@@ -511,6 +592,45 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
           </div>
         </div>
       </div>
+
+      {/* Resumo da API (se disponível) */}
+      {summary && (
+        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-6 border border-green-200">
+          <div className="text-center mb-4">
+            <h2 className="text-lg font-bold text-gray-900 mb-1">📈 Resumo da API</h2>
+            <p className="text-xs text-gray-600">Dados consolidados do período: {summary.periodo}</p>
+          </div>
+          
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white border border-gray-200 rounded-lg p-3 text-center">
+              <p className="text-xs font-medium text-gray-600 mb-1">CTR</p>
+              <p className="text-lg font-bold text-blue-600">{summary.ctr.toFixed(2)}%</p>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-lg p-3 text-center">
+              <p className="text-xs font-medium text-gray-600 mb-1">CPM</p>
+              <p className="text-lg font-bold text-purple-600">{formatCurrency(summary.cpm)}</p>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-lg p-3 text-center">
+              <p className="text-xs font-medium text-gray-600 mb-1">CPC</p>
+              <p className="text-lg font-bold text-orange-600">{formatCurrency(summary.cpc)}</p>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-lg p-3 text-center">
+              <p className="text-xs font-medium text-gray-600 mb-1">Taxa Conversão</p>
+              <p className="text-lg font-bold text-green-600">{(summary.conversion_rate * 100).toFixed(2)}%</p>
+            </div>
+          </div>
+          
+          <div className="mt-4 text-center">
+            <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+              summary.roas >= 3 ? 'bg-green-100 text-green-800' : 
+              summary.roas >= 2 ? 'bg-yellow-100 text-yellow-800' : 
+              'bg-red-100 text-red-800'
+            }`}>
+              ROAS: {summary.roas.toFixed(2)}x
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Gráficos de Distribuição por Plataforma */}
       {platformData.length > 1 && (
