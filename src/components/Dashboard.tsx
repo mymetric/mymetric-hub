@@ -1950,10 +1950,10 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 <MetricsCarousel
                   metrics={[
                     {
-                      title: "Sessões",
-                      value: totals.sessoes,
-                      icon: Globe,
-                      growth: calculateGrowth(totals.sessoes, previousTotals.sessoes),
+                      title: "Pedidos Totais",
+                      value: totals.pedidos,
+                      icon: ShoppingBag,
+                      growth: calculateGrowth(totals.pedidos, previousTotals.pedidos),
                       color: "blue"
                     },
                     {
@@ -1964,12 +1964,46 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       color: "green"
                     },
                     {
+                      title: "Receita Total",
+                      value: totals.receita,
+                      icon: DollarSign,
+                      growth: calculateGrowth(totals.receita, previousTotals.receita),
+                      format: "currency",
+                      color: "purple"
+                    },
+                    {
                       title: "Receita Paga",
                       value: totals.receitaPaga,
                       icon: Coins,
                       growth: calculateGrowth(totals.receitaPaga, previousTotals.receitaPaga),
                       format: "currency",
-                      color: "purple"
+                      color: "orange"
+                    },
+                    {
+                      title: "Sessões",
+                      value: totals.sessoes,
+                      icon: Globe,
+                      growth: calculateGrowth(totals.sessoes, previousTotals.sessoes),
+                      color: "blue"
+                    },
+                    {
+                      title: "Investimento Total",
+                      value: totals.investimento,
+                      icon: Target,
+                      growth: calculateGrowth(totals.investimento, previousTotals.investimento),
+                      format: "currency",
+                      color: "red"
+                    },
+                    {
+                      title: "TACoS (Invest/Receita)",
+                      value: totals.receitaPaga > 0 ? (totals.investimento / totals.receitaPaga) * 100 : 0,
+                      icon: TrendingUp,
+                      growth: calculateGrowth(
+                        totals.receitaPaga > 0 ? (totals.investimento / totals.receitaPaga) * 100 : 0,
+                        previousTotals.receitaPaga > 0 ? (previousTotals.investimento / previousTotals.receitaPaga) * 100 : 0
+                      ),
+                      format: "percentage",
+                      color: "green"
                     },
                     {
                       title: "Ticket Médio",
@@ -2083,13 +2117,13 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                     </div>
                   </div>
 
-                  {/* Metrics Grid - First Row */}
+                  {/* Pedidos e Receita Row */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                     <MetricCard
-                      title="Sessões"
-                      value={totals.sessoes}
-                      icon={Globe}
-                      growth={calculateGrowth(totals.sessoes, previousTotals.sessoes)}
+                      title="Pedidos Totais"
+                      value={totals.pedidos}
+                      icon={ShoppingBag}
+                      growth={calculateGrowth(totals.pedidos, previousTotals.pedidos)}
                       color="blue"
                     />
                     <MetricCard
@@ -2100,12 +2134,50 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       color="green"
                     />
                     <MetricCard
+                      title="Receita Total"
+                      value={totals.receita}
+                      icon={DollarSign}
+                      growth={calculateGrowth(totals.receita, previousTotals.receita)}
+                      format="currency"
+                      color="purple"
+                    />
+                    <MetricCard
                       title="Receita Paga"
                       value={totals.receitaPaga}
                       icon={Coins}
                       growth={calculateGrowth(totals.receitaPaga, previousTotals.receitaPaga)}
                       format="currency"
-                      color="purple"
+                      color="orange"
+                    />
+                  </div>
+
+                  {/* Outras Métricas Row */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                    <MetricCard
+                      title="Sessões"
+                      value={totals.sessoes}
+                      icon={Globe}
+                      growth={calculateGrowth(totals.sessoes, previousTotals.sessoes)}
+                      color="blue"
+                    />
+                    <MetricCard
+                      title="Investimento Total"
+                      value={totals.investimento}
+                      icon={Target}
+                      growth={calculateGrowth(totals.investimento, previousTotals.investimento)}
+                      format="currency"
+                      color="red"
+                    />
+                    <MetricCard
+                      title="TACoS (Invest/Receita)"
+                      value={totals.receitaPaga > 0 ? (totals.investimento / totals.receitaPaga) * 100 : 0}
+                      icon={TrendingUp}
+                      growth={calculateGrowth(
+                        totals.receitaPaga > 0 ? (totals.investimento / totals.receitaPaga) * 100 : 0,
+                        previousTotals.receitaPaga > 0 ? (previousTotals.investimento / previousTotals.receitaPaga) * 100 : 0
+                      )}
+                      format="percentage"
+                      color="green"
                     />
                     <MetricCard
                       title="Ticket Médio"
