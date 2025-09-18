@@ -8,7 +8,7 @@ import {
   ResponsiveContainer
 } from 'recharts'
 import { TrendingUp, DollarSign, Users, ShoppingCart, Package, Target } from 'lucide-react'
-import { useState } from 'react'
+import React, { useState } from 'react'
 
 interface TimelineData {
   date: string
@@ -22,11 +22,22 @@ interface TimelineData {
   paidRevenue: number
   newCustomerRevenue: number
   investment: number
+  sessionsMA?: number
+  revenueMA?: number
+  clicksMA?: number
+  addToCartMA?: number
+  ordersMA?: number
+  newCustomersMA?: number
+  paidOrdersMA?: number
+  paidRevenueMA?: number
+  newCustomerRevenueMA?: number
+  investmentMA?: number
 }
 
 interface TimelineChartProps {
   data: TimelineData[]
   title: string
+  showMovingAverage?: boolean
 }
 
 // Definição das métricas disponíveis
@@ -40,11 +51,25 @@ const availableMetrics = [
   { key: 'paidOrders', label: 'Pedidos Pagos', color: '#84cc16', icon: Package, yAxisId: 'left' },
   { key: 'paidRevenue', label: 'Receita Paga', color: '#059669', icon: DollarSign, yAxisId: 'right' },
   { key: 'newCustomerRevenue', label: 'Receita Novos', color: '#7c3aed', icon: DollarSign, yAxisId: 'right' },
-  { key: 'investment', label: 'Investimento', color: '#dc2626', icon: DollarSign, yAxisId: 'right' }
+  { key: 'investment', label: 'Investimento', color: '#dc2626', icon: DollarSign, yAxisId: 'right' },
+  // Métricas de média móvel
+  { key: 'sessionsMA', label: 'Sessões (MM)', color: '#1d4ed8', icon: Users, yAxisId: 'left', isMovingAverage: true },
+  { key: 'revenueMA', label: 'Receita (MM)', color: '#047857', icon: DollarSign, yAxisId: 'right', isMovingAverage: true },
+  { key: 'clicksMA', label: 'Cliques (MM)', color: '#6b21a8', icon: Target, yAxisId: 'left', isMovingAverage: true },
+  { key: 'addToCartMA', label: 'Carrinho (MM)', color: '#d97706', icon: ShoppingCart, yAxisId: 'left', isMovingAverage: true },
+  { key: 'ordersMA', label: 'Pedidos (MM)', color: '#dc2626', icon: Package, yAxisId: 'left', isMovingAverage: true },
+  { key: 'newCustomersMA', label: 'Novos Clientes (MM)', color: '#0891b2', icon: Users, yAxisId: 'left', isMovingAverage: true },
+  { key: 'paidOrdersMA', label: 'Pedidos Pagos (MM)', color: '#65a30d', icon: Package, yAxisId: 'left', isMovingAverage: true },
+  { key: 'paidRevenueMA', label: 'Receita Paga (MM)', color: '#065f46', icon: DollarSign, yAxisId: 'right', isMovingAverage: true },
+  { key: 'newCustomerRevenueMA', label: 'Receita Novos (MM)', color: '#7c2d12', icon: DollarSign, yAxisId: 'right', isMovingAverage: true },
+  { key: 'investmentMA', label: 'Investimento (MM)', color: '#991b1b', icon: DollarSign, yAxisId: 'right', isMovingAverage: true }
 ]
 
-const TimelineChart = ({ data, title }: TimelineChartProps) => {
+const TimelineChart = ({ data, title, showMovingAverage = false }: TimelineChartProps) => {
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['sessions', 'revenue'])
+
+  // Não alterar as métricas selecionadas automaticamente
+  // O usuário mantém suas seleções e elas são automaticamente mapeadas para média móvel
 
   if (!data || data.length === 0) {
     return (
@@ -100,19 +125,39 @@ const TimelineChart = ({ data, title }: TimelineChartProps) => {
     }).format(item.investment)
   }))
 
-  // Calcular totais
-  const totals = data.reduce((acc, item) => ({
-    sessions: acc.sessions + item.sessions,
-    revenue: acc.revenue + item.revenue,
-    clicks: acc.clicks + item.clicks,
-    addToCart: acc.addToCart + item.addToCart,
-    orders: acc.orders + item.orders,
-    newCustomers: acc.newCustomers + item.newCustomers,
-    paidOrders: acc.paidOrders + item.paidOrders,
-    paidRevenue: acc.paidRevenue + item.paidRevenue,
-    newCustomerRevenue: acc.newCustomerRevenue + item.newCustomerRevenue,
-    investment: acc.investment + item.investment
-  }), {
+
+  // Calcular totais baseado no modo (normal ou média móvel)
+  const totals = data.reduce((acc, item) => {
+    if (showMovingAverage) {
+      // No modo média móvel, usar os valores de média móvel
+      return {
+        sessions: acc.sessions + (item.sessionsMA || 0),
+        revenue: acc.revenue + (item.revenueMA || 0),
+        clicks: acc.clicks + (item.clicksMA || 0),
+        addToCart: acc.addToCart + (item.addToCartMA || 0),
+        orders: acc.orders + (item.ordersMA || 0),
+        newCustomers: acc.newCustomers + (item.newCustomersMA || 0),
+        paidOrders: acc.paidOrders + (item.paidOrdersMA || 0),
+        paidRevenue: acc.paidRevenue + (item.paidRevenueMA || 0),
+        newCustomerRevenue: acc.newCustomerRevenue + (item.newCustomerRevenueMA || 0),
+        investment: acc.investment + (item.investmentMA || 0)
+      }
+    } else {
+      // No modo normal, usar os valores originais
+      return {
+        sessions: acc.sessions + (item.sessions || 0),
+        revenue: acc.revenue + (item.revenue || 0),
+        clicks: acc.clicks + (item.clicks || 0),
+        addToCart: acc.addToCart + (item.addToCart || 0),
+        orders: acc.orders + (item.orders || 0),
+        newCustomers: acc.newCustomers + (item.newCustomers || 0),
+        paidOrders: acc.paidOrders + (item.paidOrders || 0),
+        paidRevenue: acc.paidRevenue + (item.paidRevenue || 0),
+        newCustomerRevenue: acc.newCustomerRevenue + (item.newCustomerRevenue || 0),
+        investment: acc.investment + (item.investment || 0)
+      }
+    }
+  }, {
     sessions: 0,
     revenue: 0,
     clicks: 0,
@@ -125,8 +170,12 @@ const TimelineChart = ({ data, title }: TimelineChartProps) => {
     investment: 0
   })
 
-  // Função para alternar métrica selecionada
+  // Função para alternar métrica selecionada (apenas métricas normais)
   const toggleMetric = (metricKey: string) => {
+    // Não permitir selecionar métricas de média móvel diretamente
+    const metric = availableMetrics.find(m => m.key === metricKey)
+    if (metric?.isMovingAverage) return
+    
     setSelectedMetrics(prev => {
       if (prev.includes(metricKey)) {
         // Se já está selecionada, remove (mas mantém pelo menos uma)
@@ -149,7 +198,20 @@ const TimelineChart = ({ data, title }: TimelineChartProps) => {
               const metric = availableMetrics.find(m => m.key === entry.dataKey)
               if (!metric) return null
               
-              const formattedValue = entry.payload[`${entry.dataKey}Formatted`]
+              // Formatar o valor baseado no tipo de métrica
+              let formattedValue
+              if (metric.yAxisId === 'right') {
+                // Métricas monetárias
+                formattedValue = new Intl.NumberFormat('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
+                  minimumFractionDigits: 0
+                }).format(entry.value)
+              } else {
+                // Métricas numéricas
+                formattedValue = new Intl.NumberFormat('pt-BR').format(entry.value)
+              }
+              
               return (
                 <div key={index} className="flex items-center gap-2">
                   <div 
@@ -170,10 +232,34 @@ const TimelineChart = ({ data, title }: TimelineChartProps) => {
     return null
   }
 
-  // Obter métricas selecionadas
-  const selectedMetricsData = availableMetrics.filter(metric => 
-    selectedMetrics.includes(metric.key)
-  )
+  // Obter métricas selecionadas, substituindo por média móvel se ativada
+  const selectedMetricsData = availableMetrics.filter(metric => {
+    const isSelected = selectedMetrics.includes(metric.key)
+    const isMovingAverageMetric = metric.isMovingAverage === true
+    const isNormalMetric = !metric.isMovingAverage
+    
+    if (showMovingAverage) {
+      // Se média móvel ativada, mostrar as métricas de média móvel correspondentes às selecionadas
+      if (isSelected && isNormalMetric) {
+        // Mapear métricas normais para suas versões de média móvel
+        const movingAverageKey = metric.key + 'MA'
+        const hasMovingAverageVersion = availableMetrics.some(m => m.key === movingAverageKey)
+        return hasMovingAverageVersion
+      }
+      return false
+    } else {
+      // Se média móvel desativada, mostrar apenas métricas normais
+      return isSelected && isNormalMetric
+    }
+  }).map(metric => {
+    // Se média móvel ativada, substituir pela versão de média móvel
+    if (showMovingAverage && !metric.isMovingAverage) {
+      const movingAverageKey = metric.key + 'MA'
+      const movingAverageMetric = availableMetrics.find(m => m.key === movingAverageKey)
+      return movingAverageMetric || metric
+    }
+    return metric
+  })
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6">
@@ -191,7 +277,7 @@ const TimelineChart = ({ data, title }: TimelineChartProps) => {
           <span className="text-xs text-gray-500">(Selecione 1 ou 2)</span>
         </div>
         <div className="flex flex-wrap gap-2">
-          {availableMetrics.map((metric) => {
+          {availableMetrics.filter(metric => !metric.isMovingAverage).map((metric) => {
             const isSelected = selectedMetrics.includes(metric.key)
             const Icon = metric.icon
             
@@ -263,7 +349,7 @@ const TimelineChart = ({ data, title }: TimelineChartProps) => {
                 dataKey={metric.key}
                 stroke={metric.color}
                 strokeWidth={3}
-                dot={{ fill: metric.color, strokeWidth: 2, r: 5 }}
+                dot={false}
                 activeDot={{ r: 7, stroke: metric.color, strokeWidth: 2 }}
               />
             ))}
@@ -271,34 +357,36 @@ const TimelineChart = ({ data, title }: TimelineChartProps) => {
         </ResponsiveContainer>
       </div>
       
-      {/* Summary stats */}
-      <div className="grid grid-cols-2 gap-6 pt-4 border-t border-gray-200">
-                 {selectedMetricsData.map((metric) => {
-           const total = totals[metric.key as keyof typeof totals]
-          
-          return (
-            <div key={metric.key} className="text-center">
-              <div className="flex items-center justify-center gap-2 mb-2">
-                <div 
-                  className="w-2 h-2 rounded-full" 
-                  style={{ backgroundColor: metric.color }}
-                ></div>
-                <span className="text-sm font-medium text-gray-700">Total {metric.label}</span>
+      {/* Summary stats - apenas quando não estiver em modo média móvel */}
+      {!showMovingAverage && (
+        <div className="grid grid-cols-2 gap-6 pt-4 border-t border-gray-200">
+          {selectedMetricsData.map((metric) => {
+            const total = totals[metric.key as keyof typeof totals]
+           
+            return (
+              <div key={metric.key} className="text-center">
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <div 
+                    className="w-2 h-2 rounded-full" 
+                    style={{ backgroundColor: metric.color }}
+                  ></div>
+                  <span className="text-sm font-medium text-gray-700">Total {metric.label}</span>
+                </div>
+                <p className="text-xl font-bold text-gray-900">
+                  {metric.key.includes('revenue') || metric.key === 'investment' 
+                    ? new Intl.NumberFormat('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL',
+                        minimumFractionDigits: 0
+                      }).format(total)
+                    : new Intl.NumberFormat('pt-BR').format(total)
+                  }
+                </p>
               </div>
-              <p className="text-xl font-bold text-gray-900">
-                {metric.key.includes('revenue') || metric.key === 'investment' 
-                  ? new Intl.NumberFormat('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL',
-                      minimumFractionDigits: 0
-                    }).format(total)
-                  : new Intl.NumberFormat('pt-BR').format(total)
-                }
-              </p>
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

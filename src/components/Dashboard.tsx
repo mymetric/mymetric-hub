@@ -233,6 +233,9 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   // Estado para filtro de plataforma
   const [selectedPlataforma, setSelectedPlataforma] = useState<string>('')
   
+  // Estado para média móvel na timeline
+  const [showMovingAverage, setShowMovingAverage] = useState<boolean>(false)
+  
   // Estados para dados históricos
   const [previousMetrics, setPreviousMetrics] = useState<MetricsDataItem[]>([])
   const [isLoadingPrevious, setIsLoadingPrevious] = useState(false)
@@ -645,6 +648,19 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   // Calcular run rate da meta do mês
   const runRateData = calculateRunRate()
 
+  // Função para calcular média móvel
+  const calculateMovingAverage = (data: number[], windowSize: number = 7) => {
+    if (data.length < windowSize) return []
+    
+    const result = []
+    for (let i = windowSize - 1; i < data.length; i++) {
+      const window = data.slice(i - windowSize + 1, i + 1)
+      const average = window.reduce((sum, val) => sum + val, 0) / windowSize
+      result.push(Math.round(average))
+    }
+    return result
+  }
+
   // Preparar dados para a timeline baseados nos dados filtrados
   const timelineData = filteredMetrics
     .reduce((acc, item) => {
@@ -697,6 +713,51 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       const dateB = new Date(yearB, monthB - 1, dayB)
       return dateA.getTime() - dateB.getTime()
     })
+
+  // Aplicar média móvel se ativada
+  const processedTimelineData = showMovingAverage ? (() => {
+    // Se não há dados suficientes para média móvel, retornar array vazio
+    if (timelineData.length < 7) return []
+    
+    // Extrair todas as métricas
+    const sessions = timelineData.map(d => d.sessions)
+    const revenue = timelineData.map(d => d.revenue)
+    const clicks = timelineData.map(d => d.clicks)
+    const addToCart = timelineData.map(d => d.addToCart)
+    const orders = timelineData.map(d => d.orders)
+    const newCustomers = timelineData.map(d => d.newCustomers)
+    const paidOrders = timelineData.map(d => d.paidOrders)
+    const paidRevenue = timelineData.map(d => d.paidRevenue)
+    const newCustomerRevenue = timelineData.map(d => d.newCustomerRevenue)
+    const investment = timelineData.map(d => d.investment)
+    
+    // Calcular média móvel para todas as métricas
+    const sessionsMA = calculateMovingAverage(sessions)
+    const revenueMA = calculateMovingAverage(revenue)
+    const clicksMA = calculateMovingAverage(clicks)
+    const addToCartMA = calculateMovingAverage(addToCart)
+    const ordersMA = calculateMovingAverage(orders)
+    const newCustomersMA = calculateMovingAverage(newCustomers)
+    const paidOrdersMA = calculateMovingAverage(paidOrders)
+    const paidRevenueMA = calculateMovingAverage(paidRevenue)
+    const newCustomerRevenueMA = calculateMovingAverage(newCustomerRevenue)
+    const investmentMA = calculateMovingAverage(investment)
+    
+    // Retornar apenas os dados a partir do 7º dia (índice 6)
+    return timelineData.slice(6).map((item, index) => ({
+      ...item,
+      sessionsMA: sessionsMA[index],
+      revenueMA: revenueMA[index],
+      clicksMA: clicksMA[index],
+      addToCartMA: addToCartMA[index],
+      ordersMA: ordersMA[index],
+      newCustomersMA: newCustomersMA[index],
+      paidOrdersMA: paidOrdersMA[index],
+      paidRevenueMA: paidRevenueMA[index],
+      newCustomerRevenueMA: newCustomerRevenueMA[index],
+      investmentMA: investmentMA[index]
+    }))
+  })() : timelineData
 
   // Agrupar dados por cluster
   const groupedMetrics = filteredMetrics.reduce((acc, item) => {
@@ -2232,10 +2293,28 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
                 {/* Timeline Chart */}
                 <div className="mb-6">
-                  <TimelineChart 
-                    data={timelineData}
-                    title="Evolução de Sessões e Receita"
-                  />
+                  <div className="bg-white rounded-xl shadow-lg p-4 border border-gray-200">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold text-gray-900">Evolução de Sessões e Receita</h3>
+                      <div className="flex items-center gap-2">
+                        <label htmlFor="moving-average-toggle" className="text-sm text-gray-600">
+                          Média Móvel (7 dias):
+                        </label>
+                        <input
+                          id="moving-average-toggle"
+                          type="checkbox"
+                          checked={showMovingAverage}
+                          onChange={(e) => setShowMovingAverage(e.target.checked)}
+                          className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                        />
+                      </div>
+                    </div>
+                    <TimelineChart 
+                      data={processedTimelineData}
+                      title=""
+                      showMovingAverage={showMovingAverage}
+                    />
+                  </div>
                 </div>
 
                 {/* Data Table */}
