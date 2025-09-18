@@ -63,6 +63,7 @@ interface User {
 interface MetricsDataItem {
   Data: string
   Cluster: string
+  Plataforma: string
   Investimento: number
   Cliques: number
   Sessoes: number
@@ -228,6 +229,9 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   
   // Estado para filtro de cluster
   const [selectedCluster, setSelectedCluster] = useState<string>('')
+  
+  // Estado para filtro de plataforma
+  const [selectedPlataforma, setSelectedPlataforma] = useState<string>('')
   
   // Estados para dados históricos
   const [previousMetrics, setPreviousMetrics] = useState<MetricsDataItem[]>([])
@@ -560,10 +564,18 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     fetchCurrentMonthData()
   }, [selectedTable, attributionModel])
 
-  // Filtrar dados por cluster
-  const filteredMetrics = selectedCluster 
-    ? metrics.filter(item => item.Cluster === selectedCluster)
-    : metrics
+  // Limpar filtros quando a tabela (cliente) mudar
+  useEffect(() => {
+    setSelectedPlataforma('')
+    setSelectedCluster('')
+  }, [selectedTable])
+
+  // Filtrar dados por cluster e plataforma
+  const filteredMetrics = metrics.filter(item => {
+    const clusterMatch = !selectedCluster || item.Cluster === selectedCluster
+    const plataformaMatch = !selectedPlataforma || item.Plataforma === selectedPlataforma
+    return clusterMatch && plataformaMatch
+  })
 
   // Calcular totais e médias baseados nos dados filtrados
   const totals = filteredMetrics.reduce((acc, item) => ({
@@ -1880,6 +1892,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
           </div>
         )}
 
+
         {/* Content based on active tab */}
         {activeTab === 'visao-geral' && (
           <>
@@ -1901,6 +1914,36 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   isLoadingGoals={isLoadingGoals}
                   isLoadingCurrentMonth={isLoadingCurrentMonth}
                 />
+              </div>
+
+              {/* Filtro de Plataforma - Mobile */}
+              <div className="mb-4 bg-white rounded-lg shadow-sm p-3 border border-gray-200">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-sm font-medium text-gray-700">Filtros:</span>
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="plataforma-filter-mobile" className="text-xs text-gray-600">
+                      Plataforma:
+                    </label>
+                    <div className="relative">
+                      <select
+                        id="plataforma-filter-mobile"
+                        value={selectedPlataforma}
+                        onChange={(e) => setSelectedPlataforma(e.target.value)}
+                        className="px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                      >
+                        <option value="">Todas</option>
+                        {Array.from(new Set(metrics.filter(item => item.Plataforma).map(item => item.Plataforma))).map(plataforma => (
+                          <option key={plataforma} value={plataforma}>
+                            {plataforma}
+                          </option>
+                        ))}
+                      </select>
+                      {selectedPlataforma && (
+                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full"></span>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
               
               <div className="mb-8">
@@ -2008,6 +2051,36 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       isLoadingGoals={isLoadingGoals}
                       isLoadingCurrentMonth={isLoadingCurrentMonth}
                     />
+                  </div>
+
+                  {/* Filtro de Plataforma - Desktop */}
+                  <div className="mb-4 bg-white rounded-lg shadow-sm p-3 border border-gray-200">
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-sm font-medium text-gray-700">Filtros:</span>
+                      <div className="flex items-center gap-2">
+                        <label htmlFor="plataforma-filter-desktop" className="text-xs text-gray-600">
+                          Plataforma:
+                        </label>
+                        <div className="relative">
+                          <select
+                            id="plataforma-filter-desktop"
+                            value={selectedPlataforma}
+                            onChange={(e) => setSelectedPlataforma(e.target.value)}
+                            className="px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                          >
+                            <option value="">Todas</option>
+                            {Array.from(new Set(metrics.filter(item => item.Plataforma).map(item => item.Plataforma))).map(plataforma => (
+                              <option key={plataforma} value={plataforma}>
+                                {plataforma}
+                              </option>
+                            ))}
+                          </select>
+                          {selectedPlataforma && (
+                            <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full"></span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Metrics Grid - First Row */}
