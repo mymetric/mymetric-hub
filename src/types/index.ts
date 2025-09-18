@@ -70,6 +70,7 @@ export interface AdsCampaignRequest {
   end_date?: string
   table_name: string
   last_cache?: boolean
+  force_refresh?: boolean
 }
 
 export interface CacheInfo {

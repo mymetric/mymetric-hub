@@ -37,6 +37,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
   const [summary, setSummary] = useState<AdsCampaignSummary | null>(null)
   const [useCache, setUseCache] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [usedFallback, setUsedFallback] = useState(false)
+  const [error500Occurred, setError500Occurred] = useState(false)
 
   useEffect(() => {
     const fetchAdsCampaigns = async () => {
@@ -49,32 +51,82 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
         }
 
         setIsLoading(true)
+        console.log('🔄 ===== useEffect EXECUTADO =====')
         console.log('🔄 Fetching ads campaigns for table:', selectedTable)
+        console.log('🔄 useCache mode:', useCache)
+        console.log('🔄 startDate:', startDate, 'endDate:', endDate)
         
-        const requestData = useCache 
-          ? { table_name: selectedTable, last_cache: true }
-          : { 
-              start_date: startDate, 
-              end_date: endDate, 
-              table_name: selectedTable 
+        // Primeiro tenta com cache
+        if (useCache) {
+          console.log('🔄 Tentando request com cache...')
+          try {
+            const cacheResponse = await api.getAdsCampaigns(token, { 
+              table_name: selectedTable, 
+              last_cache: true 
+            })
+
+            console.log('✅ Cache response:', cacheResponse)
+            
+            // Se não retornou dados, faz request normal
+            if (!cacheResponse.data || cacheResponse.data.length === 0) {
+              console.log('⚠️ Cache vazio, fazendo request normal...')
+              const normalResponse = await api.getAdsCampaigns(token, {
+                start_date: startDate,
+                end_date: endDate,
+                table_name: selectedTable
+              })
+              
+              console.log('✅ Normal response:', normalResponse)
+              setCampaignData(normalResponse.data || [])
+              setCacheInfo(normalResponse.cache_info || null)
+              setSummary(normalResponse.summary || null)
+              setUsedFallback(true)
+            } else {
+              setCampaignData(cacheResponse.data || [])
+              setCacheInfo(cacheResponse.cache_info || null)
+              setSummary(cacheResponse.summary || null)
+              setUsedFallback(false)
             }
+          } catch (cacheError) {
+            console.log('⚠️ Erro no cache (404 ou outro), fazendo request normal...', cacheError)
+            const normalResponse = await api.getAdsCampaigns(token, {
+              start_date: startDate,
+              end_date: endDate,
+              table_name: selectedTable
+            })
+            
+            console.log('✅ Normal response após erro de cache:', normalResponse)
+            setCampaignData(normalResponse.data || [])
+            setCacheInfo(normalResponse.cache_info || null)
+            setSummary(normalResponse.summary || null)
+            setUsedFallback(true)
+          }
+        } else {
+          // Request normal (sem cache)
+          console.log('🔄 Fazendo request normal (sem cache)...')
+          const response = await api.getAdsCampaigns(token, {
+            start_date: startDate,
+            end_date: endDate,
+            table_name: selectedTable
+          })
 
-        const response = await api.getAdsCampaigns(token, requestData)
-
-        console.log('✅ Ads campaigns response:', response)
-        setCampaignData(response.data || [])
-        setCacheInfo(response.cache_info || null)
-        setSummary(response.summary || null)
+          console.log('✅ Normal response:', response)
+          setCampaignData(response.data || [])
+          setCacheInfo(response.cache_info || null)
+          setSummary(response.summary || null)
+          setUsedFallback(false)
+        }
       } catch (error) {
         console.error('❌ Error fetching ads campaigns:', error)
         setCampaignData([])
       } finally {
         setIsLoading(false)
+        console.log('🔄 ===== useEffect FINALIZADO =====')
       }
     }
 
     fetchAdsCampaigns()
-  }, [selectedTable, attributionModel, useCache, startDate, endDate])
+  }, [selectedTable, attributionModel, startDate, endDate])
 
   // Função para verificar se o cache é antigo (mais de 4 horas)
   const isCacheOld = () => {
@@ -85,15 +137,94 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
     return diffHours > 4
   }
 
-  // Função para atualizar dados (sem cache)
+  // Função para atualizar dados em background
   const refreshData = async () => {
+    console.log('🔄 ===== INICIANDO refreshData =====')
     setIsRefreshing(true)
-    setUseCache(false)
-    // O useEffect será executado automaticamente devido à mudança do useCache
-    setTimeout(() => {
-      setUseCache(true) // Volta para o modo cache após a atualização
+    
+    try {
+      let token = localStorage.getItem('auth-token')
+      if (!token) return
+
+      if (!validateTableName(selectedTable)) {
+        return
+      }
+
+      console.log('🔄 Atualizando dados em background...')
+      console.log('🔄 Parâmetros do request:', {
+        start_date: startDate,
+        end_date: endDate,
+        table_name: selectedTable,
+        force_refresh: true
+      })
+      
+      // Aguarda um pouco para garantir que o token seja renovado se necessário
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      
+      // Pega o token atualizado (caso tenha sido renovado)
+      token = localStorage.getItem('auth-token')
+      console.log('🔄 Token após aguardar:', token ? 'disponível' : 'não disponível')
+      
+      // Faz request normal em background com force_refresh
+      const response = await api.getAdsCampaigns(token, {
+        start_date: startDate,
+        end_date: endDate,
+        table_name: selectedTable,
+        force_refresh: true
+      })
+
+      console.log('✅ Dados atualizados em background:', response)
+      
+      // Atualiza os dados sem afetar a interface
+      setCampaignData(response.data || [])
+      setCacheInfo(response.cache_info || null)
+      setSummary(response.summary || null)
+      setUsedFallback(false)
+      setError500Occurred(false) // Reset erro 500
+      
+    } catch (error) {
+      console.error('❌ Erro ao atualizar dados em background:', error)
+      console.error('❌ Tipo do erro:', typeof error)
+      console.error('❌ Mensagem do erro:', error instanceof Error ? error.message : String(error))
+      
+      // Se for erro 5xx ou erro de rede/timeout, volta para o cache
+      const is5xxError = error instanceof Error && (
+        /5\d{2}/.test(error.message) || 
+        ((error as any).status && (error as any).status >= 500 && (error as any).status < 600) ||
+        (error as any).isNetworkError ||
+        error.message.includes('Failed to fetch') ||
+        error.message.includes('Network error')
+      )
+      console.log('🔍 Verificando se é erro 5xx ou rede:', is5xxError)
+      console.log('🔍 Regex test result:', error instanceof Error ? /5\d{2}/.test(error.message) : 'N/A')
+      console.log('🔍 Status HTTP do erro:', (error as any).status || 'não disponível')
+      console.log('🔍 É erro de rede:', (error as any).isNetworkError || false)
+      
+      if (is5xxError) {
+        console.log('⚠️ Erro 5xx ou de rede detectado, voltando para o cache...')
+        setError500Occurred(true)
+        try {
+          // Pega o token atualizado para o fallback
+          const updatedToken = localStorage.getItem('auth-token')
+          console.log('🔄 Token para fallback:', updatedToken ? 'disponível' : 'não disponível')
+          
+          const cacheResponse = await api.getAdsCampaigns(updatedToken || token, { 
+            table_name: selectedTable, 
+            last_cache: true 
+          })
+          
+          console.log('✅ Cache restaurado após erro 5xx:', cacheResponse)
+          setCampaignData(cacheResponse.data || [])
+          setCacheInfo(cacheResponse.cache_info || null)
+          setSummary(cacheResponse.summary || null)
+          setUsedFallback(false)
+        } catch (cacheError) {
+          console.error('❌ Erro ao restaurar cache:', cacheError)
+        }
+      }
+    } finally {
       setIsRefreshing(false)
-    }, 1000)
+    }
   }
 
   // Filtrar dados por plataforma e termo de busca
@@ -410,7 +541,12 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
             <span className="text-sm font-medium text-blue-800">
-              {useCache ? 'Dados do Cache' : 'Dados Atualizados'}
+              {isRefreshing 
+                ? 'Atualizando em background...'
+                : useCache 
+                  ? (usedFallback ? 'Dados Atualizados (sem cache)' : 'Dados do Cache')
+                  : 'Dados Atualizados'
+              }
             </span>
             {cacheInfo && useCache && (
               <span className={`text-xs ${isCacheOld() ? 'text-orange-600' : 'text-blue-600'}`}>
@@ -429,7 +565,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
               </span>
             )}
           </div>
-          {(isCacheOld() || isRefreshing) && (
+          {(!cacheInfo || isCacheOld() || isRefreshing) && (
             <button
               onClick={refreshData}
               disabled={isRefreshing}
@@ -593,44 +729,6 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
         </div>
       </div>
 
-      {/* Resumo da API (se disponível) */}
-      {summary && (
-        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-6 border border-green-200">
-          <div className="text-center mb-4">
-            <h2 className="text-lg font-bold text-gray-900 mb-1">📈 Resumo da API</h2>
-            <p className="text-xs text-gray-600">Dados consolidados do período: {summary.periodo}</p>
-          </div>
-          
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-white border border-gray-200 rounded-lg p-3 text-center">
-              <p className="text-xs font-medium text-gray-600 mb-1">CTR</p>
-              <p className="text-lg font-bold text-blue-600">{summary.ctr.toFixed(2)}%</p>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-lg p-3 text-center">
-              <p className="text-xs font-medium text-gray-600 mb-1">CPM</p>
-              <p className="text-lg font-bold text-purple-600">{formatCurrency(summary.cpm)}</p>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-lg p-3 text-center">
-              <p className="text-xs font-medium text-gray-600 mb-1">CPC</p>
-              <p className="text-lg font-bold text-orange-600">{formatCurrency(summary.cpc)}</p>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-lg p-3 text-center">
-              <p className="text-xs font-medium text-gray-600 mb-1">Taxa Conversão</p>
-              <p className="text-lg font-bold text-green-600">{(summary.conversion_rate * 100).toFixed(2)}%</p>
-            </div>
-          </div>
-          
-          <div className="mt-4 text-center">
-            <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-              summary.roas >= 3 ? 'bg-green-100 text-green-800' : 
-              summary.roas >= 2 ? 'bg-yellow-100 text-yellow-800' : 
-              'bg-red-100 text-red-800'
-            }`}>
-              ROAS: {summary.roas.toFixed(2)}x
-            </span>
-          </div>
-        </div>
-      )}
 
       {/* Gráficos de Distribuição por Plataforma */}
       {platformData.length > 1 && (

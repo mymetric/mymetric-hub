@@ -792,11 +792,14 @@ export const api = {
 
   async getAdsCampaigns(token: string, adsData: AdsCampaignRequest): Promise<AdsCampaignResponse> {
     try {
+      console.log('🚀 ===== INICIANDO getAdsCampaigns =====')
       console.log('🌐 Ads Campaigns API Request:', {
         url: `${API_BASE_URL}/metrics/ads-campaigns-results`,
         method: 'POST',
         body: adsData
       })
+      console.log('🌐 Request body JSON:', JSON.stringify(adsData, null, 2))
+      console.log('🌐 Fazendo fetch para:', `${API_BASE_URL}/metrics/ads-campaigns-results`)
 
       const response = await fetch(`${API_BASE_URL}/metrics/ads-campaigns-results`, {
         method: 'POST',
@@ -807,12 +810,17 @@ export const api = {
         body: JSON.stringify(adsData),
       })
 
+      console.log('🌐 Fetch concluído, status:', response.status)
+
       console.log('📡 Ads Campaigns Response status:', response.status, response.statusText)
 
       if (!response.ok) {
         const errorText = await response.text()
         console.error('❌ Ads Campaigns API Error:', errorText)
-        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+        const error = new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+        // Adiciona o status HTTP ao erro para facilitar a detecção
+        ;(error as any).status = response.status
+        throw error
       }
 
       const data = await response.json()
@@ -820,6 +828,14 @@ export const api = {
       return data
     } catch (error) {
       console.error('❌ Ads Campaigns fetch error:', error)
+      // Se for um erro de fetch (TypeError: Failed to fetch), preserva o erro original
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        // Adiciona informação sobre o erro de rede/timeout
+        const networkError = new Error(`Network error: ${error.message}`)
+        ;(networkError as any).originalError = error
+        ;(networkError as any).isNetworkError = true
+        throw networkError
+      }
       throw new Error('Erro ao buscar dados de campanhas de ads.')
     }
   },
