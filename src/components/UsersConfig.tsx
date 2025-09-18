@@ -81,6 +81,7 @@ const Configuracao = ({ selectedTable }: ConfiguracaoProps) => {
     message: string
     generated_password?: string
     note?: string
+    type?: 'user' | 'goal' | 'cluster'
   } | null>(null)
   
   // Estados para formulário
@@ -225,7 +226,8 @@ const Configuracao = ({ selectedTable }: ConfiguracaoProps) => {
       // Mostrar sucesso
       setSuccessData({
         message: editingGoal ? 'Meta atualizada com sucesso!' : 'Meta cadastrada com sucesso!',
-        note: `Meta de R$ ${parseFloat(goalFormData.goal_value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} para ${goalFormData.month} foi ${editingGoal ? 'atualizada' : 'salva'}.`
+        note: `Meta de R$ ${parseFloat(goalFormData.goal_value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} para ${goalFormData.month} foi ${editingGoal ? 'atualizada' : 'salva'}.`,
+        type: 'goal'
       })
       setShowSuccessModal(true)
     } catch (error: any) {
@@ -305,7 +307,8 @@ const Configuracao = ({ selectedTable }: ConfiguracaoProps) => {
       // Mostrar sucesso
       setSuccessData({
         message: editingCluster ? 'Cluster atualizado com sucesso!' : 'Cluster cadastrado com sucesso!',
-        note: `Categoria "${clusterFormData.category_name}" foi ${editingCluster ? 'atualizada' : 'salva'} com ${Object.keys(filledRules).length} regras.`
+        note: `Categoria "${clusterFormData.category_name}" foi ${editingCluster ? 'atualizada' : 'salva'} com ${Object.keys(filledRules).length} regras.`,
+        type: 'cluster'
       })
       setShowSuccessModal(true)
     } catch (error: any) {
@@ -495,7 +498,8 @@ const Configuracao = ({ selectedTable }: ConfiguracaoProps) => {
         setSuccessData({
           message: response.message,
           generated_password: response.generated_password,
-          note: response.note
+          note: response.note,
+          type: 'user'
         })
         setShowSuccessModal(true)
         setShowUserModal(false)
@@ -504,7 +508,8 @@ const Configuracao = ({ selectedTable }: ConfiguracaoProps) => {
         setSuccessData({
           message: response?.message || 'Usuário criado com sucesso',
           generated_password: undefined,
-          note: response?.note
+          note: response?.note,
+          type: 'user'
         })
         setShowSuccessModal(true)
         setShowUserModal(false)
@@ -1141,7 +1146,10 @@ const Configuracao = ({ selectedTable }: ConfiguracaoProps) => {
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-medium text-gray-900">
-                  ✅ Usuário Criado com Sucesso!
+                  {successData.type === 'goal' && '✅ Meta Cadastrada com Sucesso!'}
+                  {successData.type === 'cluster' && '✅ Cluster Cadastrado com Sucesso!'}
+                  {successData.type === 'user' && '✅ Usuário Criado com Sucesso!'}
+                  {!successData.type && '✅ Operação Realizada com Sucesso!'}
                 </h3>
                 <button
                   onClick={() => setShowSuccessModal(false)}
