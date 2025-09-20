@@ -129,24 +129,26 @@ const SpotlightUnified = ({
   const spotlightItems = useMemo(() => {
     const items: SpotlightItem[] = []
 
-    // Adicionar clientes
-    tables.forEach(table => {
-      items.push({
-        id: `client-${table}`,
-        label: hideClientName ? 'Cliente Selecionado' : table,
-        description: 'Cliente',
-        icon: Database,
-        category: 'clients',
-        action: () => {
-          onTableChange(table)
-          setIsOpen(false)
-          setSearchTerm('')
-          setSelectedIndex(0)
-        }
+    // Adicionar clientes (apenas se não estiver oculto)
+    if (!hideClientName) {
+      tables.forEach(table => {
+        items.push({
+          id: `client-${table}`,
+          label: table,
+          description: 'Cliente',
+          icon: Database,
+          category: 'clients',
+          action: () => {
+            onTableChange(table)
+            setIsOpen(false)
+            setSearchTerm('')
+            setSelectedIndex(0)
+          }
+        })
       })
-    })
+    }
 
-    // Adicionar abas
+    // Adicionar abas (sempre disponíveis)
     allTabs.forEach(tabId => {
       const config = tabConfig[tabId as keyof typeof tabConfig]
       if (config) {
@@ -188,27 +190,47 @@ const SpotlightUnified = ({
     return items.slice(0, 12) // Aumentar limite para busca global
   }, [spotlightItems, selectedCategory, searchTerm])
 
-  // Resetar índice selecionado quando a lista muda
+  // Efeito para ajustar categoria automaticamente quando não há itens
+  useEffect(() => {
+    if (!searchTerm.trim() && filteredItems.length === 0) {
+      const otherCategory = selectedCategory === 'clients' ? 'tabs' : 'clients'
+      const otherItems = spotlightItems.filter(item => item.category === otherCategory)
+      if (otherItems.length > 0) {
+        setSelectedCategory(otherCategory)
+      }
+    }
+  }, [filteredItems.length, selectedCategory, searchTerm, spotlightItems])
+
+  // Resetar índice selecionado apenas quando a categoria muda ou quando há busca
   useEffect(() => {
     setSelectedIndex(0)
-  }, [filteredItems, selectedCategory])
+  }, [selectedCategory, searchTerm])
+
+  // Garantir que o índice selecionado seja válido quando a lista muda
+  useEffect(() => {
+    if (selectedIndex >= filteredItems.length && filteredItems.length > 0) {
+      setSelectedIndex(0)
+    }
+  }, [filteredItems.length, selectedIndex])
 
   // Navegação por teclado
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!isOpen) return
+    if (!isOpen || filteredItems.length === 0) return
 
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault()
-        setSelectedIndex(prev => 
-          prev < filteredItems.length - 1 ? prev + 1 : 0
-        )
+        setSelectedIndex(prev => {
+          const newIndex = prev < filteredItems.length - 1 ? prev + 1 : 0
+          return Math.min(newIndex, filteredItems.length - 1)
+        })
         break
       case 'ArrowUp':
         e.preventDefault()
-        setSelectedIndex(prev => 
-          prev > 0 ? prev - 1 : filteredItems.length - 1
-        )
+        setSelectedIndex(prev => {
+          const newIndex = prev > 0 ? prev - 1 : filteredItems.length - 1
+          return Math.max(newIndex, 0)
+        })
         break
       case 'Enter':
         e.preventDefault()
@@ -252,24 +274,24 @@ const SpotlightUnified = ({
           setSelectedCategory('clients')
           setTimeout(() => searchInputRef.current?.focus(), 100)
         }}
-        className="flex items-center gap-3 px-4 py-3 bg-white/80 backdrop-blur-sm border border-gray-200/50 rounded-xl shadow-sm hover:bg-white hover:shadow-md transition-all duration-200 min-w-[200px] group"
+        className="flex items-center gap-2 px-3 py-2 bg-white/80 backdrop-blur-sm border border-gray-200/50 rounded-lg shadow-sm hover:bg-white hover:shadow-md transition-all duration-200 min-w-[140px] group"
         disabled={isActuallyLoading}
         title="Spotlight - Clientes e Abas (⌘K)"
       >
-        <Database className="w-5 h-5 text-gray-500 group-hover:text-gray-700 transition-colors" />
+        <Search className="w-4 h-4 text-gray-500 group-hover:text-gray-700 transition-colors" />
         <div className="flex-1 text-left">
           {isActuallyLoading ? (
-            <div className="flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
-              <span className="text-gray-500 text-sm">Carregando...</span>
+            <div className="flex items-center gap-1.5">
+              <Loader2 className="w-3 h-3 animate-spin text-gray-500" />
+              <span className="text-gray-500 text-xs">Carregando...</span>
             </div>
           ) : (
-            <div className="font-medium text-gray-900 truncate">
-              {hideClientName ? 'Cliente Selecionado' : currentTable}
+            <div className="font-medium text-gray-900 truncate text-sm">
+              {hideClientName ? 'Spotlight' : currentTable}
             </div>
           )}
         </div>
-        <div className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-md">
+        <div className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded text-[10px]">
           ⌘K
         </div>
       </button>
@@ -308,20 +330,24 @@ const SpotlightUnified = ({
             {/* Categorias */}
             <div className="px-6 py-3 border-b border-gray-100">
               <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    setSelectedCategory('clients')
-                    setSelectedIndex(0)
-                  }}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                    selectedCategory === 'clients'
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  <Database className="w-4 h-4 inline mr-2" />
-                  Clientes
-                </button>
+                {/* Botão Clientes - apenas se houver clientes disponíveis */}
+                {spotlightItems.some(item => item.category === 'clients') && (
+                  <button
+                    onClick={() => {
+                      setSelectedCategory('clients')
+                      setSelectedIndex(0)
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                      selectedCategory === 'clients'
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Database className="w-4 h-4 inline mr-2" />
+                    Clientes
+                  </button>
+                )}
+                {/* Botão Abas - sempre disponível */}
                 <button
                   onClick={() => {
                     setSelectedCategory('tabs')
@@ -369,7 +395,7 @@ const SpotlightUnified = ({
                       key={item.id}
                       onClick={item.action}
                       className={`w-full flex items-center gap-4 px-6 py-4 text-left hover:bg-gray-50/50 transition-colors group ${
-                        isSelected ? 'bg-blue-50/50 border-r-2 border-blue-500' : ''
+                        isSelected ? 'bg-blue-100 border-r-4 border-blue-500 shadow-sm' : ''
                       }`}
                     >
                       <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-white font-semibold text-sm ${

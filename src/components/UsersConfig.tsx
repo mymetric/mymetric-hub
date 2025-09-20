@@ -1146,8 +1146,8 @@ const Configuracao = ({ selectedTable }: ConfiguracaoProps) => {
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-medium text-gray-900">
-                  {successData.type === 'goal' && '✅ Meta Cadastrada com Sucesso!'}
-                  {successData.type === 'cluster' && '✅ Cluster Cadastrado com Sucesso!'}
+                  {successData.type === 'goal' && successData.message?.includes('atualizada') ? '✅ Meta Atualizada com Sucesso!' : successData.type === 'goal' && '✅ Meta Cadastrada com Sucesso!'}
+                  {successData.type === 'cluster' && successData.message?.includes('atualizado') ? '✅ Cluster Atualizado com Sucesso!' : successData.type === 'cluster' && '✅ Cluster Cadastrado com Sucesso!'}
                   {successData.type === 'user' && '✅ Usuário Criado com Sucesso!'}
                   {!successData.type && '✅ Operação Realizada com Sucesso!'}
                 </h3>
@@ -1161,6 +1161,10 @@ const Configuracao = ({ selectedTable }: ConfiguracaoProps) => {
 
               <div className="space-y-4">
                 <p className="text-gray-600">{successData.message}</p>
+                
+                {successData.note && (
+                  <p className="text-gray-600 text-sm">{successData.note}</p>
+                )}
                 
                 {successData.generated_password && (
                   <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
@@ -1183,20 +1187,41 @@ const Configuracao = ({ selectedTable }: ConfiguracaoProps) => {
                         </button>
                       </div>
                     </div>
-                    <p className="text-sm text-yellow-700 mt-2">
-                      {successData.note}
-                    </p>
                   </div>
                 )}
 
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h4 className="font-medium text-blue-800 mb-2">📧 Próximos Passos</h4>
-                  <ul className="text-sm text-blue-700 space-y-1">
-                    <li>• A senha será enviada por email para o usuário</li>
-                    <li>• O usuário poderá fazer login com o email e senha</li>
-                    <li>• Compartilhe a senha com o usuário de forma segura se necessário</li>
-                  </ul>
-                </div>
+                {successData.type === 'user' && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h4 className="font-medium text-blue-800 mb-2">📧 Próximos Passos</h4>
+                    <ul className="text-sm text-blue-700 space-y-1">
+                      <li>• A senha será enviada por email para o usuário</li>
+                      <li>• O usuário poderá fazer login com o email e senha</li>
+                      <li>• Compartilhe a senha com o usuário de forma segura se necessário</li>
+                    </ul>
+                  </div>
+                )}
+
+                {successData.type === 'goal' && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <h4 className="font-medium text-green-800 mb-2">📊 Meta Configurada</h4>
+                    <ul className="text-sm text-green-700 space-y-1">
+                      <li>• A meta foi salva no sistema</li>
+                      <li>• Ela aparecerá nos dashboards de acompanhamento</li>
+                      <li>• Você pode editá-la a qualquer momento</li>
+                    </ul>
+                  </div>
+                )}
+
+                {successData.type === 'cluster' && (
+                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                    <h4 className="font-medium text-purple-800 mb-2">🎯 Cluster Configurado</h4>
+                    <ul className="text-sm text-purple-700 space-y-1">
+                      <li>• As regras de categorização foram salvas</li>
+                      <li>• O cluster será aplicado automaticamente</li>
+                      <li>• Você pode editá-lo a qualquer momento</li>
+                    </ul>
+                  </div>
+                )}
 
                 <button
                   onClick={() => {

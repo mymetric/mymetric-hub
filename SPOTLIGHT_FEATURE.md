@@ -61,8 +61,10 @@ O componente foi integrado no Dashboard substituindo o TableSelector anterior, m
 ### 🎯 Melhorias Implementadas
 
 - **Interface Unificada**: Uma única interface para clientes e abas
+- **Sempre Disponível**: Spotlight aparece para TODOS os usuários (com ou sem acesso total)
 - **Busca Global Inteligente**: Filtragem simultânea em TODAS as categorias
 - **Navegação Intuitiva**: Alternância fácil entre categorias com `Tab` (sem busca)
+- **Adaptação Inteligente**: Mostra apenas categorias disponíveis para cada usuário
 - **Indicadores Visuais**: Tags coloridas mostram a categoria de cada resultado
 - **Navegação por Teclado Completa**: Controle total via teclado
 - **Visual Diferenciado**: Cores e ícones distintos para cada categoria
@@ -71,11 +73,17 @@ O componente foi integrado no Dashboard substituindo o TableSelector anterior, m
 
 ### 🔄 Fluxo de Trabalho
 
-1. **Acesso Rápido**: `⌘K` para abrir o spotlight
+1. **Acesso Rápido**: `⌘K` para abrir o spotlight (disponível para TODOS)
 2. **Busca Global**: Digite para buscar em TODOS os clientes e abas
 3. **Seleção de Contexto**: `Tab` para escolher entre clientes ou abas (sem busca)
 4. **Navegação Fluida**: Setas para navegar, `Enter` para confirmar
 5. **Mudança Instantânea**: Cliente e aba mudam imediatamente
 6. **Indicadores Visuais**: Tags mostram se é "Cliente" ou "Aba"
 
-O componente oferece uma experiência muito mais rica e similar ao Spotlight do macOS, permitindo navegação rápida e eficiente entre diferentes contextos da aplicação.
+### 👥 Diferentes Níveis de Acesso
+
+- **Usuários com Acesso Total**: Veem clientes e abas, podem alternar entre ambos
+- **Usuários com Acesso Limitado**: Veem apenas abas (não podem trocar de cliente)
+- **Busca Global**: Funciona para todos, mas filtra apenas o que o usuário tem acesso
+
+O componente oferece uma experiência muito mais rica e similar ao Spotlight do macOS, permitindo navegação rápida e eficiente entre diferentes contextos da aplicação, independentemente do nível de acesso do usuário.

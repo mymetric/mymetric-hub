@@ -1345,63 +1345,70 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
             </div>
             
             <div className="flex items-center gap-2 sm:gap-4 relative z-30">
-              {/* Dropdown de clientes e botão de ocultar nome - apenas para usuários com acesso total */}
+              {/* Spotlight Unificado - Sempre visível */}
               {(() => {
                 try {
                   const loginResponseStr = localStorage.getItem('login-response')
                   const loginResponse = loginResponseStr ? JSON.parse(loginResponseStr) : null
                   const hasAccessToAll = loginResponse?.table_name === 'all' || loginResponse?.access_control === 'all'
                   
-                  return hasAccessToAll && !hideClientName && (
+                  return (
                     <div className="flex items-center gap-3">
-                      <div className="w-32 sm:w-56">
+                      <div className="w-28 sm:w-48">
                         <SpotlightUnified
                           currentTable={selectedTable}
                           onTableChange={setSelectedTable}
                           activeTab={activeTab}
                           onTabChange={setActiveTab}
-                          useCSV={loginResponse?.admin || loginResponse?.access_control === 'all' || loginResponse?.table_name === 'all'} // Usar CSV para usuários admin ou com acesso total
+                          useCSV={hasAccessToAll} // Usar CSV apenas para usuários com acesso total
                           availableTables={
-                            loginResponse?.admin || loginResponse?.access_control === 'all' || loginResponse?.table_name === 'all'
+                            hasAccessToAll
                               ? [] // Deixar vazio para usar apenas o CSV via useClientList
                               : [loginResponse?.table_name || '']
                           }
-                          hideClientName={hideClientName}
+                          hideClientName={hasAccessToAll ? hideClientName : true} // Ocultar nome do cliente se não tem acesso total
                           user={user}
                         />
                       </div>
-                      <button
-                        onClick={() => setHideClientName(!hideClientName)}
-                        className="flex items-center justify-center p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-md transition-colors relative z-40"
-                        title="Ocultar dropdown de clientes"
-                      >
-                        <EyeOff className="w-4 h-4" />
-                      </button>
+                      {hasAccessToAll && (
+                        <button
+                          onClick={() => setHideClientName(!hideClientName)}
+                          className="flex items-center justify-center p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-md transition-colors relative z-40"
+                          title="Ocultar dropdown de clientes"
+                        >
+                          <EyeOff className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   )
                 } catch (error) {
-                  console.error('❌ Error parsing login-response for TableSelector display:', error)
+                  console.error('❌ Error parsing login-response for Spotlight display:', error)
                   return null
                 }
               })()}
               
-              {/* Botão para mostrar dropdown quando oculto */}
+              {/* Indicador do Cliente Atual - apenas para usuários com acesso limitado */}
               {(() => {
                 try {
                   const loginResponseStr = localStorage.getItem('login-response')
                   const loginResponse = loginResponseStr ? JSON.parse(loginResponseStr) : null
                   const hasAccessToAll = loginResponse?.table_name === 'all' || loginResponse?.access_control === 'all'
-
-                  return hasAccessToAll && hideClientName && (
-                    <button
-                      onClick={() => setHideClientName(false)}
-                      className="flex items-center justify-center p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-md transition-colors relative z-40"
-                      title="Mostrar dropdown de clientes"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </button>
-                  )
+                  
+                  // Mostrar indicador apenas para usuários com acesso limitado
+                  if (!hasAccessToAll && loginResponse?.table_name) {
+                    return (
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 rounded-lg border border-blue-200">
+                        <Database className="w-4 h-4 text-blue-500" />
+                        <span className="text-sm font-medium text-blue-700">
+                          {loginResponse.table_name}
+                        </span>
+                      </div>
+                    )
+                  }
+                  
+                  return null
                 } catch (error) {
+                  console.error('❌ Error parsing login-response for client indicator:', error)
                   return null
                 }
               })()}
