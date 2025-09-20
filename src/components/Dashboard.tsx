@@ -28,7 +28,7 @@ import {
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
 import Logo from './Logo'
-import TableSelector from './TableSelector'
+import SpotlightUnified from './SpotlightUnified'
 import DateRangePicker from './DateRangePicker'
 
 import SortableHeader from './SortableHeader'
@@ -1354,10 +1354,12 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   
                   return hasAccessToAll && !hideClientName && (
                     <div className="flex items-center gap-3">
-                      <div className="w-28 sm:w-48">
-                        <TableSelector
+                      <div className="w-32 sm:w-56">
+                        <SpotlightUnified
                           currentTable={selectedTable}
                           onTableChange={setSelectedTable}
+                          activeTab={activeTab}
+                          onTabChange={setActiveTab}
                           useCSV={loginResponse?.admin || loginResponse?.access_control === 'all' || loginResponse?.table_name === 'all'} // Usar CSV para usuários admin ou com acesso total
                           availableTables={
                             loginResponse?.admin || loginResponse?.access_control === 'all' || loginResponse?.table_name === 'all'
@@ -1365,6 +1367,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               : [loginResponse?.table_name || '']
                           }
                           hideClientName={hideClientName}
+                          user={user}
                         />
                       </div>
                       <button
