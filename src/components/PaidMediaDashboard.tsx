@@ -14,7 +14,9 @@ import {
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
 import { AdsCampaignData, AdsCampaignResponse, CacheInfo, AdsCampaignSummary } from '../types'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import SortableHeader from './SortableHeader'
+import PaidMediaTimeline from './PaidMediaTimeline'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 
 interface PaidMediaDashboardProps {
@@ -33,20 +35,185 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
   const [showAllRecords, setShowAllRecords] = useState(false)
   const [attributionModel, setAttributionModel] = useState<'origin_stack' | 'last_non_direct'>('origin_stack')
   const [isComparisonExpanded, setIsComparisonExpanded] = useState(false)
+  const [isExplanationExpanded, setIsExplanationExpanded] = useState(false)
+  const [selectedCampaign, setSelectedCampaign] = useState<string | null>(null)
   const [cacheInfo, setCacheInfo] = useState<CacheInfo | null>(null)
   const [summary, setSummary] = useState<AdsCampaignSummary | null>(null)
   const [useCache, setUseCache] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [usedFallback, setUsedFallback] = useState(false)
   const [error500Occurred, setError500Occurred] = useState(false)
+  
+  // Cache inteligente - armazena dados históricos
+  const [historicalData, setHistoricalData] = useState<{
+    [key: string]: {
+      data: AdsCampaignData[]
+      summary: AdsCampaignSummary | null
+      cacheInfo: CacheInfo | null
+      dateRange: { start: string, end: string }
+    }
+  }>({})
+  const [isBackgroundLoading, setIsBackgroundLoading] = useState(false)
+  const [isFullWidth, setIsFullWidth] = useState(false)
+
+  // Funções auxiliares para cache inteligente
+  const getCacheKey = (start: string, end: string) => `${start}_${end}`
+  
+  const isDateRangeInCache = (start: string, end: string) => {
+    const cacheKey = getCacheKey(start, end)
+    return historicalData[cacheKey] !== undefined
+  }
+  
+  const isDateRangeSubsetOfCache = (start: string, end: string) => {
+    const requestedStart = new Date(start)
+    const requestedEnd = new Date(end)
+    
+    return Object.values(historicalData).some(cache => {
+      const cacheStart = new Date(cache.dateRange.start)
+      const cacheEnd = new Date(cache.dateRange.end)
+      return requestedStart >= cacheStart && requestedEnd <= cacheEnd
+    })
+  }
+  
+  const findBestCacheForDateRange = (start: string, end: string) => {
+    const requestedStart = new Date(start)
+    const requestedEnd = new Date(end)
+    
+    let bestCache = null
+    let bestCoverage = 0
+    
+    Object.entries(historicalData).forEach(([key, cache]) => {
+      const cacheStart = new Date(cache.dateRange.start)
+      const cacheEnd = new Date(cache.dateRange.end)
+      
+      // Verifica se o cache cobre o período solicitado
+      if (requestedStart >= cacheStart && requestedEnd <= cacheEnd) {
+        const coverage = (requestedEnd.getTime() - requestedStart.getTime()) / 
+                        (cacheEnd.getTime() - cacheStart.getTime())
+        
+        if (coverage > bestCoverage) {
+          bestCoverage = coverage
+          bestCache = { key, ...cache }
+        }
+      }
+    })
+    
+    return bestCache
+  }
+  
+  const filterDataByDateRange = (data: AdsCampaignData[], start: string, end: string) => {
+    const startDate = new Date(start)
+    const endDate = new Date(end)
+    
+    return data.filter(campaign => {
+      const campaignDate = new Date(campaign.date)
+      return campaignDate >= startDate && campaignDate <= endDate
+    })
+  }
+  
+  const recalculateSummary = (data: AdsCampaignData[]) => {
+    if (!data || data.length === 0) return null
+    
+    const totals = data.reduce((acc, campaign) => ({
+      cost: acc.cost + campaign.cost,
+      impressions: acc.impressions + campaign.impressions,
+      clicks: acc.clicks + campaign.clicks,
+      leads: acc.leads + campaign.leads,
+      transactions: acc.transactions + campaign.transactions,
+      transactions_first: acc.transactions_first + campaign.transactions_first,
+      revenue: acc.revenue + campaign.revenue,
+      revenue_first: acc.revenue_first + campaign.revenue_first
+    }), {
+      cost: 0,
+      impressions: 0,
+      clicks: 0,
+      leads: 0,
+      transactions: 0,
+      transactions_first: 0,
+      revenue: 0,
+      revenue_first: 0
+    })
+    
+    const avgCTR = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0
+    const avgCPC = totals.clicks > 0 ? totals.cost / totals.clicks : 0
+    const avgCPV = totals.transactions > 0 ? totals.cost / totals.transactions : 0
+    const avgCPA = totals.transactions_first > 0 ? totals.cost / totals.transactions_first : 0
+    const avgROAS = totals.cost > 0 ? totals.revenue / totals.cost : 0
+    const avgROASFirst = totals.cost > 0 ? totals.revenue_first / totals.cost : 0
+    
+    return {
+      ...totals,
+      avg_ctr: avgCTR,
+      avg_cpc: avgCPC,
+      avg_cpv: avgCPV,
+      avg_cpa: avgCPA,
+      avg_roas: avgROAS,
+      avg_roas_first: avgROASFirst
+    }
+  }
+  const [visibleColumns, setVisibleColumns] = useState({
+    platform: true,
+    campaign_name: true,
+    cost: true,
+    impressions: true,
+    clicks: true,
+    ctr: true,
+    cpc: true,
+    leads: true,
+    transactions: true,
+    transactions_first: true,
+    revenue: true,
+    revenue_first: true,
+    roas: true,
+    roas_first: true,
+    cpv: true,
+    cpa: true
+  })
+  const [showColumnSelector, setShowColumnSelector] = useState(false)
+
+  // Título dinâmico da aba baseado no estado de carregamento
+  const getPageTitle = () => {
+    try {
+      if (isLoading) {
+        return '🔄 Carregando... - Mídia Paga'
+      }
+      if (isBackgroundLoading) {
+        return '🔄 Atualizando... - Mídia Paga'
+      }
+      if (filteredData && filteredData.length > 0) {
+        const totalCost = filteredData.reduce((sum, campaign) => sum + campaign.cost, 0)
+        const totalRevenue = filteredData.reduce((sum, campaign) => sum + campaign.revenue, 0)
+        const roas = totalCost > 0 ? (totalRevenue / totalCost).toFixed(1) : '0.0'
+        
+        // Formata as datas para exibição
+        const startDateFormatted = new Date(startDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+        const endDateFormatted = new Date(endDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+        
+        const filterInfo = selectedCampaign ? ` | Filtrado: ${selectedCampaign}` : ''
+        return `✅ ${filteredData.length} campanhas | R$ ${totalCost.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} | ROAS ${roas}x | ${startDateFormatted} - ${endDateFormatted}${filterInfo} - Mídia Paga`
+      }
+      return 'Mídia Paga - Dashboard'
+    } catch (error) {
+      console.error('❌ Erro no getPageTitle:', error)
+      return 'Mídia Paga - Dashboard'
+    }
+  }
+
+  useDocumentTitle(getPageTitle())
 
   useEffect(() => {
     const fetchAdsCampaigns = async () => {
       try {
         const token = localStorage.getItem('auth-token')
-        if (!token) return
+        if (!token) {
+          console.log('❌ No token found')
+          setIsLoading(false)
+          return
+        }
 
         if (!validateTableName(selectedTable)) {
+          console.log('❌ Invalid table name:', selectedTable)
+          setIsLoading(false)
           return
         }
 
@@ -56,66 +223,25 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
         console.log('🔄 useCache mode:', useCache)
         console.log('🔄 startDate:', startDate, 'endDate:', endDate)
         
-        // Primeiro tenta com cache
-        if (useCache) {
-          console.log('🔄 Tentando request com cache...')
-          try {
-            const cacheResponse = await api.getAdsCampaigns(token, { 
-              table_name: selectedTable, 
-              last_cache: true 
-            })
-
-            console.log('✅ Cache response:', cacheResponse)
-            
-            // Se não retornou dados, faz request normal
-            if (!cacheResponse.data || cacheResponse.data.length === 0) {
-              console.log('⚠️ Cache vazio, fazendo request normal...')
-              const normalResponse = await api.getAdsCampaigns(token, {
-                start_date: startDate,
-                end_date: endDate,
-                table_name: selectedTable
-              })
-              
-              console.log('✅ Normal response:', normalResponse)
-              setCampaignData(normalResponse.data || [])
-              setCacheInfo(normalResponse.cache_info || null)
-              setSummary(normalResponse.summary || null)
-              setUsedFallback(true)
-            } else {
-              setCampaignData(cacheResponse.data || [])
-              setCacheInfo(cacheResponse.cache_info || null)
-              setSummary(cacheResponse.summary || null)
-              setUsedFallback(false)
-            }
-          } catch (cacheError) {
-            console.log('⚠️ Erro no cache (404 ou outro), fazendo request normal...', cacheError)
-            const normalResponse = await api.getAdsCampaigns(token, {
-              start_date: startDate,
-              end_date: endDate,
-              table_name: selectedTable
-            })
-            
-            console.log('✅ Normal response após erro de cache:', normalResponse)
-            setCampaignData(normalResponse.data || [])
-            setCacheInfo(normalResponse.cache_info || null)
-            setSummary(normalResponse.summary || null)
-            setUsedFallback(true)
-          }
-        } else {
-          // Request normal (sem cache)
-          console.log('🔄 Fazendo request normal (sem cache)...')
+        // Sempre faz request direto com as datas específicas para garantir dados corretos
+        console.log('🔄 Fazendo request direto com datas específicas...')
+        console.log('🔄 startDate:', startDate, 'endDate:', endDate)
+        console.log('🔄 selectedTable:', selectedTable)
+        
           const response = await api.getAdsCampaigns(token, {
             start_date: startDate,
             end_date: endDate,
             table_name: selectedTable
           })
 
-          console.log('✅ Normal response:', response)
+        console.log('✅ Response com datas específicas:', response)
+        console.log('✅ Dados recebidos:', response.data?.length || 0, 'campanhas')
+        console.log('✅ Primeira campanha:', response.data?.[0])
+        
           setCampaignData(response.data || [])
           setCacheInfo(response.cache_info || null)
           setSummary(response.summary || null)
           setUsedFallback(false)
-        }
       } catch (error) {
         console.error('❌ Error fetching ads campaigns:', error)
         setCampaignData([])
@@ -166,7 +292,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
       console.log('🔄 Token após aguardar:', token ? 'disponível' : 'não disponível')
       
       // Faz request normal em background com force_refresh
-      const response = await api.getAdsCampaigns(token, {
+      const response = await api.getAdsCampaigns(token || '', {
         start_date: startDate,
         end_date: endDate,
         table_name: selectedTable,
@@ -208,7 +334,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
           const updatedToken = localStorage.getItem('auth-token')
           console.log('🔄 Token para fallback:', updatedToken ? 'disponível' : 'não disponível')
           
-          const cacheResponse = await api.getAdsCampaigns(updatedToken || token, { 
+          const cacheResponse = await api.getAdsCampaigns(updatedToken || '', { 
             table_name: selectedTable, 
             last_cache: true 
           })
@@ -227,18 +353,20 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
     }
   }
 
-  // Filtrar dados por plataforma e termo de busca
+  // Filtrar dados por campanha, plataforma e termo de busca
   const filteredData = campaignData.filter(item => {
+    const matchesCampaign = selectedCampaign ? item.campaign_name === selectedCampaign : true
     const matchesPlatform = selectedPlatform ? item.platform === selectedPlatform : true
     const matchesSearch = searchTerm ? 
       item.campaign_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.platform.toLowerCase().includes(searchTerm.toLowerCase())
       : true
-    return matchesPlatform && matchesSearch
+    return matchesCampaign && matchesPlatform && matchesSearch
   })
 
+
   // Agrupar dados por campanha
-  const groupedData = filteredData.reduce((acc, item) => {
+  const groupedData = filteredData.length > 0 ? filteredData.reduce((acc, item) => {
     const key = `${item.platform}-${item.campaign_name}`
     if (!acc[key]) {
       acc[key] = {
@@ -285,7 +413,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
     acc[key].records.push(item)
     
     return acc
-  }, {} as { [key: string]: any })
+  }, {} as { [key: string]: any }) : {}
 
   const campaignSummaries = Object.values(groupedData)
 
@@ -352,11 +480,11 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
           aValue = a.cost > 0 ? a.revenue_first / a.cost : 0
           bValue = b.cost > 0 ? b.revenue_first / b.cost : 0
           break
-        case 'cpa':
+        case 'cpv':
           aValue = a.transactions > 0 ? a.cost / a.transactions : 0
           bValue = b.transactions > 0 ? b.cost / b.transactions : 0
           break
-        case 'cpa_first':
+        case 'cpa':
           aValue = a.transactions_first > 0 ? a.cost / a.transactions_first : 0
           bValue = b.transactions_first > 0 ? b.cost / b.transactions_first : 0
           break
@@ -384,7 +512,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
   const hasMoreRecords = sortedData.length > 10
 
   // Calcular totais
-  const totals = campaignSummaries.reduce((acc, item) => ({
+  const totals = campaignSummaries.length > 0 ? campaignSummaries.reduce((acc, item) => ({
     cost: acc.cost + item.cost,
     impressions: acc.impressions + item.impressions,
     clicks: acc.clicks + item.clicks,
@@ -402,23 +530,32 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
     revenue: 0,
     transactions_first: 0,
     revenue_first: 0,
-  })
+  }) : {
+    cost: 0,
+    impressions: 0,
+    clicks: 0,
+    leads: 0,
+    transactions: 0,
+    revenue: 0,
+    transactions_first: 0,
+    revenue_first: 0,
+  }
 
   // Métricas calculadas
   const avgCTR = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0
   const avgCPC = totals.clicks > 0 ? totals.cost / totals.clicks : 0
-  const avgCPA = totals.transactions > 0 ? totals.cost / totals.transactions : 0
-  const avgCPAFirst = totals.transactions_first > 0 ? totals.cost / totals.transactions_first : 0
+  const avgCPV = totals.transactions > 0 ? totals.cost / totals.transactions : 0
+  const avgCPA = totals.transactions_first > 0 ? totals.cost / totals.transactions_first : 0
   const avgCPL = totals.leads > 0 ? totals.cost / totals.leads : 0
   const avgCPM = totals.impressions > 0 ? (totals.cost / totals.impressions) * 1000 : 0
   const totalROAS = totals.cost > 0 ? totals.revenue / totals.cost : 0
   const totalROASFirst = totals.cost > 0 ? totals.revenue_first / totals.cost : 0
 
-  // Obter plataformas únicas
-  const platforms = [...new Set(campaignData.map(item => item.platform))]
+  // Obter plataformas únicas (usar dados filtrados)
+  const platforms = [...new Set(filteredData.map(item => item.platform))]
 
-  // Preparar dados para gráficos de pizza
-  const platformData = platforms.map(platform => {
+  // Preparar dados para gráficos de pizza (usar dados filtrados)
+  const platformData = platforms.length > 0 ? platforms.map(platform => {
     const platformCampaigns = campaignSummaries.filter((item: any) => item.platform === platform)
     return {
       name: platform,
@@ -429,13 +566,26 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
         acc + (attributionModel === 'origin_stack' ? item.revenue : item.revenue), 0
       ),
     }
-  }).filter((item: any) => item.cost > 0) // Remove plataformas sem investimento
+  }).filter((item: any) => item.cost > 0) : [] // Remove plataformas sem investimento
 
   // Cores discretas para os gráficos
   const COLORS = ['#64748b', '#94a3b8', '#cbd5e1', '#e2e8f0', '#f1f5f9']
+  
+  // Função para obter cor específica da plataforma
+  const getPlatformColor = (platformName: string) => {
+    const name = platformName.toLowerCase()
+    if (name.includes('google') || (name.includes('ads') && !name.includes('meta'))) {
+      return '#10b981' // Verde para Google Ads
+    }
+    if (name.includes('meta') || name.includes('facebook') || name.includes('instagram') || name === 'meta_ads') {
+      return '#3b82f6' // Azul para Meta Ads
+    }
+    // Cores padrão para outras plataformas
+    return COLORS[0]
+  }
 
   // Dados para comparativo entre modelos de atribuição - usando dados brutos para comparação real
-  const attributionComparison = {
+  const attributionComparison = campaignData.length > 0 ? {
     last_non_direct: campaignData.reduce((acc: any, item: any) => ({
       transactions: acc.transactions + item.transactions,
       revenue: acc.revenue + item.revenue,
@@ -458,26 +608,39 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
       transactions_first: 0,
       revenue_first: 0,
     })
+  } : {
+    last_non_direct: {
+      transactions: 0,
+      revenue: 0,
+      transactions_first: 0,
+      revenue_first: 0,
+    },
+    origin_stack: {
+      transactions: 0,
+      revenue: 0,
+      transactions_first: 0,
+      revenue_first: 0,
+    }
   }
 
   // Calcular métricas para cada modelo
   const lastNonDirectMetrics = {
-    cpa: attributionComparison.last_non_direct.transactions > 0 
+    cpv: attributionComparison.last_non_direct.transactions > 0 
       ? totals.cost / attributionComparison.last_non_direct.transactions : 0,
     roas: totals.cost > 0 
       ? attributionComparison.last_non_direct.revenue / totals.cost : 0,
-    cpaFirst: attributionComparison.last_non_direct.transactions_first > 0 
+    cpa: attributionComparison.last_non_direct.transactions_first > 0 
       ? totals.cost / attributionComparison.last_non_direct.transactions_first : 0,
     roasFirst: totals.cost > 0 
       ? attributionComparison.last_non_direct.revenue_first / totals.cost : 0,
   }
 
   const originStackMetrics = {
-    cpa: attributionComparison.origin_stack.transactions > 0 
+    cpv: attributionComparison.origin_stack.transactions > 0 
       ? totals.cost / attributionComparison.origin_stack.transactions : 0,
     roas: totals.cost > 0 
       ? attributionComparison.origin_stack.revenue / totals.cost : 0,
-    cpaFirst: attributionComparison.origin_stack.transactions_first > 0 
+    cpa: attributionComparison.origin_stack.transactions_first > 0 
       ? totals.cost / attributionComparison.origin_stack.transactions_first : 0,
     roasFirst: totals.cost > 0 
       ? attributionComparison.origin_stack.revenue_first / totals.cost : 0,
@@ -506,6 +669,64 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
     return new Intl.NumberFormat('pt-BR').format(value)
   }
 
+  // Processar dados para timeline de mídia paga (usar dados filtrados)
+  const timelineData = filteredData.length > 0 ? filteredData.reduce((acc, item) => {
+    const existingDate = acc.find(d => d.date === item.date)
+    if (existingDate) {
+      existingDate.cost += item.cost
+      existingDate.impressions += item.impressions
+      existingDate.clicks += item.clicks
+      existingDate.leads += item.leads
+      existingDate.transactions += item.transactions
+      existingDate.revenue += item.revenue
+      existingDate.transactions_first += item.transactions_first
+      existingDate.revenue_first += item.revenue_first
+    } else {
+      acc.push({
+        date: item.date,
+        cost: item.cost,
+        impressions: item.impressions,
+        clicks: item.clicks,
+        leads: item.leads,
+        transactions: item.transactions,
+        revenue: item.revenue,
+        transactions_first: item.transactions_first,
+        revenue_first: item.revenue_first,
+        ctr: 0,
+        cpc: 0,
+        cpv: 0,
+        cpa: 0,
+        roas: 0,
+        roas_first: 0
+      })
+    }
+    return acc
+  }, [] as {
+    date: string
+    cost: number
+    impressions: number
+    clicks: number
+    leads: number
+    transactions: number
+    revenue: number
+    transactions_first: number
+    revenue_first: number
+    ctr: number
+    cpc: number
+    cpv: number
+    cpa: number
+    roas: number
+    roas_first: number
+  }[]).map(item => ({
+    ...item,
+    ctr: item.impressions > 0 ? (item.clicks / item.impressions) * 100 : 0,
+    cpc: item.clicks > 0 ? item.cost / item.clicks : 0,
+    cpv: item.transactions > 0 ? item.cost / item.transactions : 0,
+    cpa: item.transactions_first > 0 ? item.cost / item.transactions_first : 0,
+    roas: item.cost > 0 ? item.revenue / item.cost : 0,
+    roas_first: item.cost > 0 ? item.revenue_first / item.cost : 0
+  })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()) : []
+
 
 
   if (isLoading) {
@@ -519,7 +740,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
     )
   }
 
-  if (campaignData.length === 0) {
+
+  if (campaignData.length === 0 && !isLoading) {
     return (
       <div className="bg-white rounded-xl shadow-lg p-12 text-center">
         <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -533,8 +755,39 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
     )
   }
 
+  if (filteredData.length === 0 && campaignData.length > 0) {
   return (
-    <div className="space-y-6">
+      <div className="bg-white rounded-xl shadow-lg p-12 text-center">
+        <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+        </div>
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">Nenhum resultado encontrado</h3>
+        <p className="text-gray-600 mb-4">
+          Nenhuma campanha corresponde aos filtros aplicados.
+          {selectedCampaign && (
+            <span className="block mt-2 text-sm text-blue-600">
+              Filtro ativo: <strong>{selectedCampaign}</strong>
+            </span>
+          )}
+        </p>
+        <button
+          onClick={() => {
+            setSelectedCampaign(null)
+            setSelectedPlatform('')
+            setSearchTerm('')
+          }}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          Limpar Filtros
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className={`${isFullWidth ? 'fixed inset-0 z-50 bg-white overflow-auto' : 'space-y-6'}`}>
       {/* Informações do Cache e Botão Atualizar */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <div className="flex items-center justify-between">
@@ -565,6 +818,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
               </span>
             )}
           </div>
+          <div className="flex items-center gap-2">
           {(!cacheInfo || isCacheOld() || isRefreshing) && (
             <button
               onClick={refreshData}
@@ -587,6 +841,81 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                 </>
               )}
             </button>
+          )}
+            
+            {/* Indicador de carregamento em background */}
+            {isBackgroundLoading && (
+              <div className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-orange-600 bg-orange-50 rounded-md border border-orange-200">
+                <div className="w-3 h-3 border border-orange-600 border-t-transparent rounded-full animate-spin"></div>
+                Atualizando em background...
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Filtro de Plataforma */}
+      <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <h3 className="text-lg font-semibold text-gray-900">Filtrar por Plataforma</h3>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setSelectedPlatform('')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                  selectedPlatform === '' 
+                    ? 'bg-blue-600 text-white shadow-md' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
+                }`}
+              >
+                Todas
+              </button>
+              <button
+                onClick={() => setSelectedPlatform('google_ads')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 ${
+                  selectedPlatform === 'google_ads' 
+                    ? 'bg-green-600 text-white shadow-md' 
+                    : 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200'
+                }`}
+              >
+                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                Google Ads
+              </button>
+              <button
+                onClick={() => setSelectedPlatform('meta_ads')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 ${
+                  selectedPlatform === 'meta_ads' 
+                    ? 'bg-blue-600 text-white shadow-md' 
+                    : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
+                }`}
+              >
+                <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                Meta Ads
+              </button>
+            </div>
+          </div>
+          
+          {/* Indicador de Filtro Ativo */}
+          {selectedPlatform && (
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <span>Filtro ativo:</span>
+              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                selectedPlatform === 'google_ads' 
+                  ? 'bg-green-100 text-green-800' 
+                  : 'bg-blue-100 text-blue-800'
+              }`}>
+                {selectedPlatform === 'google_ads' ? 'Google Ads' : 'Meta Ads'}
+              </span>
+              <button
+                onClick={() => setSelectedPlatform('')}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+                title="Limpar filtro"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -670,7 +999,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                 <ShoppingCart className="w-5 h-5 text-purple-600" />
               </div>
             </div>
-            <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">CPA: {formatCurrency(avgCPA)}</span>
+            <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">CPV: {formatCurrency(avgCPV)}</span>
           </div>
 
           {/* Primeira Compra */}
@@ -684,7 +1013,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                 <Users className="w-5 h-5 text-indigo-600" />
               </div>
             </div>
-            <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">CPA 1ª: {formatCurrency(avgCPAFirst)}</span>
+            <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">CPA 1ª: {formatCurrency(avgCPA)}</span>
           </div>
 
           {/* Receita Total */}
@@ -750,8 +1079,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                     paddingAngle={2}
                     dataKey="value"
                   >
-                    {platformData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    {platformData.map((item, index) => (
+                      <Cell key={`cell-${index}`} fill={getPlatformColor(item.name)} />
                     ))}
                   </Pie>
                   <Tooltip formatter={(value) => formatCurrency(Number(value))} />
@@ -762,7 +1091,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                   <div key={item.name} className="flex items-center justify-center gap-2 text-xs">
                     <div 
                       className="w-3 h-3 rounded-full" 
-                      style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                      style={{ backgroundColor: getPlatformColor(item.name) }}
                     />
                     <span className="text-gray-600">{item.name}</span>
                   </div>
@@ -784,8 +1113,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                     paddingAngle={2}
                     dataKey="value"
                   >
-                    {platformData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    {platformData.map((item, index) => (
+                      <Cell key={`cell-${index}`} fill={getPlatformColor(item.name)} />
                     ))}
                   </Pie>
                   <Tooltip formatter={(value) => formatNumber(Number(value))} />
@@ -796,7 +1125,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                   <div key={item.name} className="flex items-center justify-center gap-2 text-xs">
                     <div 
                       className="w-3 h-3 rounded-full" 
-                      style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                      style={{ backgroundColor: getPlatformColor(item.name) }}
                     />
                     <span className="text-gray-600">{item.name}</span>
                   </div>
@@ -818,8 +1147,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                     paddingAngle={2}
                     dataKey="value"
                   >
-                    {platformData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    {platformData.map((item, index) => (
+                      <Cell key={`cell-${index}`} fill={getPlatformColor(item.name)} />
                     ))}
                   </Pie>
                   <Tooltip formatter={(value) => formatNumber(Number(value))} />
@@ -830,7 +1159,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                   <div key={item.name} className="flex items-center justify-center gap-2 text-xs">
                     <div 
                       className="w-3 h-3 rounded-full" 
-                      style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                      style={{ backgroundColor: getPlatformColor(item.name) }}
                     />
                     <span className="text-gray-600">{item.name}</span>
                   </div>
@@ -852,8 +1181,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                     paddingAngle={2}
                     dataKey="value"
                   >
-                    {platformData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    {platformData.map((item, index) => (
+                      <Cell key={`cell-${index}`} fill={getPlatformColor(item.name)} />
                     ))}
                   </Pie>
                   <Tooltip formatter={(value) => formatCurrency(Number(value))} />
@@ -864,7 +1193,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                   <div key={item.name} className="flex items-center justify-center gap-2 text-xs">
                     <div 
                       className="w-3 h-3 rounded-full" 
-                      style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                      style={{ backgroundColor: getPlatformColor(item.name) }}
                     />
                     <span className="text-gray-600">{item.name}</span>
                   </div>
@@ -873,6 +1202,14 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
             </div>
           </div>
         </div>
+      )}
+
+      {/* Timeline de Mídia Paga */}
+      {timelineData.length > 0 && (
+        <PaidMediaTimeline
+          data={timelineData}
+          title="📈 Timeline de Performance - Mídia Paga"
+        />
       )}
 
       {/* Comparativo de Modelos de Atribuição */}
@@ -894,38 +1231,276 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
           </div>
         </div>
         
-        {/* Prévia Minimizada */}
+        {/* Explicação dos Modelos - Ocultável */}
+        {isComparisonExpanded && (
+          <div className="mb-6">
+            <button
+              onClick={() => setIsExplanationExpanded(!isExplanationExpanded)}
+              className="w-full flex items-center justify-between p-3 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200 hover:from-blue-100 hover:to-purple-100 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-sm font-medium text-gray-800">
+                  {isExplanationExpanded ? 'Ocultar' : 'Ver'} Explicação dos Modelos de Atribuição
+                </span>
+              </div>
+              <svg 
+                className={`w-4 h-4 text-blue-600 transition-transform duration-200 ${isExplanationExpanded ? 'rotate-180' : ''}`} 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            
+            {isExplanationExpanded && (
+              <div className="mt-4 p-6 bg-white rounded-lg border border-gray-200 shadow-sm">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {/* Last Non-Direct Session */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <span className="w-8 h-8 bg-gray-600 text-white rounded-full flex items-center justify-center text-sm font-bold">L</span>
+                      <h4 className="text-lg font-semibold text-gray-800">Last Non-Direct Session (LNDS)</h4>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      <p className="text-sm text-gray-600 leading-relaxed">
+                        Atribui 100% do crédito da conversão à última sessão não-direta antes da compra. 
+                        Este modelo é ideal para entender qual foi o último canal que influenciou a decisão de compra.
+                      </p>
+                      
+                      <div className="bg-gray-50 p-3 rounded-lg">
+                        <h5 className="text-xs font-semibold text-gray-700 mb-2">Como funciona:</h5>
+                        <ul className="text-xs text-gray-600 space-y-1">
+                          <li>• Identifica a última sessão antes da conversão</li>
+                          <li>• Ignora sessões diretas (digitação de URL)</li>
+                          <li>• Atribui todo o crédito a essa sessão</li>
+                        </ul>
+                      </div>
+                      
+                      <div className="text-xs text-gray-500">
+                        <strong>Melhor para:</strong> Entender o último toque antes da conversão
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Origin Stack */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <span className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">O</span>
+                      <h4 className="text-lg font-semibold text-gray-800">Origin Stack</h4>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      <p className="text-sm text-gray-600 leading-relaxed">
+                        Sistema de atribuição baseado em prioridades que segue uma ordem específica na jornada do usuário. 
+                        O crédito é atribuído ao primeiro evento que ocorrer na sequência.
+                      </p>
+                      
+                      <div className="bg-blue-50 p-3 rounded-lg">
+                        <h5 className="text-xs font-semibold text-blue-700 mb-2">Ordem de Prioridade:</h5>
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-5 h-5 bg-green-500 text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>
+                            <span className="text-xs text-gray-700">Captura de Lead</span>
+              </div>
+                          <div className="flex items-center gap-2">
+                            <span className="w-5 h-5 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">2</span>
+                            <span className="text-xs text-gray-700">First Session de Mídia Paga</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="w-5 h-5 bg-purple-500 text-white rounded-full flex items-center justify-center text-xs font-bold">3</span>
+                            <span className="text-xs text-gray-700">Last Session de Mídia Paga</span>
+                          </div>
+                        </div>
+                        <div className="mt-2 text-xs text-blue-600 font-medium">
+                          ⚡ O que vier primeiro na jornada recebe o crédito
+                        </div>
+                      </div>
+                      
+                      <div className="bg-yellow-50 p-3 rounded-lg">
+                        <h5 className="text-xs font-semibold text-yellow-700 mb-2">Exemplos Práticos:</h5>
+                        <div className="space-y-2">
+              <div>
+                            <p className="text-xs text-gray-600 mb-1">
+                              <strong>Cenário 1:</strong> Meta Ads (lead) → Google Ads → Conversão
+                </p>
+                            <p className="text-xs text-gray-600">
+                              <strong>Resultado:</strong> Crédito vai para Meta Ads (gerou o lead)
+                </p>
+              </div>
+              <div>
+                            <p className="text-xs text-gray-600 mb-1">
+                              <strong>Cenário 2:</strong> Google Ads → Meta Ads (lead) → Conversão
+                            </p>
+                            <p className="text-xs text-gray-600">
+                              <strong>Resultado:</strong> Crédito vai para Meta Ads (gerou o lead)
+                </p>
+              </div>
+              <div>
+                            <p className="text-xs text-gray-600 mb-1">
+                              <strong>Cenário 3:</strong> Google Ads → Facebook Ads → Conversão (sem lead)
+                            </p>
+                            <p className="text-xs text-gray-600">
+                              <strong>Resultado:</strong> Crédito vai para Google Ads (1ª sessão de mídia paga)
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="text-xs text-gray-500">
+                        <strong>Melhor para:</strong> Entender o ponto de origem na jornada de conversão
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Hint para Melhorar Origin Stack */}
+                <div className="mt-6 p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 bg-green-500 text-white rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">
+                      💡
+                    </div>
+                    <div className="flex-1">
+                      <h5 className="text-sm font-semibold text-green-800 mb-2">Dica para Melhorar o Origin Stack</h5>
+                      <p className="text-xs text-green-700 mb-3">
+                        Para maximizar a eficácia do modelo Origin Stack, invista em estratégias de captura de leads:
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-4 h-4 bg-green-400 text-white rounded-full flex items-center justify-center text-xs">1</span>
+                            <span className="text-xs text-green-700 font-medium">Popups com Cupons de Desconto</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="w-4 h-4 bg-green-400 text-white rounded-full flex items-center justify-center text-xs">2</span>
+                            <span className="text-xs text-green-700 font-medium">Formulários de Newsletter</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="w-4 h-4 bg-green-400 text-white rounded-full flex items-center justify-center text-xs">3</span>
+                            <span className="text-xs text-green-700 font-medium">Quiz Interativos</span>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-4 h-4 bg-green-400 text-white rounded-full flex items-center justify-center text-xs">4</span>
+                            <span className="text-xs text-green-700 font-medium">E-books e Materiais Gratuitos</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="w-4 h-4 bg-green-400 text-white rounded-full flex items-center justify-center text-xs">5</span>
+                            <span className="text-xs text-green-700 font-medium">Webinars e Lives</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="w-4 h-4 bg-green-400 text-white rounded-full flex items-center justify-center text-xs">6</span>
+                            <span className="text-xs text-green-700 font-medium">Testes e Avaliações</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-3 p-2 bg-green-100 rounded text-xs text-green-800">
+                        <strong>💡 Resultado:</strong> Mais leads capturados = mais crédito atribuído ao Origin Stack = melhor performance nas métricas
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        
+        {/* Prévia Minimizada - Design Compacto */}
         {!isComparisonExpanded && (
-          <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-              <div>
-                <p className="text-xs text-gray-600 mb-1">Transações</p>
-                <p className="text-sm font-semibold text-gray-900">
-                  Last: {formatNumber(attributionComparison.last_non_direct.transactions)}
-                </p>
-                <p className="text-sm font-semibold text-blue-600">
-                  Origin: {formatNumber(attributionComparison.origin_stack.transactions)}
+          <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+            <div className="text-center mb-4">
+              <h5 className="text-sm font-semibold text-gray-700 mb-1 flex items-center justify-center gap-2">
+                <span className="text-lg">📊</span>
+                Comparativo de Modelos de Atribuição
+              </h5>
+              <p className="text-xs text-gray-600">Origin Stack vs Last Non-Direct Session</p>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              
+              {/* Ganho Transações - Compacto */}
+              <div className="bg-white/80 backdrop-blur-sm border border-gray-200/50 rounded-xl p-4 text-center">
+                <div className="w-8 h-8 bg-gradient-to-br from-green-100 to-green-200 rounded-lg flex items-center justify-center mx-auto mb-2">
+                  <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                  </svg>
+                </div>
+                <p className="text-xs font-medium text-gray-600 mb-1">Transações</p>
+                <p className={`text-lg font-bold ${
+                  attributionComparison.origin_stack.transactions > attributionComparison.last_non_direct.transactions 
+                    ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {(() => {
+                    const lnds = attributionComparison.last_non_direct.transactions
+                    const origin = attributionComparison.origin_stack.transactions
+                    const gain = lnds > 0 ? ((origin - lnds) / lnds * 100) : 0
+                    return gain > 0 ? `+${gain.toFixed(1)}%` : `${gain.toFixed(1)}%`
+                  })()}
                 </p>
               </div>
-              <div>
-                <p className="text-xs text-gray-600 mb-1">Receita</p>
-                <p className="text-sm font-semibold text-gray-900">
-                  {formatCurrency(attributionComparison.last_non_direct.revenue)}
-                </p>
-                <p className="text-sm font-semibold text-blue-600">
-                  {formatCurrency(attributionComparison.origin_stack.revenue)}
+              
+              {/* Ganho Receita - Compacto */}
+              <div className="bg-white/80 backdrop-blur-sm border border-gray-200/50 rounded-xl p-4 text-center">
+                <div className="w-8 h-8 bg-gradient-to-br from-emerald-100 to-emerald-200 rounded-lg flex items-center justify-center mx-auto mb-2">
+                  <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                  </svg>
+                </div>
+                <p className="text-xs font-medium text-gray-600 mb-1">Receita</p>
+                <p className={`text-lg font-bold ${
+                  attributionComparison.origin_stack.revenue > attributionComparison.last_non_direct.revenue 
+                    ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {(() => {
+                    const lnds = attributionComparison.last_non_direct.revenue
+                    const origin = attributionComparison.origin_stack.revenue
+                    const gain = lnds > 0 ? ((origin - lnds) / lnds * 100) : 0
+                    return gain > 0 ? `+${gain.toFixed(1)}%` : `${gain.toFixed(1)}%`
+                  })()}
                 </p>
               </div>
-              <div>
-                <p className="text-xs text-gray-600 mb-1">Melhor CPA</p>
-                <p className="text-sm font-semibold text-green-600">
-                  {originStackMetrics.cpa < lastNonDirectMetrics.cpa ? 'Origin Stack' : 'Last Non-Direct'}
+              
+              {/* Melhoria CPV - Compacto */}
+              <div className="bg-white/80 backdrop-blur-sm border border-gray-200/50 rounded-xl p-4 text-center">
+                <div className="w-8 h-8 bg-gradient-to-br from-blue-100 to-blue-200 rounded-lg flex items-center justify-center mx-auto mb-2">
+                  <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                </div>
+                <p className="text-xs font-medium text-gray-600 mb-1">CPV</p>
+                <p className={`text-lg font-bold ${
+                  originStackMetrics.cpv < lastNonDirectMetrics.cpv ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {(() => {
+                    const lnds = lastNonDirectMetrics.cpv
+                    const origin = originStackMetrics.cpv
+                    const gain = lnds > 0 ? ((lnds - origin) / lnds * 100) : 0
+                    return gain > 0 ? `-${gain.toFixed(1)}%` : `+${Math.abs(gain).toFixed(1)}%`
+                  })()}
                 </p>
               </div>
-              <div>
-                <p className="text-xs text-gray-600 mb-1">Melhor ROAS</p>
-                <p className="text-sm font-semibold text-green-600">
-                  {originStackMetrics.roas > lastNonDirectMetrics.roas ? 'Origin Stack' : 'Last Non-Direct'}
+              
+              {/* Melhoria ROAS - Compacto */}
+              <div className="bg-white/80 backdrop-blur-sm border border-gray-200/50 rounded-xl p-4 text-center">
+                <div className="w-8 h-8 bg-gradient-to-br from-purple-100 to-purple-200 rounded-lg flex items-center justify-center mx-auto mb-2">
+                  <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
+                <p className="text-xs font-medium text-gray-600 mb-1">ROAS</p>
+                <p className={`text-lg font-bold ${
+                  originStackMetrics.roas > lastNonDirectMetrics.roas ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {(() => {
+                    const lnds = lastNonDirectMetrics.roas
+                    const origin = originStackMetrics.roas
+                      const gain = lnds > 0 ? ((origin - lnds) / lnds * 100) : 0
+                      return gain > 0 ? `+${gain.toFixed(1)}%` : `${gain.toFixed(1)}%`
+                    })()}
                 </p>
               </div>
             </div>
@@ -953,7 +1528,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
               <div className="text-center p-3 bg-gray-50 rounded">
                 <p className="text-xs text-gray-600 mb-1">Transações</p>
                 <p className="text-lg font-bold text-gray-900">{formatNumber(attributionComparison.last_non_direct.transactions)}</p>
-                <p className="text-xs text-green-600">CPA: {formatCurrency(lastNonDirectMetrics.cpa)}</p>
+                <p className="text-xs text-green-600">CPV: {formatCurrency(lastNonDirectMetrics.cpv)}</p>
               </div>
               
               <div className="text-center p-3 bg-gray-50 rounded">
@@ -970,7 +1545,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
               <div className="text-center p-3 bg-blue-50 rounded">
                 <p className="text-xs text-gray-600 mb-1">1ª Compra</p>
                 <p className="text-lg font-bold text-gray-900">{formatNumber(attributionComparison.last_non_direct.transactions_first)}</p>
-                <p className="text-xs text-blue-600">CPA: {formatCurrency(lastNonDirectMetrics.cpaFirst)}</p>
+                <p className="text-xs text-blue-600">CPA: {formatCurrency(lastNonDirectMetrics.cpa)}</p>
               </div>
               
               <div className="text-center p-3 bg-blue-50 rounded">
@@ -1003,7 +1578,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
               <div className="text-center p-3 bg-gray-50 rounded">
                 <p className="text-xs text-gray-600 mb-1">Transações</p>
                 <p className="text-lg font-bold text-gray-900">{formatNumber(attributionComparison.origin_stack.transactions)}</p>
-                <p className="text-xs text-green-600">CPA: {formatCurrency(originStackMetrics.cpa)}</p>
+                <p className="text-xs text-green-600">CPV: {formatCurrency(originStackMetrics.cpv)}</p>
               </div>
               
               <div className="text-center p-3 bg-gray-50 rounded">
@@ -1020,7 +1595,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
               <div className="text-center p-3 bg-blue-50 rounded">
                 <p className="text-xs text-gray-600 mb-1">1ª Compra</p>
                 <p className="text-lg font-bold text-gray-900">{formatNumber(attributionComparison.origin_stack.transactions_first)}</p>
-                <p className="text-xs text-blue-600">CPA: {formatCurrency(originStackMetrics.cpaFirst)}</p>
+                <p className="text-xs text-blue-600">CPA: {formatCurrency(originStackMetrics.cpa)}</p>
               </div>
               
               <div className="text-center p-3 bg-blue-50 rounded">
@@ -1037,45 +1612,118 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
           </div>
         </div>
 
-        {/* Resumo das Diferenças */}
-        <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
-          <h5 className="text-sm font-semibold text-gray-800 mb-3">📈 Análise Comparativa</h5>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
+        {/* Resumo das Diferenças - Design Embelezado */}
+        <div className="mt-6 p-4 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 rounded-xl border border-blue-200 shadow-md">
+          <div className="text-center mb-4">
+            <h5 className="text-lg font-bold text-gray-800 mb-1 flex items-center justify-center gap-2">
+              <span className="text-xl">📈</span>
+              Análise Comparativa
+            </h5>
+            <p className="text-xs text-gray-600">Percentual de ganho do Origin Stack sobre o modelo padrão</p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             
+            {/* Ganho Transações */}
+            <div className="group bg-white/80 backdrop-blur-sm border border-gray-200/50 rounded-xl p-4 shadow-md hover:shadow-lg transition-all duration-300 hover:-translate-y-1 hover:border-green-300">
             <div className="text-center">
-              <p className="text-gray-600 mb-1">Diferença Transações</p>
-              <p className={`font-bold ${
+                <div className="w-10 h-10 bg-gradient-to-br from-green-100 to-green-200 rounded-xl flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
+                  <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                  </svg>
+                </div>
+                <h6 className="text-xs font-semibold text-gray-700 mb-2">Ganho Transações</h6>
+                <p className={`text-2xl font-bold mb-2 ${
                 attributionComparison.origin_stack.transactions > attributionComparison.last_non_direct.transactions 
                   ? 'text-green-600' : 'text-red-600'
               }`}>
-                {attributionComparison.origin_stack.transactions > attributionComparison.last_non_direct.transactions ? '+' : ''}
-                {formatNumber(attributionComparison.origin_stack.transactions - attributionComparison.last_non_direct.transactions)}
-              </p>
+                  {(() => {
+                    const lnds = attributionComparison.last_non_direct.transactions
+                    const origin = attributionComparison.origin_stack.transactions
+                    const gain = lnds > 0 ? ((origin - lnds) / lnds * 100) : 0
+                    return gain > 0 ? `+${gain.toFixed(1)}%` : `${gain.toFixed(1)}%`
+                  })()}
+                </p>
+                <p className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                  {formatNumber(attributionComparison.origin_stack.transactions - attributionComparison.last_non_direct.transactions)} transações
+                </p>
+              </div>
             </div>
             
+            {/* Ganho Receita */}
+            <div className="group bg-white/80 backdrop-blur-sm border border-gray-200/50 rounded-xl p-4 shadow-md hover:shadow-lg transition-all duration-300 hover:-translate-y-1 hover:border-emerald-300">
             <div className="text-center">
-              <p className="text-gray-600 mb-1">Diferença Receita</p>
-              <p className={`font-bold ${
+                <div className="w-10 h-10 bg-gradient-to-br from-emerald-100 to-emerald-200 rounded-xl flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
+                  <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                  </svg>
+                </div>
+                <h6 className="text-xs font-semibold text-gray-700 mb-2">Ganho Receita</h6>
+                <p className={`text-2xl font-bold mb-2 ${
                 attributionComparison.origin_stack.revenue > attributionComparison.last_non_direct.revenue 
                   ? 'text-green-600' : 'text-red-600'
               }`}>
-                {attributionComparison.origin_stack.revenue > attributionComparison.last_non_direct.revenue ? '+' : ''}
+                  {(() => {
+                    const lnds = attributionComparison.last_non_direct.revenue
+                    const origin = attributionComparison.origin_stack.revenue
+                    const gain = lnds > 0 ? ((origin - lnds) / lnds * 100) : 0
+                    return gain > 0 ? `+${gain.toFixed(1)}%` : `${gain.toFixed(1)}%`
+                  })()}
+                </p>
+                <p className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
                 {formatCurrency(attributionComparison.origin_stack.revenue - attributionComparison.last_non_direct.revenue)}
               </p>
+              </div>
             </div>
             
+            {/* Melhoria CPV */}
+            <div className="group bg-white/80 backdrop-blur-sm border border-gray-200/50 rounded-xl p-4 shadow-md hover:shadow-lg transition-all duration-300 hover:-translate-y-1 hover:border-blue-300">
             <div className="text-center">
-              <p className="text-gray-600 mb-1">Melhor CPA</p>
-              <p className="font-bold text-blue-600">
-                {originStackMetrics.cpa < lastNonDirectMetrics.cpa ? 'Origin Stack' : 'Last Non-Direct'}
-              </p>
+                <div className="w-10 h-10 bg-gradient-to-br from-blue-100 to-blue-200 rounded-xl flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
+                  <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                </div>
+                <h6 className="text-xs font-semibold text-gray-700 mb-2">Melhoria CPV</h6>
+                <p className={`text-2xl font-bold mb-2 ${
+                  originStackMetrics.cpv < lastNonDirectMetrics.cpv ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {(() => {
+                    const lnds = lastNonDirectMetrics.cpv
+                    const origin = originStackMetrics.cpv
+                    const gain = lnds > 0 ? ((lnds - origin) / lnds * 100) : 0
+                    return gain > 0 ? `-${gain.toFixed(1)}%` : `+${Math.abs(gain).toFixed(1)}%`
+                  })()}
+                </p>
+                <p className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                  {originStackMetrics.cpv < lastNonDirectMetrics.cpv ? 'Origin Stack' : 'Last Non-Direct'}
+                </p>
+              </div>
             </div>
             
+            {/* Melhoria ROAS */}
+            <div className="group bg-white/80 backdrop-blur-sm border border-gray-200/50 rounded-xl p-4 shadow-md hover:shadow-lg transition-all duration-300 hover:-translate-y-1 hover:border-purple-300">
             <div className="text-center">
-              <p className="text-gray-600 mb-1">Melhor ROAS</p>
-              <p className="font-bold text-blue-600">
+                <div className="w-10 h-10 bg-gradient-to-br from-purple-100 to-purple-200 rounded-xl flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
+                  <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
+                <h6 className="text-xs font-semibold text-gray-700 mb-2">Melhoria ROAS</h6>
+                <p className={`text-2xl font-bold mb-2 ${
+                  originStackMetrics.roas > lastNonDirectMetrics.roas ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {(() => {
+                    const lnds = lastNonDirectMetrics.roas
+                    const origin = originStackMetrics.roas
+                    const gain = lnds > 0 ? ((origin - lnds) / lnds * 100) : 0
+                    return gain > 0 ? `+${gain.toFixed(1)}%` : `${gain.toFixed(1)}%`
+                  })()}
+                </p>
+                <p className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
                 {originStackMetrics.roas > lastNonDirectMetrics.roas ? 'Origin Stack' : 'Last Non-Direct'}
               </p>
+              </div>
             </div>
           </div>
         </div>
@@ -1084,9 +1732,11 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
       </div>
 
       {/* Tabela de campanhas */}
-      <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+      <div className={`bg-white rounded-xl shadow-lg overflow-hidden ${isFullWidth ? 'fixed inset-0 z-50 m-0 rounded-none' : ''}`}>
         <div className="px-6 py-4 border-b border-gray-200">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex flex-col gap-4">
+            {/* Header com título e botão */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold text-gray-900">Campanhas de Mídia Paga</h2>
               <p className="text-sm text-gray-500">
@@ -1102,7 +1752,90 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
               </p>
             </div>
             
-            <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 w-full md:w-auto">
+              {/* Botões de controle */}
+              <div className="flex gap-2">
+                {/* Botão Dropdown de Métricas */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowColumnSelector(!showColumnSelector)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
+                      showColumnSelector 
+                        ? 'bg-green-600 text-white hover:bg-green-700 shadow-sm' 
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
+                    }`}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                    </svg>
+                    <span>Métricas</span>
+                    <span className={`px-2 py-0.5 text-xs rounded-full ${
+                      showColumnSelector 
+                        ? 'bg-white/20 text-white' 
+                        : 'bg-blue-100 text-blue-600'
+                    }`}>
+                      {Object.values(visibleColumns).filter(Boolean).length}
+                    </span>
+                    <svg 
+                      className={`w-4 h-4 transition-transform duration-200 ${showColumnSelector ? 'rotate-180' : ''}`} 
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
+
+                {/* Botão Full Width */}
+                <button
+                  onClick={() => setIsFullWidth(!isFullWidth)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
+                    isFullWidth 
+                      ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
+                  }`}
+                >
+                  {isFullWidth ? (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9V4.5M9 9H4.5M9 9L3.5 3.5M15 9V4.5M15 9h4.5M15 9l5.5-5.5M9 15v4.5M9 15H4.5M9 15l-5.5 5.5M15 15v4.5M15 15h4.5M15 15l5.5 5.5" />
+                      </svg>
+                      <span>Tela Normal</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                      </svg>
+                      <span>Tela Cheia</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Filtros em linha separada */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              {/* Filtro de Campanha Ativa */}
+              {selectedCampaign && (
+                <div className="flex items-center gap-2 bg-blue-50 px-3 py-2 rounded-lg border border-blue-200">
+                  <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-sm font-medium text-blue-700">Filtrado por:</span>
+                  <span className="text-sm text-blue-800 font-semibold truncate max-w-[200px]">{selectedCampaign}</span>
+                  <button
+                    onClick={() => setSelectedCampaign(null)}
+                    className="text-blue-600 hover:text-blue-800 transition-colors flex-shrink-0"
+                    title="Limpar filtro de campanha"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+
               {/* Modelo de atribuição */}
               <div className="flex items-center gap-2">
                 <Target className="w-4 h-4 text-gray-500" />
@@ -1122,7 +1855,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                 <select
                   value={selectedPlatform}
                   onChange={(e) => setSelectedPlatform(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[120px]"
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[140px]"
                 >
                   <option value="">Todas as plataformas</option>
                   {platforms.map(platform => (
@@ -1132,40 +1865,405 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
               </div>
 
               {/* Busca */}
-              <div className="relative">
+              <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500" />
                 <input
                   type="text"
                   placeholder="Buscar campanha..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[200px]"
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
                 />
               </div>
             </div>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Dropdown de Métricas - Overlay Elegante */}
+        {showColumnSelector && (
+          <div className="fixed inset-0 z-50 overflow-hidden">
+            {/* Backdrop */}
+            <div 
+              className="absolute inset-0 bg-black/20 backdrop-blur-sm"
+              onClick={() => {
+                setShowColumnSelector(false)
+                setSearchTerm('')
+              }}
+            />
+            
+            {/* Dropdown Content */}
+            <div className="absolute top-20 right-6 w-96 max-w-[calc(100vw-3rem)]">
+              <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden animate-in slide-in-from-top-2 duration-300">
+                {/* Header */}
+                <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
+                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-semibold text-white">Selecionar Métricas</h3>
+                        <p className="text-blue-100 text-sm">Escolha quais colunas exibir na tabela</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowColumnSelector(false)
+                        setSearchTerm('')
+                      }}
+                      className="w-8 h-8 bg-white/20 hover:bg-white/30 rounded-lg flex items-center justify-center transition-colors"
+                    >
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Search Bar */}
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Buscar métricas..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="block w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                    {searchTerm && (
+                      <button
+                        onClick={() => setSearchTerm('')}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                      >
+                        <svg className="h-4 w-4 text-gray-400 hover:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Content */}
+                <div className="p-6 max-h-96 overflow-y-auto">
+                  <div className="grid grid-cols-1 gap-6">
+                    {/* Mensagem quando não há resultados */}
+                    {searchTerm && (() => {
+                      const allMetrics = [
+                        { key: 'platform', label: 'Plataforma', icon: '🏢' },
+                        { key: 'campaign_name', label: 'Campanha', icon: '📢' },
+                        { key: 'cost', label: 'Investimento', icon: '💰' },
+                        { key: 'impressions', label: 'Impressões', icon: '👁️' },
+                        { key: 'clicks', label: 'Cliques', icon: '👆' },
+                        { key: 'ctr', label: 'CTR', icon: '📊' },
+                        { key: 'cpc', label: 'CPC', icon: '💸' },
+                        { key: 'leads', label: 'Leads', icon: '🎯' },
+                        { key: 'transactions', label: 'Transações', icon: '🛒' },
+                        { key: 'transactions_first', label: 'Trans. 1ª Compra', icon: '🆕' },
+                        { key: 'revenue', label: 'Receita', icon: '💵' },
+                        { key: 'revenue_first', label: 'Receita 1ª Compra', icon: '💎' },
+                        { key: 'roas', label: 'ROAS', icon: '📈' },
+                        { key: 'roas_first', label: 'ROAS 1ª Compra', icon: '🚀' },
+                        { key: 'cpv', label: 'CPV', icon: '💳' },
+                        { key: 'cpa', label: 'CPA', icon: '🎯' }
+                      ]
+                      
+                      const hasResults = allMetrics.some(metric => 
+                        metric.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                        metric.key.toLowerCase().includes(searchTerm.toLowerCase())
+                      )
+                      
+                      if (!hasResults) {
+                        return (
+                          <div className="text-center py-8">
+                            <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+                              <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                              </svg>
+                            </div>
+                            <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhuma métrica encontrada</h3>
+                            <p className="text-sm text-gray-500 mb-4">Tente buscar por termos como "receita", "cliques", "roas", etc.</p>
+                            <button
+                              onClick={() => setSearchTerm('')}
+                              className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                            >
+                              Limpar busca
+                            </button>
+                          </div>
+                        )
+                      }
+                      return null
+                    })()}
+                    {/* Categoria: Identificação */}
+                    {(() => {
+                      const identificationMetrics = [
+                        { key: 'platform', label: 'Plataforma', icon: '🏢' },
+                        { key: 'campaign_name', label: 'Campanha', icon: '📢' }
+                      ].filter(metric => 
+                        !searchTerm || 
+                        metric.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                        metric.key.toLowerCase().includes(searchTerm.toLowerCase())
+                      )
+                      
+                      if (identificationMetrics.length === 0) return null
+                      
+                      return (
+                        <div>
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                            <h4 className="text-sm font-semibold text-gray-900">Identificação</h4>
+                          </div>
+                          <div className="space-y-2">
+                            {identificationMetrics.map(({ key, label, icon }) => (
+                              <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={visibleColumns[key as keyof typeof visibleColumns]}
+                                  onChange={(e) => setVisibleColumns(prev => ({
+                                    ...prev,
+                                    [key]: e.target.checked
+                                  }))}
+                                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+                                />
+                                <span className="text-lg">{icon}</span>
+                                <span className="text-sm font-medium text-gray-700">{label}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })()}
+
+                    {/* Categoria: Investimento e Alcance */}
+                    {(() => {
+                      const investmentMetrics = [
+                        { key: 'cost', label: 'Investimento', icon: '💰' },
+                        { key: 'impressions', label: 'Impressões', icon: '👁️' },
+                        { key: 'clicks', label: 'Cliques', icon: '👆' },
+                        { key: 'ctr', label: 'CTR', icon: '📊' },
+                        { key: 'cpc', label: 'CPC', icon: '💸' }
+                      ].filter(metric => 
+                        !searchTerm || 
+                        metric.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                        metric.key.toLowerCase().includes(searchTerm.toLowerCase())
+                      )
+                      
+                      if (investmentMetrics.length === 0) return null
+                      
+                      return (
+                        <div>
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                            <h4 className="text-sm font-semibold text-gray-900">Investimento e Alcance</h4>
+                          </div>
+                          <div className="space-y-2">
+                            {investmentMetrics.map(({ key, label, icon }) => (
+                              <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={visibleColumns[key as keyof typeof visibleColumns]}
+                                  onChange={(e) => setVisibleColumns(prev => ({
+                                    ...prev,
+                                    [key]: e.target.checked
+                                  }))}
+                                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+                                />
+                                <span className="text-lg">{icon}</span>
+                                <span className="text-sm font-medium text-gray-700">{label}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })()}
+
+                    {/* Categoria: Conversões e Receita */}
+                    {(() => {
+                      const conversionMetrics = [
+                        { key: 'leads', label: 'Leads', icon: '🎯' },
+                        { key: 'transactions', label: 'Transações', icon: '🛒' },
+                        { key: 'transactions_first', label: 'Trans. 1ª Compra', icon: '🆕' },
+                        { key: 'revenue', label: 'Receita', icon: '💵' },
+                        { key: 'revenue_first', label: 'Receita 1ª Compra', icon: '💎' }
+                      ].filter(metric => 
+                        !searchTerm || 
+                        metric.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                        metric.key.toLowerCase().includes(searchTerm.toLowerCase())
+                      )
+                      
+                      if (conversionMetrics.length === 0) return null
+                      
+                      return (
+                        <div>
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                            <h4 className="text-sm font-semibold text-gray-900">Conversões e Receita</h4>
+                          </div>
+                          <div className="space-y-2">
+                            {conversionMetrics.map(({ key, label, icon }) => (
+                              <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={visibleColumns[key as keyof typeof visibleColumns]}
+                                  onChange={(e) => setVisibleColumns(prev => ({
+                                    ...prev,
+                                    [key]: e.target.checked
+                                  }))}
+                                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+                                />
+                                <span className="text-lg">{icon}</span>
+                                <span className="text-sm font-medium text-gray-700">{label}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })()}
+
+                    {/* Categoria: Performance */}
+                    {(() => {
+                      const performanceMetrics = [
+                        { key: 'roas', label: 'ROAS', icon: '📈' },
+                        { key: 'roas_first', label: 'ROAS 1ª Compra', icon: '🚀' },
+                        { key: 'cpv', label: 'CPV', icon: '💳' },
+                        { key: 'cpa', label: 'CPA', icon: '🎯' }
+                      ].filter(metric => 
+                        !searchTerm || 
+                        metric.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                        metric.key.toLowerCase().includes(searchTerm.toLowerCase())
+                      )
+                      
+                      if (performanceMetrics.length === 0) return null
+                      
+                      return (
+                        <div>
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                            <h4 className="text-sm font-semibold text-gray-900">Performance</h4>
+                          </div>
+                          <div className="space-y-2">
+                            {performanceMetrics.map(({ key, label, icon }) => (
+                              <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={visibleColumns[key as keyof typeof visibleColumns]}
+                                  onChange={(e) => setVisibleColumns(prev => ({
+                                    ...prev,
+                                    [key]: e.target.checked
+                                  }))}
+                                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+                                />
+                                <span className="text-lg">{icon}</span>
+                                <span className="text-sm font-medium text-gray-700">{label}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })()}
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
+                  <div className="flex justify-between items-center">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setVisibleColumns({
+                          platform: true,
+                          campaign_name: true,
+                          cost: true,
+                          impressions: true,
+                          clicks: true,
+                          ctr: true,
+                          cpc: true,
+                          leads: true,
+                          transactions: true,
+                          transactions_first: true,
+                          revenue: true,
+                          revenue_first: true,
+                          roas: true,
+                          roas_first: true,
+                          cpv: true,
+                          cpa: true
+                        })}
+                        className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Todas
+                      </button>
+                      <button
+                        onClick={() => setVisibleColumns({
+                          platform: true,
+                          campaign_name: true,
+                          cost: false,
+                          impressions: false,
+                          clicks: false,
+                          ctr: false,
+                          cpc: false,
+                          leads: false,
+                          transactions: false,
+                          transactions_first: false,
+                          revenue: false,
+                          revenue_first: false,
+                          roas: false,
+                          roas_first: false,
+                          cpv: false,
+                          cpa: false
+                        })}
+                        className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                        Básicas
+                      </button>
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      {Object.values(visibleColumns).filter(Boolean).length} de {Object.keys(visibleColumns).length} selecionadas
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className={`overflow-x-auto ${isFullWidth ? 'h-[calc(100vh-120px)] overflow-y-auto' : ''}`}>
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
+                {visibleColumns.platform && (
                 <SortableHeader
                   field="platform"
                   currentSortField={sortField}
                   currentSortDirection={sortDirection}
                   onSort={handleSort}
+                    className="sticky left-0 z-10 bg-gray-50"
                 >
                   Plataforma
                 </SortableHeader>
+                )}
+                {visibleColumns.campaign_name && (
                 <SortableHeader
                   field="campaign_name"
                   currentSortField={sortField}
                   currentSortDirection={sortDirection}
                   onSort={handleSort}
+                    className={`${visibleColumns.platform ? 'sticky left-[120px]' : 'sticky left-0'} z-10 bg-gray-50`}
                 >
                   Campanha
                 </SortableHeader>
+                )}
+                {visibleColumns.cost && (
                 <SortableHeader
                   field="cost"
                   currentSortField={sortField}
@@ -1174,6 +2272,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                 >
                   Investimento
                 </SortableHeader>
+                )}
+                {visibleColumns.impressions && (
                 <SortableHeader
                   field="impressions"
                   currentSortField={sortField}
@@ -1182,6 +2282,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                 >
                   Impressões
                 </SortableHeader>
+                )}
+                {visibleColumns.clicks && (
                 <SortableHeader
                   field="clicks"
                   currentSortField={sortField}
@@ -1190,6 +2292,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                 >
                   Cliques
                 </SortableHeader>
+                )}
+                {visibleColumns.ctr && (
                 <SortableHeader
                   field="ctr"
                   currentSortField={sortField}
@@ -1198,6 +2302,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                 >
                   CTR
                 </SortableHeader>
+                )}
+                {visibleColumns.cpc && (
                 <SortableHeader
                   field="cpc"
                   currentSortField={sortField}
@@ -1206,6 +2312,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                 >
                   CPC
                 </SortableHeader>
+                )}
+                {visibleColumns.leads && (
                 <SortableHeader
                   field="leads"
                   currentSortField={sortField}
@@ -1214,6 +2322,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                 >
                   Leads
                 </SortableHeader>
+                )}
+                {visibleColumns.transactions && (
                 <SortableHeader
                   field="transactions"
                   currentSortField={sortField}
@@ -1222,6 +2332,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                 >
                   Transações
                 </SortableHeader>
+                )}
+                {visibleColumns.transactions_first && (
                 <SortableHeader
                   field="transactions_first"
                   currentSortField={sortField}
@@ -1230,6 +2342,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                 >
                   Trans. 1ª Compra
                 </SortableHeader>
+                )}
+                {visibleColumns.revenue && (
                 <SortableHeader
                   field="revenue"
                   currentSortField={sortField}
@@ -1238,6 +2352,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                 >
                   Receita
                 </SortableHeader>
+                )}
+                {visibleColumns.revenue_first && (
                 <SortableHeader
                   field="revenue_first"
                   currentSortField={sortField}
@@ -1246,6 +2362,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                 >
                   Receita 1ª Compra
                 </SortableHeader>
+                )}
+                {visibleColumns.roas && (
                 <SortableHeader
                   field="roas"
                   currentSortField={sortField}
@@ -1254,6 +2372,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                 >
                   ROAS
                 </SortableHeader>
+                )}
+                {visibleColumns.roas_first && (
                 <SortableHeader
                   field="roas_first"
                   currentSortField={sortField}
@@ -1262,22 +2382,27 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                 >
                   ROAS 1ª Compra
                 </SortableHeader>
+                )}
+                {visibleColumns.cpv && (
                 <SortableHeader
-                  field="cpa"
+                    field="cpv"
                   currentSortField={sortField}
                   currentSortDirection={sortDirection}
                   onSort={handleSort}
                 >
-                  CPA
+                    CPV
                 </SortableHeader>
+                )}
+                {visibleColumns.cpa && (
                 <SortableHeader
-                  field="cpa_first"
+                    field="cpa"
                   currentSortField={sortField}
                   currentSortDirection={sortDirection}
                   onSort={handleSort}
                 >
-                  CPA 1ª Compra
+                    CPA
                 </SortableHeader>
+                )}
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -1286,67 +2411,110 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                 const cpc = campaign.clicks > 0 ? campaign.cost / campaign.clicks : 0
                 const roas = campaign.cost > 0 ? campaign.revenue / campaign.cost : 0
                 const roasFirst = campaign.cost > 0 ? campaign.revenue_first / campaign.cost : 0
-                const cpa = campaign.transactions > 0 ? campaign.cost / campaign.transactions : 0
-                const cpaFirst = campaign.transactions_first > 0 ? campaign.cost / campaign.transactions_first : 0
+                const cpv = campaign.transactions > 0 ? campaign.cost / campaign.transactions : 0
+                const cpa = campaign.transactions_first > 0 ? campaign.cost / campaign.transactions_first : 0
 
                 return (
-                  <tr key={index} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap">
+                  <tr key={index} className={`hover:bg-gray-50 transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                    {visibleColumns.platform && (
+                      <td className={`px-6 py-4 whitespace-nowrap sticky left-0 z-10 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                         {campaign.platform}
                       </span>
                     </td>
-                    <td className="px-6 py-4 max-w-xs">
-                      <div className="text-sm font-medium text-gray-900 truncate" title={campaign.campaign_name}>
+                    )}
+                    {visibleColumns.campaign_name && (
+                      <td className={`px-6 py-4 max-w-xs ${visibleColumns.platform ? 'sticky left-[120px]' : 'sticky left-0'} z-10 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                      <button
+                        onClick={() => setSelectedCampaign(campaign.campaign_name)}
+                        className={`text-sm font-medium truncate text-left w-full hover:underline transition-colors ${
+                          selectedCampaign === campaign.campaign_name 
+                            ? 'text-blue-600 font-semibold' 
+                            : 'text-gray-900 hover:text-blue-600'
+                        }`}
+                        title={`Filtrar por: ${campaign.campaign_name}`}
+                      >
                         {campaign.campaign_name}
-                      </div>
+                        {selectedCampaign === campaign.campaign_name && (
+                          <span className="ml-1 text-blue-500">✓</span>
+                        )}
+                      </button>
                     </td>
+                    )}
+                    {visibleColumns.cost && (
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-red-600">
                       {formatCurrency(campaign.cost)}
                     </td>
+                    )}
+                    {visibleColumns.impressions && (
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {formatNumber(campaign.impressions)}
                     </td>
+                    )}
+                    {visibleColumns.clicks && (
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {formatNumber(campaign.clicks)}
                     </td>
+                    )}
+                    {visibleColumns.ctr && (
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">
                       {ctr.toFixed(2)}%
                     </td>
+                    )}
+                    {visibleColumns.cpc && (
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-teal-600">
                       {formatCurrency(cpc)}
                     </td>
+                    )}
+                    {visibleColumns.leads && (
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-orange-600">
                       {formatNumber(campaign.leads)}
                     </td>
+                    )}
+                    {visibleColumns.transactions && (
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">
                       {formatNumber(campaign.transactions)}
                     </td>
+                    )}
+                    {visibleColumns.transactions_first && (
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">
                       {formatNumber(campaign.transactions_first)}
                     </td>
+                    )}
+                    {visibleColumns.revenue && (
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">
                       {formatCurrency(campaign.revenue)}
                     </td>
+                    )}
+                    {visibleColumns.revenue_first && (
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-emerald-600">
                       {formatCurrency(campaign.revenue_first)}
                     </td>
+                    )}
+                    {visibleColumns.roas && (
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <span className={`${roas >= 3 ? 'text-green-600' : roas >= 2 ? 'text-yellow-600' : 'text-red-600'}`}>
                         {roas.toFixed(2)}x
                       </span>
                     </td>
+                    )}
+                    {visibleColumns.roas_first && (
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <span className={`${roasFirst >= 3 ? 'text-green-600' : roasFirst >= 2 ? 'text-yellow-600' : 'text-red-600'}`}>
                         {roasFirst.toFixed(2)}x
                       </span>
                     </td>
+                    )}
+                    {visibleColumns.cpv && (
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-600">
-                      {formatCurrency(cpa)}
+                        {formatCurrency(cpv)}
                     </td>
+                    )}
+                    {visibleColumns.cpa && (
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">
-                      {formatCurrency(cpaFirst)}
+                        {formatCurrency(cpa)}
                     </td>
+                    )}
                   </tr>
                 )
               })}
