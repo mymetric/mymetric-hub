@@ -81,6 +81,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   
 
 
+  // Token de autenticação disponível para filhos
+  const authToken = typeof window !== 'undefined' ? (localStorage.getItem('auth-token') || '') : ''
   // Função para calcular datas do mês atual (mantida para compatibilidade)
   const getCurrentMonth = () => {
     const presets = getDatePresets()
@@ -2715,6 +2717,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
             selectedTable={selectedTable}
             startDate={startDate}
             endDate={endDate}
+            token={authToken}
           />
         )}
 

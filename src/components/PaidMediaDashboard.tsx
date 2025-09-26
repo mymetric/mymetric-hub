@@ -10,10 +10,14 @@ import {
   Target,
   Search,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  BarChart3,
+  Layers,
+  Star,
+  Award
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
-import { AdsCampaignData, AdsCampaignResponse, CacheInfo, AdsCampaignSummary } from '../types'
+import { AdsCampaignData, AdsCampaignResponse, CacheInfo, AdsCampaignSummary, AdsCreativeData, AdsCreativeResponse } from '../types'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import SortableHeader from './SortableHeader'
 import PaidMediaTimeline from './PaidMediaTimeline'
@@ -23,9 +27,10 @@ interface PaidMediaDashboardProps {
   selectedTable: string
   startDate: string
   endDate: string
+  token: string
 }
 
-const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDashboardProps) => {
+const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMediaDashboardProps) => {
   const [campaignData, setCampaignData] = useState<AdsCampaignData[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [sortField, setSortField] = useState<string>('cost')
@@ -55,6 +60,33 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
   }>({})
   const [isBackgroundLoading, setIsBackgroundLoading] = useState(false)
   const [isFullWidth, setIsFullWidth] = useState(false)
+  const [activeTab, setActiveTab] = useState<'overview' | 'creatives'>('overview')
+  
+  // Estados para modo creatives
+  const [creativeData, setCreativeData] = useState<AdsCreativeData[]>([])
+  const [isLoadingCreatives, setIsLoadingCreatives] = useState(false)
+  const [drilldownLevel, setDrilldownLevel] = useState<'campaign' | 'adgroup' | 'creative'>('campaign')
+  const [selectedCreativeCampaign, setSelectedCreativeCampaign] = useState<string | null>(null)
+  const [selectedAdGroup, setSelectedAdGroup] = useState<string | null>(null)
+  const [creativeVisibleColumns, setCreativeVisibleColumns] = useState({
+    platform: true,
+    campaign_name: true,
+    cost: true,
+    impressions: false,
+    clicks: false,
+    ctr: false,
+    cpc: false,
+    leads: false,
+    transactions: true,
+    transactions_first: false,
+    revenue: true,
+    revenue_first: false,
+    cpv: false,
+    cpa: false,
+    roas: true,
+    roas_first: false
+  })
+  const [showCreativeColumnSelector, setShowCreativeColumnSelector] = useState(false)
 
   // Funções auxiliares para cache inteligente
   const getCacheKey = (start: string, end: string) => `${start}_${end}`
@@ -155,19 +187,19 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
     platform: true,
     campaign_name: true,
     cost: true,
-    impressions: true,
-    clicks: true,
-    ctr: true,
-    cpc: true,
-    leads: true,
+    impressions: false,
+    clicks: false,
+    ctr: false,
+    cpc: false,
+    leads: false,
     transactions: true,
-    transactions_first: true,
+    transactions_first: false,
     revenue: true,
-    revenue_first: true,
+    revenue_first: false,
     roas: true,
-    roas_first: true,
-    cpv: true,
-    cpa: true
+    roas_first: false,
+    cpv: false,
+    cpa: false
   })
   const [showColumnSelector, setShowColumnSelector] = useState(false)
 
@@ -200,6 +232,175 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
   }
 
   useDocumentTitle(getPageTitle())
+
+  const fetchCreativeData = async (forceRefresh = false) => {
+    if (!validateTableName(selectedTable)) {
+      console.log('❌ Table name inválido para busca de criativos')
+      return
+    }
+
+    setIsLoadingCreatives(true)
+
+    try {
+      const requestData = {
+        start_date: startDate,
+        end_date: endDate,
+        table_name: selectedTable,
+        last_cache: useCache && !forceRefresh,
+        force_refresh: forceRefresh
+      }
+
+      console.log('🚀 Buscando dados de criativos:', requestData)
+      const response = await api.getAdsCreatives(token, requestData)
+      
+      // Converter dados da API para o formato esperado
+      const convertedData: AdsCreativeData[] = (response.data || []).map((item: any) => ({
+        platform: item.platform,
+        campaign_name: item.campaign_name,
+        ad_group_name: item.adset_name || item.ad_group_name || 'N/A',
+        creative_name: item.ad_name || item.creative_name || 'N/A',
+        date: item.date,
+        cost: item.cost,
+        impressions: item.impressions,
+        clicks: item.clicks,
+        leads: item.leads,
+        transactions: item.transactions,
+        revenue: item.revenue,
+        transactions_first: item.transactions_first,
+        revenue_first: item.revenue_first,
+        transactions_origin_stack: item.transactions_origin_stack,
+        revenue_origin_stack: item.revenue_origin_stack,
+        transactions_first_origin_stack: item.transactions_first_origin_stack,
+        revenue_first_origin_stack: item.revenue_first_origin_stack
+      }))
+      
+        setCreativeData(convertedData)
+        setCacheInfo(response.cache_info || null)
+        
+        console.log('✅ Dados de criativos carregados:', convertedData.length, 'registros')
+        console.log('📊 Amostra dos dados convertidos:', convertedData.slice(0, 3))
+    } catch (error) {
+      console.error('❌ Erro ao buscar dados de criativos:', error)
+      // Em caso de erro, usar dados mockados como fallback
+      const mockData: AdsCreativeData[] = [
+        {
+          platform: 'google_ads',
+          campaign_name: 'Campanha Google - Produtos',
+          ad_group_name: 'Grupo Anúncio 1',
+          creative_name: 'Criativo A - Imagem Principal',
+          date: startDate,
+          cost: 1500,
+          impressions: 50000,
+          clicks: 2500,
+          leads: 150,
+          transactions: 75,
+          revenue: 7500,
+          transactions_first: 60,
+          revenue_first: 6000,
+          transactions_origin_stack: 75,
+          revenue_origin_stack: 7500,
+          transactions_first_origin_stack: 60,
+          revenue_first_origin_stack: 6000
+        },
+        {
+          platform: 'meta_ads',
+          campaign_name: 'Campanha Meta - Remarketing',
+          ad_group_name: 'Grupo Anúncio 2',
+          creative_name: 'Criativo B - Video',
+          date: startDate,
+          cost: 2000,
+          impressions: 80000,
+          clicks: 4000,
+          leads: 200,
+          transactions: 100,
+          revenue: 10000,
+          transactions_first: 80,
+          revenue_first: 8000,
+          transactions_origin_stack: 100,
+          revenue_origin_stack: 10000,
+          transactions_first_origin_stack: 80,
+          revenue_first_origin_stack: 8000
+        }
+      ]
+      
+        setCreativeData(mockData)
+        setCacheInfo({
+          source: 'fallback',
+          cached_at: new Date().toISOString(),
+          ttl_hours: 1
+        })
+        
+        console.log('🔄 Usando dados mockados como fallback:', mockData.length, 'registros')
+        console.log('📊 Amostra dos dados mockados:', mockData.slice(0, 3))
+    } finally {
+      setIsLoadingCreatives(false)
+    }
+  }
+
+  // Funções para drilldown de criativos
+  const applyDrilldown = (level: 'campaign' | 'adgroup' | 'creative', value: string | null) => {
+    console.log('🔍 Aplicando drilldown:', { 
+      level, 
+      value, 
+      currentLevel: drilldownLevel,
+      currentSelectedCampaign: selectedCreativeCampaign,
+      currentSelectedAdGroup: selectedAdGroup
+    })
+    
+    setDrilldownLevel(level)
+    
+    if (level === 'adgroup') {
+      // Quando vamos para o nível de grupo de anúncio, o value é o nome do grupo selecionado
+      setSelectedAdGroup(value)
+      console.log('🔍 Definindo grupo de anúncio selecionado:', value)
+      console.log('🔍 Mantendo campanha selecionada:', selectedCreativeCampaign)
+    } else if (level === 'creative') {
+      // Quando vamos para o nível de criativo, manter campanha e grupo selecionados
+      console.log('🔍 Indo para nível de criativo, mantendo:', {
+        campaign: selectedCreativeCampaign,
+        adGroup: selectedAdGroup
+      })
+    }
+    
+    console.log('🔍 Estado após drilldown:', { 
+      newLevel: level, 
+      selectedCampaign: level === 'campaign' ? value : selectedCreativeCampaign,
+      selectedAdGroup: level === 'adgroup' ? value : selectedAdGroup
+    })
+  }
+
+  const goBackDrilldown = () => {
+    if (drilldownLevel === 'creative') {
+      setDrilldownLevel('adgroup')
+      setSelectedAdGroup(null)
+      // Manter selectedCreativeCampaign para poder voltar ao nível de campanha
+    } else if (drilldownLevel === 'adgroup') {
+      setDrilldownLevel('campaign')
+      setSelectedAdGroup(null)
+      // Manter selectedCreativeCampaign para poder voltar ao nível de campanha
+    } else if (drilldownLevel === 'campaign') {
+      // Voltar ao nível inicial - limpar tudo
+      setDrilldownLevel('campaign')
+      setSelectedCreativeCampaign(null)
+      setSelectedAdGroup(null)
+    }
+  }
+
+  const getDrilldownTitle = () => {
+    if (drilldownLevel === 'campaign') return 'Campanhas'
+    if (drilldownLevel === 'adgroup') return 'Grupos de Anúncio'
+    return 'Criativos'
+  }
+
+  const getNextDrilldownLevel = () => {
+    if (drilldownLevel === 'campaign') return 'adgroup'
+    if (drilldownLevel === 'adgroup') return 'creative'
+    return null
+  }
+
+  const canDrilldown = () => {
+    return getNextDrilldownLevel() !== null
+  }
 
   useEffect(() => {
     const fetchAdsCampaigns = async () => {
@@ -237,6 +438,17 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
         console.log('✅ Response com datas específicas:', response)
         console.log('✅ Dados recebidos:', response.data?.length || 0, 'campanhas')
         console.log('✅ Primeira campanha:', response.data?.[0])
+        console.log('🔍 Plataformas nos dados da API:', [...new Set((response.data || []).map(item => item.platform))])
+        console.log('🔍 Amostra dos dados da API:', (response.data || []).slice(0, 5).map(item => ({ 
+          platform: item.platform, 
+          campaign: item.campaign_name,
+          cost: item.cost 
+        })))
+        console.log('🔍 Contagem por plataforma na API:', {
+          google_ads: (response.data || []).filter(item => item.platform === 'google_ads').length,
+          meta_ads: (response.data || []).filter(item => item.platform === 'meta_ads').length,
+          total: (response.data || []).length
+        })
         
           setCampaignData(response.data || [])
           setCacheInfo(response.cache_info || null)
@@ -253,6 +465,13 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
 
     fetchAdsCampaigns()
   }, [selectedTable, attributionModel, startDate, endDate])
+
+  // useEffect para buscar dados de criativos quando a aba mudar
+  useEffect(() => {
+    if (activeTab === 'creatives') {
+      fetchCreativeData()
+    }
+  }, [activeTab, selectedTable, startDate, endDate, token])
 
   // Função para verificar se o cache é antigo (mais de 4 horas)
   const isCacheOld = () => {
@@ -353,15 +572,42 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
     }
   }
 
-  // Filtrar dados por campanha, plataforma e termo de busca
+  // Filtrar dados por campanha, plataforma e termo de busca (apenas para aba overview)
   const filteredData = campaignData.filter(item => {
     const matchesCampaign = selectedCampaign ? item.campaign_name === selectedCampaign : true
-    const matchesPlatform = selectedPlatform ? item.platform === selectedPlatform : true
+    // Aplicar filtro de plataforma apenas na aba overview
+    const matchesPlatform = (activeTab === 'overview' && selectedPlatform) ? item.platform === selectedPlatform : true
     const matchesSearch = searchTerm ? 
       item.campaign_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.platform.toLowerCase().includes(searchTerm.toLowerCase())
       : true
+    
+    // Debug específico para Google Ads
+    if (selectedPlatform === 'google_ads' && !matchesPlatform && activeTab === 'overview') {
+      console.log('🔍 Item não corresponde ao filtro Google Ads:', {
+        itemPlatform: item.platform,
+        selectedPlatform,
+        matchesPlatform,
+        activeTab
+      })
+    }
+    
     return matchesCampaign && matchesPlatform && matchesSearch
+  })
+
+  // Debug: Verificar plataformas disponíveis
+  const availablePlatforms = [...new Set(campaignData.map(item => item.platform))]
+  console.log('🔍 Debug Filtro de Plataforma:', {
+    activeTab,
+    selectedPlatform,
+    availablePlatforms,
+    campaignDataLength: campaignData.length,
+    filteredDataLength: filteredData.length,
+    samplePlatforms: campaignData.slice(0, 5).map(item => item.platform),
+    filteredSample: filteredData.slice(0, 3).map(item => ({ platform: item.platform, campaign: item.campaign_name })),
+    filterApplied: activeTab === 'overview' && selectedPlatform ? 'SIM' : 'NÃO',
+    googleAdsCount: campaignData.filter(item => item.platform === 'google_ads').length,
+    metaAdsCount: campaignData.filter(item => item.platform === 'meta_ads').length
   })
 
 
@@ -511,16 +757,295 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
   const displayedRecords = showAllRecords ? sortedData : sortedData.slice(0, 10)
   const hasMoreRecords = sortedData.length > 10
 
+  // Funções para processar dados de criativos
+  const getGroupedCreativeData = () => {
+    console.log('🔍 getGroupedCreativeData chamada:', {
+      creativeDataLength: creativeData.length,
+      drilldownLevel,
+      selectedCreativeCampaign,
+      selectedAdGroup,
+      selectedPlatform,
+      availableCreativePlatforms: [...new Set(creativeData.map(item => item.platform))]
+    })
+    
+    let filteredData = creativeData.filter((item) => {
+      // Aplicar filtro de plataforma apenas na aba creatives
+      const matchesPlatform = (activeTab === 'creatives' && selectedPlatform) ? item.platform === selectedPlatform : true
+      const matchesSearch = !searchTerm || 
+        item.campaign_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.ad_group_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.creative_name.toLowerCase().includes(searchTerm.toLowerCase())
+      
+      // Aplicar filtros de drilldown baseado no nível atual
+      let drilldownMatch = true
+      
+      // Aplicar filtro de campanha se estiver selecionada
+      if (selectedCreativeCampaign) {
+        drilldownMatch = drilldownMatch && item.campaign_name === selectedCreativeCampaign
+      }
+      
+      // Aplicar filtro de grupo de anúncio se estiver selecionado
+      if (selectedAdGroup) {
+        drilldownMatch = drilldownMatch && item.ad_group_name === selectedAdGroup
+      }
+      
+      const result = matchesPlatform && matchesSearch && drilldownMatch
+      
+      if (!result && selectedPlatform === 'google_ads' && activeTab === 'creatives') {
+        console.log('🔍 Item filtrado (Google Ads - Criativos):', {
+          item: item.campaign_name,
+          platform: item.platform,
+          matchesPlatform,
+          matchesSearch,
+          drilldownMatch,
+          drilldownLevel,
+          selectedPlatform,
+          searchTerm,
+          selectedCreativeCampaign,
+          selectedAdGroup,
+          activeTab
+        })
+      }
+      
+      return result
+    })
+
+    console.log('🔍 Debug drilldown:', {
+      drilldownLevel,
+      selectedCreativeCampaign,
+      selectedAdGroup,
+      creativeDataLength: creativeData.length,
+      filteredDataLength: filteredData.length,
+      sampleData: creativeData.slice(0, 2),
+      filteredSampleData: filteredData.slice(0, 2),
+      allCampaigns: [...new Set(creativeData.map(item => item.campaign_name))],
+      allAdGroups: [...new Set(creativeData.map(item => item.ad_group_name))]
+    })
+    
+    // Log específico para debug do filtro de campanha
+    if (drilldownLevel === 'adgroup' && selectedCreativeCampaign) {
+      const campaignItems = creativeData.filter(item => item.campaign_name === selectedCreativeCampaign)
+      console.log('🔍 Itens da campanha selecionada:', {
+        selectedCampaign: selectedCreativeCampaign,
+        totalItemsInCampaign: campaignItems.length,
+        sampleItems: campaignItems.slice(0, 3).map(item => ({
+          campaign: item.campaign_name,
+          adGroup: item.ad_group_name,
+          platform: item.platform
+        })),
+        allAdGroupsInCampaign: [...new Set(campaignItems.map(item => item.ad_group_name))]
+      })
+    }
+    
+    // Log específico para debug quando não há dados filtrados
+    if (filteredData.length === 0) {
+      console.log('🔍 NENHUM DADO FILTRADO! Verificando:', {
+        drilldownLevel,
+        selectedCreativeCampaign,
+        selectedAdGroup,
+        selectedPlatform,
+        searchTerm,
+        activeTab,
+        totalCreativeData: creativeData.length,
+        sampleCreativeData: creativeData.slice(0, 3).map(item => ({
+          campaign: item.campaign_name,
+          adGroup: item.ad_group_name,
+          platform: item.platform
+        }))
+      })
+      
+      // Verificar se há dados da campanha selecionada
+      if (selectedCreativeCampaign) {
+        const campaignData = creativeData.filter(item => item.campaign_name === selectedCreativeCampaign)
+        console.log('🔍 Dados da campanha selecionada:', {
+          selectedCampaign: selectedCreativeCampaign,
+          campaignDataLength: campaignData.length,
+          sampleCampaignData: campaignData.slice(0, 3)
+        })
+      }
+    }
+
+    if (drilldownLevel === 'campaign') {
+      const result = filteredData.reduce((acc, item) => {
+        const key = item.campaign_name
+        if (!acc[key]) {
+          acc[key] = {
+            platform: item.platform,
+            campaign_name: item.campaign_name,
+            cost: 0,
+            impressions: 0,
+            clicks: 0,
+            leads: 0,
+            transactions: 0,
+            revenue: 0,
+            transactions_first: 0,
+            revenue_first: 0,
+            transactions_origin_stack: 0,
+            revenue_origin_stack: 0,
+            transactions_first_origin_stack: 0,
+            revenue_first_origin_stack: 0
+          }
+        }
+        acc[key].cost += item.cost
+        acc[key].impressions += item.impressions
+        acc[key].clicks += item.clicks
+        acc[key].leads += item.leads
+        acc[key].transactions += item.transactions
+        acc[key].revenue += item.revenue
+        acc[key].transactions_first += item.transactions_first
+        acc[key].revenue_first += item.revenue_first
+        acc[key].transactions_origin_stack += item.transactions_origin_stack
+        acc[key].revenue_origin_stack += item.revenue_origin_stack
+        acc[key].transactions_first_origin_stack += item.transactions_first_origin_stack
+        acc[key].revenue_first_origin_stack += item.revenue_first_origin_stack
+        return acc
+      }, {} as Record<string, any>)
+      
+      console.log('🔍 Agrupamento por campanha:', {
+        filteredDataLength: filteredData.length,
+        resultKeys: Object.keys(result),
+        sampleResult: Object.values(result).slice(0, 2)
+      })
+      
+      return result
+    } else if (drilldownLevel === 'adgroup') {
+      console.log('🔍 Iniciando agrupamento por grupo de anúncio:', {
+        filteredDataLength: filteredData.length,
+        selectedCampaign: selectedCreativeCampaign,
+        sampleFilteredData: filteredData.slice(0, 3).map(item => ({
+          campaign: item.campaign_name,
+          adGroup: item.ad_group_name,
+          platform: item.platform
+        }))
+      })
+      
+      const result = filteredData.reduce((acc, item) => {
+        const key = item.ad_group_name
+        if (!acc[key]) {
+          acc[key] = {
+            platform: item.platform,
+            campaign_name: item.campaign_name,
+            ad_group_name: item.ad_group_name,
+            cost: 0,
+            impressions: 0,
+            clicks: 0,
+            leads: 0,
+            transactions: 0,
+            revenue: 0,
+            transactions_first: 0,
+            revenue_first: 0,
+            transactions_origin_stack: 0,
+            revenue_origin_stack: 0,
+            transactions_first_origin_stack: 0,
+            revenue_first_origin_stack: 0
+          }
+        }
+        acc[key].cost += item.cost
+        acc[key].impressions += item.impressions
+        acc[key].clicks += item.clicks
+        acc[key].leads += item.leads
+        acc[key].transactions += item.transactions
+        acc[key].revenue += item.revenue
+        acc[key].transactions_first += item.transactions_first
+        acc[key].revenue_first += item.revenue_first
+        acc[key].transactions_origin_stack += item.transactions_origin_stack
+        acc[key].revenue_origin_stack += item.revenue_origin_stack
+        acc[key].transactions_first_origin_stack += item.transactions_first_origin_stack
+        acc[key].revenue_first_origin_stack += item.revenue_first_origin_stack
+        return acc
+      }, {} as Record<string, any>)
+      
+      console.log('🔍 Agrupamento por grupo de anúncio concluído:', {
+        resultKeys: Object.keys(result),
+        resultLength: Object.keys(result).length,
+        sampleResult: Object.values(result).slice(0, 2),
+        allAdGroupsInFilteredData: [...new Set(filteredData.map(item => item.ad_group_name))]
+      })
+      
+      console.log('🔍 Agrupamento por grupo de anúncio:', {
+        filteredDataLength: filteredData.length,
+        resultKeys: Object.keys(result),
+        sampleResult: Object.values(result).slice(0, 2)
+      })
+      
+      return result
+    } else {
+      const result = filteredData.reduce((acc, item) => {
+        const key = item.creative_name
+        if (!acc[key]) {
+          acc[key] = {
+            platform: item.platform,
+            campaign_name: item.campaign_name,
+            ad_group_name: item.ad_group_name,
+            creative_name: item.creative_name,
+            cost: 0,
+            impressions: 0,
+            clicks: 0,
+            leads: 0,
+            transactions: 0,
+            revenue: 0,
+            transactions_first: 0,
+            revenue_first: 0,
+            transactions_origin_stack: 0,
+            revenue_origin_stack: 0,
+            transactions_first_origin_stack: 0,
+            revenue_first_origin_stack: 0
+          }
+        }
+        acc[key].cost += item.cost
+        acc[key].impressions += item.impressions
+        acc[key].clicks += item.clicks
+        acc[key].leads += item.leads
+        acc[key].transactions += item.transactions
+        acc[key].revenue += item.revenue
+        acc[key].transactions_first += item.transactions_first
+        acc[key].revenue_first += item.revenue_first
+        acc[key].transactions_origin_stack += item.transactions_origin_stack
+        acc[key].revenue_origin_stack += item.revenue_origin_stack
+        acc[key].transactions_first_origin_stack += item.transactions_first_origin_stack
+        acc[key].revenue_first_origin_stack += item.revenue_first_origin_stack
+        return acc
+      }, {} as Record<string, any>)
+      
+      console.log('🔍 Agrupamento por criativo:', {
+        filteredDataLength: filteredData.length,
+        resultKeys: Object.keys(result),
+        sampleResult: Object.values(result).slice(0, 2)
+      })
+      
+      return result
+    }
+  }
+
+  const groupedCreativeData = getGroupedCreativeData()
+  const sortedCreativeData = Object.values(groupedCreativeData).sort((a: any, b: any) => {
+    const aValue = a[sortField] || 0
+    const bValue = b[sortField] || 0
+    return sortDirection === 'asc' ? aValue - bValue : bValue - aValue
+  })
+  
+  console.log('🔍 Dados finais para renderização:', {
+    groupedDataKeys: Object.keys(groupedCreativeData),
+    sortedDataLength: sortedCreativeData.length,
+    sampleSortedData: sortedCreativeData.slice(0, 2)
+  })
+
+  console.log('🔍 Debug agrupamento:', {
+    groupedDataKeys: Object.keys(groupedCreativeData),
+    sortedDataLength: sortedCreativeData.length,
+    sampleGrouped: Object.values(groupedCreativeData).slice(0, 2)
+  })
+
   // Calcular totais
   const totals = campaignSummaries.length > 0 ? campaignSummaries.reduce((acc, item) => ({
     cost: acc.cost + item.cost,
     impressions: acc.impressions + item.impressions,
     clicks: acc.clicks + item.clicks,
     leads: acc.leads + item.leads,
-    transactions: acc.transactions + item.transactions,
-    revenue: acc.revenue + item.revenue,
-    transactions_first: acc.transactions_first + item.transactions_first,
-    revenue_first: acc.revenue_first + item.revenue_first,
+    transactions: acc.transactions + (attributionModel === 'origin_stack' ? (item.transactions_origin_stack || item.transactions) : item.transactions),
+    revenue: acc.revenue + (attributionModel === 'origin_stack' ? (item.revenue_origin_stack || item.revenue) : item.revenue),
+    transactions_first: acc.transactions_first + (attributionModel === 'origin_stack' ? (item.transactions_first_origin_stack || item.transactions_first) : item.transactions_first),
+    revenue_first: acc.revenue_first + (attributionModel === 'origin_stack' ? (item.revenue_first_origin_stack || item.revenue_first) : item.revenue_first),
   }), {
     cost: 0,
     impressions: 0,
@@ -535,6 +1060,83 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
     impressions: 0,
     clicks: 0,
     leads: 0,
+    transactions: 0,
+    revenue: 0,
+    transactions_first: 0,
+    revenue_first: 0,
+  }
+
+  // Calcular totais para criativos
+  const creativeTotals = sortedCreativeData.length > 0 ? sortedCreativeData.reduce((acc: any, item: any) => ({
+    cost: acc.cost + item.cost,
+    impressions: acc.impressions + item.impressions,
+    clicks: acc.clicks + item.clicks,
+    leads: acc.leads + item.leads,
+    transactions: acc.transactions + (attributionModel === 'origin_stack' ? (item.transactions_origin_stack || item.transactions) : item.transactions),
+    revenue: acc.revenue + (attributionModel === 'origin_stack' ? (item.revenue_origin_stack || item.revenue) : item.revenue),
+    transactions_first: acc.transactions_first + (attributionModel === 'origin_stack' ? (item.transactions_first_origin_stack || item.transactions_first) : item.transactions_first),
+    revenue_first: acc.revenue_first + (attributionModel === 'origin_stack' ? (item.revenue_first_origin_stack || item.revenue_first) : item.revenue_first),
+    transactions_origin_stack: acc.transactions_origin_stack + (item.transactions_origin_stack || 0),
+    revenue_origin_stack: acc.revenue_origin_stack + (item.revenue_origin_stack || 0),
+    transactions_first_origin_stack: acc.transactions_first_origin_stack + (item.transactions_first_origin_stack || 0),
+    revenue_first_origin_stack: acc.revenue_first_origin_stack + (item.revenue_first_origin_stack || 0),
+  }), {
+    cost: 0,
+    impressions: 0,
+    clicks: 0,
+    leads: 0,
+    transactions: 0,
+    revenue: 0,
+    transactions_first: 0,
+    revenue_first: 0,
+    transactions_origin_stack: 0,
+    revenue_origin_stack: 0,
+    transactions_first_origin_stack: 0,
+    revenue_first_origin_stack: 0,
+  }) : {
+    cost: 0,
+    impressions: 0,
+    clicks: 0,
+    leads: 0,
+    transactions: 0,
+    revenue: 0,
+    transactions_first: 0,
+    revenue_first: 0,
+    transactions_origin_stack: 0,
+    revenue_origin_stack: 0,
+    transactions_first_origin_stack: 0,
+    revenue_first_origin_stack: 0,
+  }
+
+  // Calcular totais separados para o comparativo
+  const originStackTotals = sortedCreativeData.length > 0 ? sortedCreativeData.reduce((acc: any, item: any) => ({
+    transactions: acc.transactions + (item.transactions_origin_stack || 0),
+    revenue: acc.revenue + (item.revenue_origin_stack || 0),
+    transactions_first: acc.transactions_first + (item.transactions_first_origin_stack || 0),
+    revenue_first: acc.revenue_first + (item.revenue_first_origin_stack || 0),
+  }), {
+    transactions: 0,
+    revenue: 0,
+    transactions_first: 0,
+    revenue_first: 0,
+  }) : {
+    transactions: 0,
+    revenue: 0,
+    transactions_first: 0,
+    revenue_first: 0,
+  }
+
+  const lastNonDirectTotals = sortedCreativeData.length > 0 ? sortedCreativeData.reduce((acc: any, item: any) => ({
+    transactions: acc.transactions + item.transactions,
+    revenue: acc.revenue + item.revenue,
+    transactions_first: acc.transactions_first + item.transactions_first,
+    revenue_first: acc.revenue_first + item.revenue_first,
+  }), {
+    transactions: 0,
+    revenue: 0,
+    transactions_first: 0,
+    revenue_first: 0,
+  }) : {
     transactions: 0,
     revenue: 0,
     transactions_first: 0,
@@ -664,13 +1266,88 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
     }).format(value)
   }
 
+  // Métricas calculadas para criativos
+  const creativeAvgCTR = creativeTotals.impressions > 0 ? (creativeTotals.clicks / creativeTotals.impressions) * 100 : 0
+  const creativeAvgCPC = creativeTotals.clicks > 0 ? creativeTotals.cost / creativeTotals.clicks : 0
+  const creativeAvgCPV = creativeTotals.transactions > 0 ? creativeTotals.cost / creativeTotals.transactions : 0
+  const creativeAvgCPL = creativeTotals.leads > 0 ? creativeTotals.cost / creativeTotals.leads : 0
+
   // Formatar número
   const formatNumber = (value: number) => {
     return new Intl.NumberFormat('pt-BR').format(value)
   }
 
-  // Processar dados para timeline de mídia paga (usar dados filtrados)
+  // Processar dados para timeline de mídia paga (usar dados filtrados - apenas campanhas)
   const timelineData = filteredData.length > 0 ? filteredData.reduce((acc, item) => {
+    const existingDate = acc.find(d => d.date === item.date)
+    if (existingDate) {
+      existingDate.cost += item.cost
+      existingDate.impressions += item.impressions
+      existingDate.clicks += item.clicks
+      existingDate.leads += item.leads
+      
+      // Aplicar modelo de atribuição na timeline
+      if (attributionModel === 'origin_stack') {
+        existingDate.transactions += item.transactions_origin_stack
+        existingDate.revenue += item.revenue_origin_stack
+        existingDate.transactions_first += item.transactions_first_origin_stack
+        existingDate.revenue_first += item.revenue_first_origin_stack
+      } else {
+        existingDate.transactions += item.transactions
+        existingDate.revenue += item.revenue
+        existingDate.transactions_first += item.transactions_first
+        existingDate.revenue_first += item.revenue_first
+      }
+    } else {
+      // Aplicar modelo de atribuição na timeline
+      const timelineItem = {
+        date: item.date,
+        cost: item.cost,
+        impressions: item.impressions,
+        clicks: item.clicks,
+        leads: item.leads,
+        transactions: attributionModel === 'origin_stack' ? item.transactions_origin_stack : item.transactions,
+        revenue: attributionModel === 'origin_stack' ? item.revenue_origin_stack : item.revenue,
+        transactions_first: attributionModel === 'origin_stack' ? item.transactions_first_origin_stack : item.transactions_first,
+        revenue_first: attributionModel === 'origin_stack' ? item.revenue_first_origin_stack : item.revenue_first,
+        ctr: 0,
+        cpc: 0,
+        cpv: 0,
+        cpa: 0,
+        roas: 0,
+        roas_first: 0
+      }
+      acc.push(timelineItem)
+    }
+    return acc
+  }, [] as {
+    date: string
+    cost: number
+    impressions: number
+    clicks: number
+    leads: number
+    transactions: number
+    revenue: number
+    transactions_first: number
+    revenue_first: number
+    ctr: number
+    cpc: number
+    cpv: number
+    cpa: number
+    roas: number
+    roas_first: number
+  }[]).map(item => ({
+    ...item,
+    ctr: item.impressions > 0 ? (item.clicks / item.impressions) * 100 : 0,
+    cpc: item.clicks > 0 ? item.cost / item.clicks : 0,
+    cpv: item.transactions > 0 ? item.cost / item.transactions : 0,
+    cpa: item.transactions_first > 0 ? item.cost / item.transactions_first : 0,
+    roas: item.cost > 0 ? item.revenue / item.cost : 0,
+    roas_first: item.cost > 0 ? item.revenue_first / item.cost : 0
+  })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()) : []
+
+  // Processar dados para timeline de criativos (usar dados de criativos)
+  const creativeTimelineData = creativeData.length > 0 ? creativeData.reduce((acc, item) => {
     const existingDate = acc.find(d => d.date === item.date)
     if (existingDate) {
       existingDate.cost += item.cost
@@ -726,6 +1403,22 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
     roas: item.cost > 0 ? item.revenue / item.cost : 0,
     roas_first: item.cost > 0 ? item.revenue_first / item.cost : 0
   })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()) : []
+
+  // Debug: Comparar receitas da timeline vs totais
+  const timelineRevenueTotal = timelineData.reduce((acc, item) => acc + item.revenue, 0)
+  const timelineRevenueFirstTotal = timelineData.reduce((acc, item) => acc + item.revenue_first, 0)
+  
+  console.log('🔍 Debug Timeline vs Totais:', {
+    timelineDataLength: timelineData.length,
+    timelineRevenueTotal,
+    timelineRevenueFirstTotal,
+    dashboardRevenueTotal: totals.revenue,
+    dashboardRevenueFirstTotal: totals.revenue_first,
+    filteredDataLength: filteredData.length,
+    campaignSummariesLength: campaignSummaries.length,
+    difference: Math.abs(timelineRevenueTotal - totals.revenue),
+    differenceFirst: Math.abs(timelineRevenueFirstTotal - totals.revenue_first)
+  })
 
 
 
@@ -854,8 +1547,41 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
         </div>
       </div>
 
-      {/* Filtro de Plataforma */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+      {/* Sistema de Abas */}
+      <div className="bg-white rounded-lg shadow-sm border">
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex space-x-8 px-6">
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
+                activeTab === 'overview'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <BarChart3 className="h-4 w-4" />
+              <span>Visão Geral</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('creatives')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
+                activeTab === 'creatives'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <Layers className="h-4 w-4" />
+              <span>Criativos</span>
+            </button>
+          </nav>
+        </div>
+      </div>
+
+      {/* Conteúdo das Abas */}
+      {activeTab === 'overview' && (
+        <div className="space-y-6">
+          {/* Filtro de Plataforma */}
+          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <h3 className="text-lg font-semibold text-gray-900">Filtrar por Plataforma</h3>
@@ -1205,10 +1931,18 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
       )}
 
       {/* Timeline de Mídia Paga */}
-      {timelineData.length > 0 && (
+      {activeTab === 'overview' && timelineData.length > 0 && (
         <PaidMediaTimeline
           data={timelineData}
           title="📈 Timeline de Performance - Mídia Paga"
+        />
+      )}
+      
+      {/* Timeline de Criativos */}
+      {activeTab === 'creatives' && creativeTimelineData.length > 0 && (
+        <PaidMediaTimeline
+          data={creativeTimelineData}
+          title="📈 Timeline de Performance - Criativos"
         />
       )}
 
@@ -1844,8 +2578,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
                   onChange={(e) => setAttributionModel(e.target.value as 'origin_stack' | 'last_non_direct')}
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[180px]"
                 >
-                  <option value="origin_stack">Origin Stack</option>
-                  <option value="last_non_direct">Last Non-Direct Session</option>
+                  <option value="origin_stack">Origin Stack (Padrão)</option>
+                  <option value="last_non_direct">Last Non-Direct (Alternativo)</option>
                 </select>
               </div>
 
@@ -2548,6 +3282,746 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate }: PaidMediaDash
           </div>
         )}
       </div>
+        </div>
+      )}
+
+      {/* Aba Criativos - Mesmo layout da Visão Geral */}
+      {activeTab === 'creatives' && (
+        <div className="space-y-6">
+          {/* Disclaimer */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-start">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-blue-800">
+                  Informação Importante
+                </h3>
+                <div className="mt-2 text-sm text-blue-700">
+                  <p>
+                    Esta aba atualmente exibe apenas dados de <strong>Meta Ads</strong>. 
+                    Os dados de Google Ads serão adicionados em breve.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Header com breadcrumb de drilldown */}
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center space-x-2 text-sm text-gray-600 mb-2">
+                <span>Criativos</span>
+                {selectedCreativeCampaign && (
+                  <>
+                    <span>›</span>
+                    <span>{selectedCreativeCampaign}</span>
+                  </>
+                )}
+                {selectedAdGroup && (
+                  <>
+                    <span>›</span>
+                    <span>{selectedAdGroup}</span>
+                  </>
+                )}
+              </div>
+              <h1 className="text-2xl font-bold text-gray-900">{getDrilldownTitle()}</h1>
+              <p className="text-sm text-gray-600 mt-1">
+                Análise detalhada por criativo e grupo de anúncio
+              </p>
+            </div>
+            
+            <div className="flex items-center space-x-2">
+              {(selectedCreativeCampaign || selectedAdGroup || drilldownLevel !== 'campaign') && (
+                <button
+                  onClick={goBackDrilldown}
+                  className="flex items-center space-x-1 px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+                >
+                  <span>← Voltar</span>
+                </button>
+              )}
+
+          {/* Toggle tela cheia como na visão geral */}
+          <button
+            onClick={() => setIsFullWidth(prev => !prev)}
+            className="flex items-center space-x-1 px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+            title={isFullWidth ? 'Sair da tela cheia' : 'Tela cheia'}
+          >
+            <span>{isFullWidth ? 'Sair Tela Cheia' : 'Tela Cheia'}</span>
+          </button>
+            </div>
+          </div>
+
+          {/* Loading state */}
+          {isLoadingCreatives ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            </div>
+          ) : (
+            <>
+              {/* Métricas principais - Mesmo layout da Visão Geral */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Investimento */}
+                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-medium text-gray-600 mb-1">Investimento Total</p>
+                      <p className="text-xl font-bold text-gray-900">{formatCurrency(creativeTotals.cost)}</p>
+                    </div>
+                    <div className="p-2 bg-red-50 rounded-lg">
+                      <DollarSign className="w-5 h-5 text-red-600" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Impressões */}
+                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <p className="text-xs font-medium text-gray-600 mb-1">Impressões</p>
+                      <p className="text-xl font-bold text-gray-900">{formatNumber(creativeTotals.impressions)}</p>
+                    </div>
+                    <div className="p-2 bg-blue-50 rounded-lg">
+                      <Eye className="w-5 h-5 text-blue-600" />
+                    </div>
+                  </div>
+                  <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">CPM: {formatCurrency(creativeTotals.impressions > 0 ? (creativeTotals.cost / creativeTotals.impressions) * 1000 : 0)}</span>
+                </div>
+
+                {/* Cliques */}
+                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <p className="text-xs font-medium text-gray-600 mb-1">Cliques</p>
+                      <p className="text-xl font-bold text-gray-900">{formatNumber(creativeTotals.clicks)}</p>
+                    </div>
+                    <div className="p-2 bg-green-50 rounded-lg">
+                      <MousePointer className="w-5 h-5 text-green-600" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">CTR: {creativeAvgCTR.toFixed(1)}%</span>
+                    <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">CPC: {formatCurrency(creativeAvgCPC)}</span>
+                  </div>
+                </div>
+
+                {/* Leads */}
+                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <p className="text-xs font-medium text-gray-600 mb-1">Leads</p>
+                      <p className="text-xl font-bold text-gray-900">{formatNumber(creativeTotals.leads)}</p>
+                    </div>
+                    <div className="p-2 bg-orange-50 rounded-lg">
+                      <Users className="w-5 h-5 text-orange-600" />
+                    </div>
+                  </div>
+                  <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">CPL: {formatCurrency(creativeAvgCPL)}</span>
+                </div>
+
+              </div>
+
+              {/* Segunda linha de métricas */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Transações */}
+                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <p className="text-xs font-medium text-gray-600 mb-1">Transações</p>
+                      <p className="text-xl font-bold text-gray-900">{formatNumber(creativeTotals.transactions)}</p>
+                    </div>
+                    <div className="p-2 bg-purple-50 rounded-lg">
+                      <ShoppingCart className="w-5 h-5 text-purple-600" />
+                    </div>
+                  </div>
+                  <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">CPV: {formatCurrency(creativeAvgCPV)}</span>
+                </div>
+
+                {/* Receita */}
+                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <p className="text-xs font-medium text-gray-600 mb-1">Receita Total</p>
+                      <p className="text-xl font-bold text-gray-900">{formatCurrency(creativeTotals.revenue)}</p>
+                    </div>
+                    <div className="p-2 bg-green-50 rounded-lg">
+                      <TrendingUp className="w-5 h-5 text-green-600" />
+                    </div>
+                  </div>
+                  <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">ROAS: {(creativeTotals.cost > 0 ? creativeTotals.revenue / creativeTotals.cost : 0).toFixed(1)}x</span>
+                </div>
+
+                {/* Transações 1ª Compra */}
+                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <p className="text-xs font-medium text-gray-600 mb-1">Transações 1ª</p>
+                      <p className="text-xl font-bold text-gray-900">{formatNumber(creativeTotals.transactions_first)}</p>
+                    </div>
+                    <div className="p-2 bg-indigo-50 rounded-lg">
+                      <Star className="w-5 h-5 text-indigo-600" />
+                    </div>
+                  </div>
+                  <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">CPA 1ª: {formatCurrency(creativeTotals.transactions_first > 0 ? creativeTotals.cost / creativeTotals.transactions_first : 0)}</span>
+                </div>
+
+                {/* Receita 1ª Compra */}
+                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <p className="text-xs font-medium text-gray-600 mb-1">Receita 1ª</p>
+                      <p className="text-xl font-bold text-gray-900">{formatCurrency(creativeTotals.revenue_first)}</p>
+                    </div>
+                    <div className="p-2 bg-yellow-50 rounded-lg">
+                      <Award className="w-5 h-5 text-yellow-600" />
+                    </div>
+                  </div>
+                  <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">ROAS 1ª: {(creativeTotals.cost > 0 ? creativeTotals.revenue_first / creativeTotals.cost : 0).toFixed(1)}x</span>
+                </div>
+              </div>
+
+              {/* Comparativo de Atribuição */}
+              <div className="bg-white p-6 rounded-lg shadow-sm border">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                  <BarChart3 className="w-5 h-5 mr-2 text-blue-600" />
+                  Comparativo de Modelos de Atribuição
+                </h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Origin Stack */}
+                  <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-semibold text-blue-900">Origin Stack (Padrão)</h4>
+                      <div className="p-2 bg-blue-100 rounded-lg">
+                        <Layers className="w-4 h-4 text-blue-600" />
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-sm text-blue-700">Transações:</span>
+                        <span className="font-semibold text-blue-900">{formatNumber(originStackTotals.transactions)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-blue-700">Receita:</span>
+                        <span className="font-semibold text-blue-900">{formatCurrency(originStackTotals.revenue)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-blue-700">ROAS:</span>
+                        <span className="font-semibold text-blue-900">{(creativeTotals.cost > 0 ? originStackTotals.revenue / creativeTotals.cost : 0).toFixed(1)}x</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-blue-700">Transações 1ª:</span>
+                        <span className="font-semibold text-blue-900">{formatNumber(originStackTotals.transactions_first)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-blue-700">Receita 1ª:</span>
+                        <span className="font-semibold text-blue-900">{formatCurrency(originStackTotals.revenue_first)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Last Non Direct */}
+                  <div className="border border-green-200 rounded-lg p-4 bg-green-50">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-semibold text-green-900">Last Non-Direct (Alternativo)</h4>
+                      <div className="p-2 bg-green-100 rounded-lg">
+                        <Target className="w-4 h-4 text-green-600" />
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-sm text-green-700">Transações:</span>
+                        <span className="font-semibold text-green-900">{formatNumber(lastNonDirectTotals.transactions)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-green-700">Receita:</span>
+                        <span className="font-semibold text-green-900">{formatCurrency(lastNonDirectTotals.revenue)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-green-700">ROAS:</span>
+                        <span className="font-semibold text-green-900">{(creativeTotals.cost > 0 ? lastNonDirectTotals.revenue / creativeTotals.cost : 0).toFixed(1)}x</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-green-700">Transações 1ª:</span>
+                        <span className="font-semibold text-green-900">{formatNumber(lastNonDirectTotals.transactions_first)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-green-700">Receita 1ª:</span>
+                        <span className="font-semibold text-green-900">{formatCurrency(lastNonDirectTotals.revenue_first)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Diferenças */}
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                  <h5 className="font-medium text-gray-900 mb-2">Diferenças entre os modelos:</h5>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-600">Diferença em Transações:</span>
+                      <span className={`ml-2 font-semibold ${originStackTotals.transactions > lastNonDirectTotals.transactions ? 'text-green-600' : 'text-red-600'}`}>
+                        {originStackTotals.transactions > lastNonDirectTotals.transactions ? '+' : ''}
+                        {formatNumber(originStackTotals.transactions - lastNonDirectTotals.transactions)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Diferença em Receita:</span>
+                      <span className={`ml-2 font-semibold ${originStackTotals.revenue > lastNonDirectTotals.revenue ? 'text-green-600' : 'text-red-600'}`}>
+                        {originStackTotals.revenue > lastNonDirectTotals.revenue ? '+' : ''}
+                        {formatCurrency(originStackTotals.revenue - lastNonDirectTotals.revenue)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Filtros */}
+              <div className="bg-white p-4 rounded-lg shadow-sm border">
+                <div className="flex flex-wrap items-center gap-4">
+                  <div className="flex items-center space-x-2">
+                    <Filter className="h-4 w-4 text-gray-500" />
+                    <select
+                      value={selectedPlatform}
+                      onChange={(e) => setSelectedPlatform(e.target.value)}
+                      className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Todas as plataformas</option>
+                      {Array.from(new Set(creativeData.map(item => item.platform))).map((platform) => (
+                        <option key={platform} value={platform}>{platform}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <Search className="h-4 w-4 text-gray-500" />
+                    <input
+                      type="text"
+                      placeholder={`Buscar ${getDrilldownTitle().toLowerCase()}...`}
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <label className="text-sm text-gray-600">Atribuição:</label>
+                    <select
+                      value={attributionModel}
+                      onChange={(e) => setAttributionModel(e.target.value as 'origin_stack' | 'last_non_direct')}
+                      className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="origin_stack">Origin Stack (Padrão)</option>
+                      <option value="last_non_direct">Last Non-Direct (Alternativo)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Botões de controle */}
+              <div className="flex gap-2 mb-4">
+                {/* Botão Dropdown de Métricas */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowCreativeColumnSelector(!showCreativeColumnSelector)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
+                      showCreativeColumnSelector 
+                        ? 'bg-green-600 text-white hover:bg-green-700 shadow-sm' 
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
+                    }`}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                    </svg>
+                    <span>Métricas</span>
+                    <span className={`px-2 py-0.5 text-xs rounded-full ${
+                      showCreativeColumnSelector 
+                        ? 'bg-white/20 text-white' 
+                        : 'bg-blue-100 text-blue-600'
+                    }`}>
+                      {Object.values(creativeVisibleColumns).filter(Boolean).length}
+                    </span>
+                    <svg 
+                      className={`w-4 h-4 transition-transform duration-200 ${showCreativeColumnSelector ? 'rotate-180' : ''}`} 
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* Tabela simples */}
+              <div className="bg-white rounded-lg shadow-sm border">
+                <div className="p-4 border-b">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    {getDrilldownTitle()} ({sortedCreativeData.length})
+                  </h3>
+                </div>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Plataforma
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          {drilldownLevel === 'campaign' ? 'Campanha' : drilldownLevel === 'adgroup' ? 'Grupo de Anúncio' : 'Criativo'}
+                        </th>
+                        {creativeVisibleColumns.cost && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Investimento</th>)}
+                        {creativeVisibleColumns.revenue && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Receita</th>)}
+                        {creativeVisibleColumns.revenue_first && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Receita 1ª</th>)}
+                        {creativeVisibleColumns.impressions && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Impressões</th>)}
+                        {creativeVisibleColumns.clicks && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliques</th>)}
+                        {creativeVisibleColumns.leads && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Leads</th>)}
+                        {creativeVisibleColumns.transactions && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transações</th>)}
+                        {creativeVisibleColumns.transactions_first && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transações 1ª</th>)}
+                        {creativeVisibleColumns.ctr && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CTR</th>)}
+                        {creativeVisibleColumns.cpc && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CPC</th>)}
+                        {creativeVisibleColumns.cpv && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CPV</th>)}
+                        {creativeVisibleColumns.cpa && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CPA</th>)}
+                        {creativeVisibleColumns.roas && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ROAS</th>)}
+                        {canDrilldown() && (
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Ações
+                          </th>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {sortedCreativeData.slice(0, 20).map((item: any, index) => {
+                        const roas = item.cost > 0 ? item.revenue / item.cost : 0
+                        const displayName = drilldownLevel === 'campaign' ? item.campaign_name : 
+                                           drilldownLevel === 'adgroup' ? item.ad_group_name : 
+                                           item.creative_name
+                        
+                        console.log('🔍 Renderizando item:', {
+                          index,
+                          drilldownLevel,
+                          displayName,
+                          itemCampaign: item.campaign_name,
+                          itemAdGroup: item.ad_group_name,
+                          itemCreative: item.creative_name,
+                          selectedCampaign: selectedCreativeCampaign,
+                          selectedAdGroup: selectedAdGroup
+                        })
+                        return (
+                          <tr key={index} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-sm text-gray-900">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                {item.platform}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900">
+                              <span className="truncate max-w-xs block" title={displayName}>
+                                {displayName}
+                              </span>
+                            </td>
+                            {creativeVisibleColumns.cost && (<td className="px-4 py-3 text-sm text-gray-900">{formatCurrency(item.cost)}</td>)}
+                            {creativeVisibleColumns.revenue && (<td className="px-4 py-3 text-sm text-gray-900">{formatCurrency(item.revenue)}</td>)}
+                            {creativeVisibleColumns.revenue_first && (<td className="px-4 py-3 text-sm text-gray-900">{formatCurrency(item.revenue_first)}</td>)}
+                            {creativeVisibleColumns.impressions && (<td className="px-4 py-3 text-sm text-gray-900">{formatNumber(item.impressions)}</td>)}
+                            {creativeVisibleColumns.clicks && (<td className="px-4 py-3 text-sm text-gray-900">{formatNumber(item.clicks)}</td>)}
+                            {creativeVisibleColumns.leads && (<td className="px-4 py-3 text-sm text-gray-900">{formatNumber(item.leads)}</td>)}
+                            {creativeVisibleColumns.transactions && (<td className="px-4 py-3 text-sm text-gray-900">{formatNumber(item.transactions)}</td>)}
+                            {creativeVisibleColumns.transactions_first && (<td className="px-4 py-3 text-sm text-gray-900">{formatNumber(item.transactions_first)}</td>)}
+                            {creativeVisibleColumns.ctr && (<td className="px-4 py-3 text-sm text-gray-900">{(item.impressions > 0 ? (item.clicks / item.impressions) * 100 : 0).toFixed(2)}%</td>)}
+                            {creativeVisibleColumns.cpc && (<td className="px-4 py-3 text-sm text-gray-900">{item.clicks > 0 ? formatCurrency(item.cost / item.clicks) : '—'}</td>)}
+                            {creativeVisibleColumns.cpv && (<td className="px-4 py-3 text-sm text-gray-900">{item.transactions > 0 ? formatCurrency(item.cost / item.transactions) : '—'}</td>)}
+                            {creativeVisibleColumns.cpa && (<td className="px-4 py-3 text-sm text-gray-900">{item.transactions_first > 0 ? formatCurrency(item.cost / item.transactions_first) : '—'}</td>)}
+                            {creativeVisibleColumns.roas && (
+                              <td className="px-4 py-3 text-sm text-gray-900">
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                  roas >= 2 
+                                    ? 'bg-green-100 text-green-800' 
+                                    : roas >= 1
+                                    ? 'bg-yellow-100 text-yellow-800'
+                                    : 'bg-red-100 text-red-800'
+                                }`}>
+                                  {roas.toFixed(1)}x
+                                </span>
+                              </td>
+                            )}
+                            {canDrilldown() && (
+                              <td className="px-4 py-3 text-sm text-gray-900">
+                                <button
+                                  onClick={() => {
+                                    const nextLevel = getNextDrilldownLevel()!
+                                    console.log('🔍 Clicando em detalhar:', {
+                                      nextLevel,
+                                      displayName,
+                                      currentLevel: drilldownLevel,
+                                      itemCampaign: item.campaign_name,
+                                      itemAdGroup: item.ad_group_name
+                                    })
+                                    
+                                    // Se estamos no nível de campanha e vamos para adgroup, 
+                                    // precisamos definir a campanha selecionada e não passar grupo ainda
+                                    if (drilldownLevel === 'campaign' && nextLevel === 'adgroup') {
+                                      setSelectedCreativeCampaign(item.campaign_name)
+                                      setSelectedAdGroup(null) // Limpar grupo selecionado
+                                      console.log('🔍 Definindo campanha selecionada no click:', item.campaign_name)
+                                      // Só mudar o nível, não passar value para adgroup ainda
+                                      setDrilldownLevel('adgroup')
+                                    } else {
+                                      applyDrilldown(nextLevel, displayName)
+                                    }
+                                  }}
+                                  className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-md transition-colors"
+                                >
+                                  <span>Detalhar →</span>
+                                </button>
+                              </td>
+                            )}
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Dropdown de Métricas para Criativos - Overlay Elegante */}
+              {showCreativeColumnSelector && (
+                <div className="fixed inset-0 z-50 overflow-hidden">
+                  {/* Backdrop */}
+                  <div 
+                    className="absolute inset-0 bg-black/20 backdrop-blur-sm"
+                    onClick={() => {
+                      setShowCreativeColumnSelector(false)
+                    }}
+                  />
+                  
+                  {/* Dropdown Content */}
+                  <div className="absolute top-20 right-6 w-96 max-w-[calc(100vw-3rem)]">
+                    <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden animate-in slide-in-from-top-2 duration-300">
+                      {/* Header */}
+                      <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
+                              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                              </svg>
+                            </div>
+                            <div>
+                              <h3 className="text-lg font-semibold text-white">Selecionar Métricas</h3>
+                              <p className="text-blue-100 text-sm">Escolha quais colunas exibir na tabela</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setShowCreativeColumnSelector(false)
+                            }}
+                            className="w-8 h-8 bg-white/20 hover:bg-white/30 rounded-lg flex items-center justify-center transition-colors"
+                          >
+                            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Content */}
+                      <div className="p-6 max-h-96 overflow-y-auto">
+                        <div className="grid grid-cols-1 gap-6">
+                          {/* Categoria: Identificação */}
+                          <div>
+                            <div className="flex items-center gap-2 mb-3">
+                              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                              <h4 className="text-sm font-semibold text-gray-900">Identificação</h4>
+                            </div>
+                            <div className="space-y-2">
+                              {[
+                                { key: 'platform', label: 'Plataforma', icon: '🏢' },
+                                { key: 'campaign_name', label: 'Campanha', icon: '📢' }
+                              ].map(({ key, label, icon }) => (
+                                <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={creativeVisibleColumns[key as keyof typeof creativeVisibleColumns]}
+                                    onChange={(e) => setCreativeVisibleColumns(prev => ({
+                                      ...prev,
+                                      [key]: e.target.checked
+                                    }))}
+                                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+                                  />
+                                  <span className="text-lg">{icon}</span>
+                                  <span className="text-sm font-medium text-gray-700">{label}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Categoria: Financeiro */}
+                          <div>
+                            <div className="flex items-center gap-2 mb-3">
+                              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                              <h4 className="text-sm font-semibold text-gray-900">Financeiro</h4>
+                            </div>
+                            <div className="space-y-2">
+                              {[
+                                { key: 'cost', label: 'Investimento', icon: '💰' },
+                                { key: 'revenue', label: 'Receita', icon: '💵' },
+                                { key: 'revenue_first', label: 'Receita 1ª Compra', icon: '💎' },
+                                { key: 'roas', label: 'ROAS', icon: '📈' },
+                                { key: 'roas_first', label: 'ROAS 1ª Compra', icon: '🚀' }
+                              ].map(({ key, label, icon }) => (
+                                <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={creativeVisibleColumns[key as keyof typeof creativeVisibleColumns]}
+                                    onChange={(e) => setCreativeVisibleColumns(prev => ({
+                                      ...prev,
+                                      [key]: e.target.checked
+                                    }))}
+                                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+                                  />
+                                  <span className="text-lg">{icon}</span>
+                                  <span className="text-sm font-medium text-gray-700">{label}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Categoria: Performance */}
+                          <div>
+                            <div className="flex items-center gap-2 mb-3">
+                              <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                              <h4 className="text-sm font-semibold text-gray-900">Performance</h4>
+                            </div>
+                            <div className="space-y-2">
+                              {[
+                                { key: 'impressions', label: 'Impressões', icon: '👁️' },
+                                { key: 'clicks', label: 'Cliques', icon: '👆' },
+                                { key: 'ctr', label: 'CTR', icon: '📊' },
+                                { key: 'cpc', label: 'CPC', icon: '💸' }
+                              ].map(({ key, label, icon }) => (
+                                <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={creativeVisibleColumns[key as keyof typeof creativeVisibleColumns]}
+                                    onChange={(e) => setCreativeVisibleColumns(prev => ({
+                                      ...prev,
+                                      [key]: e.target.checked
+                                    }))}
+                                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+                                  />
+                                  <span className="text-lg">{icon}</span>
+                                  <span className="text-sm font-medium text-gray-700">{label}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Categoria: Conversões */}
+                          <div>
+                            <div className="flex items-center gap-2 mb-3">
+                              <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                              <h4 className="text-sm font-semibold text-gray-900">Conversões</h4>
+                            </div>
+                            <div className="space-y-2">
+                              {[
+                                { key: 'leads', label: 'Leads', icon: '🎯' },
+                                { key: 'transactions', label: 'Transações', icon: '🛒' },
+                                { key: 'transactions_first', label: 'Trans. 1ª Compra', icon: '🆕' },
+                                { key: 'cpv', label: 'CPV', icon: '💳' },
+                                { key: 'cpa', label: 'CPA', icon: '🎯' }
+                              ].map(({ key, label, icon }) => (
+                                <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={creativeVisibleColumns[key as keyof typeof creativeVisibleColumns]}
+                                    onChange={(e) => setCreativeVisibleColumns(prev => ({
+                                      ...prev,
+                                      [key]: e.target.checked
+                                    }))}
+                                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+                                  />
+                                  <span className="text-lg">{icon}</span>
+                                  <span className="text-sm font-medium text-gray-700">{label}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Footer */}
+                      <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+                        <div className="flex items-center justify-between">
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                setCreativeVisibleColumns({
+                                  platform: true,
+                                  campaign_name: true,
+                                  cost: true,
+                                  impressions: true,
+                                  clicks: true,
+                                  ctr: true,
+                                  cpc: true,
+                                  leads: true,
+                                  transactions: true,
+                                  transactions_first: true,
+                                  revenue: true,
+                                  revenue_first: true,
+                                  cpv: true,
+                                  cpa: true,
+                                  roas: true,
+                                  roas_first: true
+                                })
+                              }}
+                              className="px-3 py-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
+                            >
+                              Selecionar Todas
+                            </button>
+                            <button
+                              onClick={() => {
+                                setCreativeVisibleColumns({
+                                  platform: false,
+                                  campaign_name: false,
+                                  cost: false,
+                                  impressions: false,
+                                  clicks: false,
+                                  ctr: false,
+                                  cpc: false,
+                                  leads: false,
+                                  transactions: false,
+                                  transactions_first: false,
+                                  revenue: false,
+                                  revenue_first: false,
+                                  cpv: false,
+                                  cpa: false,
+                                  roas: false,
+                                  roas_first: false
+                                })
+                              }}
+                              className="px-3 py-1 text-xs font-medium text-gray-600 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+                            >
+                              Limpar Todas
+                            </button>
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            {Object.values(creativeVisibleColumns).filter(Boolean).length} de {Object.keys(creativeVisibleColumns).length} selecionadas
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }

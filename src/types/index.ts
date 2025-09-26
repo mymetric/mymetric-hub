@@ -148,4 +148,57 @@ export interface FreteRequest {
 export interface FreteResponse {
   data: FreteDataItem[]
   total_rows?: number
+}
+
+// Tipos para Criativos de Mídia Paga
+export interface AdsCreativeData {
+  platform: string
+  campaign_name: string
+  ad_group_name: string
+  creative_name: string
+  date: string
+  cost: number
+  impressions: number
+  clicks: number
+  leads: number
+  transactions: number
+  revenue: number
+  transactions_first: number
+  revenue_first: number
+  transactions_origin_stack: number
+  revenue_origin_stack: number
+  transactions_first_origin_stack: number
+  revenue_first_origin_stack: number
+}
+
+export interface AdsCreativeRequest {
+  start_date?: string
+  end_date?: string
+  table_name: string
+  last_cache?: boolean
+  force_refresh?: boolean
+}
+
+export interface AdsCreativeSummary {
+  total_cost: number
+  total_revenue: number
+  total_impressions: number
+  total_clicks: number
+  total_leads: number
+  total_transactions: number
+  ctr: number
+  cpm: number
+  cpc: number
+  conversion_rate: number
+  roas: number
+  periodo: string
+  tablename: string
+  user_access: string
+}
+
+export interface AdsCreativeResponse {
+  data: AdsCreativeData[]
+  total_rows?: number
+  summary?: AdsCreativeSummary
+  cache_info?: CacheInfo
 } 
