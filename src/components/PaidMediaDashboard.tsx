@@ -3697,7 +3697,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                       {sortedCreativeData.slice(0, 20).map((item: any, index) => {
-                        const roas = item.cost > 0 ? item.revenue / item.cost : 0
+                        const currentRevenue = attributionModel === 'origin_stack' ? (item.revenue_origin_stack || item.revenue) : item.revenue
+                        const roas = item.cost > 0 ? currentRevenue / item.cost : 0
                         const displayName = drilldownLevel === 'campaign' ? item.campaign_name : 
                                            drilldownLevel === 'adgroup' ? item.ad_group_name : 
                                            item.creative_name
@@ -3725,17 +3726,17 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                               </span>
                             </td>
                             {creativeVisibleColumns.cost && (<td className="px-4 py-3 text-sm text-gray-900">{formatCurrency(item.cost)}</td>)}
-                            {creativeVisibleColumns.revenue && (<td className="px-4 py-3 text-sm text-gray-900">{formatCurrency(item.revenue)}</td>)}
-                            {creativeVisibleColumns.revenue_first && (<td className="px-4 py-3 text-sm text-gray-900">{formatCurrency(item.revenue_first)}</td>)}
+                            {creativeVisibleColumns.revenue && (<td className="px-4 py-3 text-sm text-gray-900">{formatCurrency(attributionModel === 'origin_stack' ? (item.revenue_origin_stack || item.revenue) : item.revenue)}</td>)}
+                            {creativeVisibleColumns.revenue_first && (<td className="px-4 py-3 text-sm text-gray-900">{formatCurrency(attributionModel === 'origin_stack' ? (item.revenue_first_origin_stack || item.revenue_first) : item.revenue_first)}</td>)}
                             {creativeVisibleColumns.impressions && (<td className="px-4 py-3 text-sm text-gray-900">{formatNumber(item.impressions)}</td>)}
                             {creativeVisibleColumns.clicks && (<td className="px-4 py-3 text-sm text-gray-900">{formatNumber(item.clicks)}</td>)}
                             {creativeVisibleColumns.leads && (<td className="px-4 py-3 text-sm text-gray-900">{formatNumber(item.leads)}</td>)}
-                            {creativeVisibleColumns.transactions && (<td className="px-4 py-3 text-sm text-gray-900">{formatNumber(item.transactions)}</td>)}
-                            {creativeVisibleColumns.transactions_first && (<td className="px-4 py-3 text-sm text-gray-900">{formatNumber(item.transactions_first)}</td>)}
+                            {creativeVisibleColumns.transactions && (<td className="px-4 py-3 text-sm text-gray-900">{formatNumber(attributionModel === 'origin_stack' ? (item.transactions_origin_stack || item.transactions) : item.transactions)}</td>)}
+                            {creativeVisibleColumns.transactions_first && (<td className="px-4 py-3 text-sm text-gray-900">{formatNumber(attributionModel === 'origin_stack' ? (item.transactions_first_origin_stack || item.transactions_first) : item.transactions_first)}</td>)}
                             {creativeVisibleColumns.ctr && (<td className="px-4 py-3 text-sm text-gray-900">{(item.impressions > 0 ? (item.clicks / item.impressions) * 100 : 0).toFixed(2)}%</td>)}
                             {creativeVisibleColumns.cpc && (<td className="px-4 py-3 text-sm text-gray-900">{item.clicks > 0 ? formatCurrency(item.cost / item.clicks) : '—'}</td>)}
-                            {creativeVisibleColumns.cpv && (<td className="px-4 py-3 text-sm text-gray-900">{item.transactions > 0 ? formatCurrency(item.cost / item.transactions) : '—'}</td>)}
-                            {creativeVisibleColumns.cpa && (<td className="px-4 py-3 text-sm text-gray-900">{item.transactions_first > 0 ? formatCurrency(item.cost / item.transactions_first) : '—'}</td>)}
+                            {creativeVisibleColumns.cpv && (<td className="px-4 py-3 text-sm text-gray-900">{(attributionModel === 'origin_stack' ? (item.transactions_origin_stack || item.transactions) : item.transactions) > 0 ? formatCurrency(item.cost / (attributionModel === 'origin_stack' ? (item.transactions_origin_stack || item.transactions) : item.transactions)) : '—'}</td>)}
+                            {creativeVisibleColumns.cpa && (<td className="px-4 py-3 text-sm text-gray-900">{(attributionModel === 'origin_stack' ? (item.transactions_first_origin_stack || item.transactions_first) : item.transactions_first) > 0 ? formatCurrency(item.cost / (attributionModel === 'origin_stack' ? (item.transactions_first_origin_stack || item.transactions_first) : item.transactions_first)) : '—'}</td>)}
                             {creativeVisibleColumns.roas && (
                               <td className="px-4 py-3 text-sm text-gray-900">
                                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${
