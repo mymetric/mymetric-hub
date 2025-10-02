@@ -1427,7 +1427,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       <div className="flex items-center justify-center py-12">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Carregando dados de mídia paga...</p>
+          <p className="text-gray-600">Aguarde, seus dados serão carregados</p>
         </div>
       </div>
     )
@@ -1543,6 +1543,37 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                 Atualizando em background...
               </div>
             )}
+          </div>
+        </div>
+      </div>
+
+      {/* Seletor de Modelo de Atribuição */}
+      <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <h3 className="text-lg font-semibold text-gray-900">Modelo de Atribuição</h3>
+            <div className="flex items-center gap-2">
+              <Target className="w-4 h-4 text-gray-500" />
+              <select
+                value={attributionModel}
+                onChange={(e) => setAttributionModel(e.target.value as 'origin_stack' | 'last_non_direct')}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[200px]"
+              >
+                <option value="origin_stack">Origin Stack (Padrão)</option>
+                <option value="last_non_direct">Last Non-Direct (Alternativo)</option>
+              </select>
+            </div>
+          </div>
+          <div className="text-sm text-gray-600">
+            <span className="font-medium">
+              {attributionModel === 'origin_stack' ? 'Origin Stack' : 'Last Non-Direct Session'}
+            </span>
+            <span className="ml-2 text-gray-400">
+              • {attributionModel === 'origin_stack' 
+                ? 'Atribui conversões ao primeiro toque da jornada' 
+                : 'Atribui conversões ao último toque não direto'
+              }
+            </span>
           </div>
         </div>
       </div>
@@ -2569,19 +2600,6 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                   </button>
                 </div>
               )}
-
-              {/* Modelo de atribuição */}
-              <div className="flex items-center gap-2">
-                <Target className="w-4 h-4 text-gray-500" />
-                <select
-                  value={attributionModel}
-                  onChange={(e) => setAttributionModel(e.target.value as 'origin_stack' | 'last_non_direct')}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[180px]"
-                >
-                  <option value="origin_stack">Origin Stack (Padrão)</option>
-                  <option value="last_non_direct">Last Non-Direct (Alternativo)</option>
-                </select>
-              </div>
 
               {/* Filtro por plataforma */}
               <div className="flex items-center gap-2">
