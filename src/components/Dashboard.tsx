@@ -210,6 +210,44 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     }
   }
 
+  // Salvar meta
+  const saveGoal = async () => {
+    if (!goalFormData.month || !goalFormData.goal_value) {
+      alert('Por favor, preencha todos os campos.')
+      return
+    }
+
+    try {
+      const token = localStorage.getItem('auth-token')
+      if (!token) return
+
+      await api.saveMonthlyGoal(token, {
+        table_name: selectedTable,
+        month: goalFormData.month,
+        goal_value: parseFloat(goalFormData.goal_value),
+        goal_type: 'revenue_goal'
+      })
+      
+      // Fechar modal e recarregar metas
+      setShowGoalModal(false)
+      setGoalFormData({ month: '', goal_value: '' })
+      setEditingGoal(null)
+      fetchGoals()
+      
+      alert(editingGoal ? 'Meta atualizada com sucesso!' : 'Meta cadastrada com sucesso!')
+    } catch (error) {
+      console.error('Error saving goal:', error)
+      alert('Erro ao salvar meta. Tente novamente.')
+    }
+  }
+
+  // Abrir modal de nova meta
+  const openNewGoalModal = () => {
+    setGoalFormData({ month: '', goal_value: '' })
+    setEditingGoal(null)
+    setShowGoalModal(true)
+  }
+
   
   const [metrics, setMetrics] = useState<MetricsDataItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -251,6 +289,14 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const [isLoadingGoals, setIsLoadingGoals] = useState(false)
   const [currentMonthData, setCurrentMonthData] = useState<any>(null)
   const [isLoadingCurrentMonth, setIsLoadingCurrentMonth] = useState(false)
+  
+  // Estados para modal de meta
+  const [showGoalModal, setShowGoalModal] = useState(false)
+  const [editingGoal, setEditingGoal] = useState<string | null>(null)
+  const [goalFormData, setGoalFormData] = useState({
+    month: '',
+    goal_value: ''
+  })
   const [expandedOrders, setExpandedOrders] = useState<{
     isOpen: boolean
     trafficCategory: string
@@ -1107,9 +1153,16 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       return (
         <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4 shadow-sm">
           <div className="text-center">
-            <Target className="w-5 h-5 text-gray-400 mx-auto mb-1" />
-            <h3 className="text-base font-semibold text-gray-700">Run Rate da Meta</h3>
-            <p className="text-xs text-gray-500">Meta não disponível</p>
+            <Target className="w-5 h-5 text-gray-400 mx-auto mb-3" />
+            <h3 className="text-base font-semibold text-gray-700 mb-2">Run Rate da Meta</h3>
+            <p className="text-xs text-gray-500 mb-4">Meta não disponível</p>
+            <button
+              onClick={openNewGoalModal}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 flex items-center gap-2 mx-auto"
+            >
+              <Target className="w-4 h-4" />
+              Cadastrar Meta
+            </button>
           </div>
         </div>
       )
@@ -2802,6 +2855,58 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         tableName={selectedTable}
         attributionModel={attributionModel}
       />
+
+      {/* Modal de Nova Meta */}
+      {showGoalModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md animate-fadeIn">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">{editingGoal ? 'Editar Meta' : 'Nova Meta'}</h3>
+              <p className="text-sm text-gray-600 mt-1">{editingGoal ? 'Edite a meta de receita' : 'Cadastre uma nova meta de receita'}</p>
+            </div>
+            
+            <div className="px-6 py-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Mês</label>
+                <input
+                  type="month"
+                  value={goalFormData.month}
+                  onChange={(e) => setGoalFormData({ ...goalFormData, month: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                  placeholder="2025-10"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Valor da Meta (R$)</label>
+                <input
+                  type="number"
+                  value={goalFormData.goal_value}
+                  onChange={(e) => setGoalFormData({ ...goalFormData, goal_value: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                  placeholder="10000000"
+                />
+              </div>
+            </div>
+            
+            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setShowGoalModal(false)}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors duration-200 font-medium"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={saveGoal}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center gap-2"
+              >
+                <Target className="w-4 h-4" />
+                {editingGoal ? 'Atualizar Meta' : 'Salvar Meta'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

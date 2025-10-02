@@ -300,7 +300,19 @@ export const api = {
       if (!response.ok) {
         const errorText = await response.text()
         console.error('❌ Login API Error:', errorText)
-        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+        
+        // Tratar diferentes tipos de erro baseado no status HTTP
+        if (response.status === 401) {
+          throw new Error('Credenciais inválidas. Verifique seu usuário e senha.')
+        } else if (response.status === 403) {
+          throw new Error('Acesso negado. Verifique suas permissões.')
+        } else if (response.status >= 500) {
+          throw new Error('Erro interno do servidor. Tente novamente mais tarde.')
+        } else if (response.status === 0 || !navigator.onLine) {
+          throw new Error('Erro de conexão. Verifique sua internet e se a API está rodando.')
+        } else {
+          throw new Error(`Erro na requisição: ${response.status} - ${errorText}`)
+        }
       }
 
       const data = await response.json()
@@ -308,7 +320,18 @@ export const api = {
       return data
     } catch (error) {
       console.error('Login error:', error)
-      throw new Error('Erro ao conectar com o servidor. Verifique se a API está rodando.')
+      
+      // Se já é um erro tratado (tem mensagem específica), apenas relança
+      if (error instanceof Error && error.message !== 'Erro ao conectar com o servidor. Verifique se a API está rodando.') {
+        throw error
+      }
+      
+      // Para outros erros (rede, timeout, etc.)
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        throw new Error('Erro ao conectar com o servidor. Verifique se a API está rodando.')
+      }
+      
+      throw new Error('Erro inesperado ao fazer login. Tente novamente.')
     }
   },
 
