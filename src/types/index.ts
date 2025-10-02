@@ -135,6 +135,7 @@ export interface FreteDataItem {
   zipcode: string
   zipcode_region: string
   calculations: number
+  calculations_freight_unavailable: number
   transactions: number
   revenue: number | null
 }

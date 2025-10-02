@@ -13,7 +13,9 @@ import {
   Activity,
   Download,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  AlertTriangle,
+  CheckCircle
 } from 'lucide-react'
 
 interface FreteDashboardProps {
@@ -74,19 +76,27 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
     if (!freteData.length) return null
 
     const totalCalculations = freteData.reduce((sum, item) => sum + item.calculations, 0)
+    const totalCalculationsFreightUnavailable = freteData.reduce((sum, item) => sum + item.calculations_freight_unavailable, 0)
     const totalTransactions = freteData.reduce((sum, item) => sum + item.transactions, 0)
     const totalRevenue = freteData.reduce((sum, item) => sum + (item.revenue || 0), 0)
     const uniqueZipcodes = new Set(freteData.map(item => item.zipcode)).size
     const uniqueRegions = new Set(freteData.map(item => item.zipcode_region)).size
     const conversionRate = totalCalculations > 0 ? (totalTransactions / totalCalculations) * 100 : 0
+    
+    // Taxa de sucesso do frete = (cálculos totais - cálculos indisponíveis) / cálculos totais * 100
+    const freightSuccessRate = totalCalculations > 0 
+      ? ((totalCalculations - totalCalculationsFreightUnavailable) / totalCalculations) * 100 
+      : 0
 
     return {
       totalCalculations,
+      totalCalculationsFreightUnavailable,
       totalTransactions,
       totalRevenue,
       uniqueZipcodes,
       uniqueRegions,
-      conversionRate
+      conversionRate,
+      freightSuccessRate
     }
   }
 
@@ -99,12 +109,14 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
         acc[item.zipcode_region] = {
           region: item.zipcode_region,
           calculations: 0,
+          calculations_freight_unavailable: 0,
           transactions: 0,
           revenue: 0,
           zipcodes: new Set()
         }
       }
       acc[item.zipcode_region].calculations += item.calculations
+      acc[item.zipcode_region].calculations_freight_unavailable += item.calculations_freight_unavailable
       acc[item.zipcode_region].transactions += item.transactions
       acc[item.zipcode_region].revenue += item.revenue || 0
       acc[item.zipcode_region].zipcodes.add(item.zipcode)
@@ -114,8 +126,20 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
     const regionData = Object.values(result).map((region: any) => ({
       ...region,
       zipcodeCount: region.zipcodes.size,
-      conversionRate: region.calculations > 0 ? (region.transactions / region.calculations) * 100 : 0
+      conversionRate: region.calculations > 0 ? (region.transactions / region.calculations) * 100 : 0,
+      freightSuccessRate: region.calculations > 0 
+        ? ((region.calculations - region.calculations_freight_unavailable) / region.calculations) * 100 
+        : 0
     }))
+
+    // Calcular médias das taxas
+    const avgConversionRate = regionData.length > 0 
+      ? regionData.reduce((sum, region) => sum + region.conversionRate, 0) / regionData.length 
+      : 0
+    
+    const avgFreightSuccessRate = regionData.length > 0 
+      ? regionData.reduce((sum, region) => sum + region.freightSuccessRate, 0) / regionData.length 
+      : 0
 
     // Ordenar por campo selecionado
     regionData.sort((a, b) => {
@@ -134,10 +158,10 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
       }
     })
     
-    return regionData
+    return { regionData, avgConversionRate, avgFreightSuccessRate }
   }, [freteData, sortField, sortDirection])
 
-  const regionData = dataByRegion
+  const { regionData, avgConversionRate, avgFreightSuccessRate } = dataByRegion
 
   // Ordenar dados detalhados
   const sortedDetailData = React.useMemo(() => {
@@ -338,7 +362,33 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
             </div>
 
             {/* Segunda Linha */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="bg-gradient-to-br from-green-50 to-green-100 p-6 rounded-xl">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="p-2 bg-green-200 rounded-lg">
+                    <CheckCircle className="w-6 h-6 text-green-700" />
+                  </div>
+                  <span className="text-sm font-medium text-green-700">Taxa de Sucesso</span>
+                </div>
+                <p className="text-3xl font-bold text-green-900">
+                  {formatPercentage(metrics.freightSuccessRate)}
+                </p>
+                <p className="text-xs text-green-600 mt-1">Frete disponível</p>
+              </div>
+
+              <div className="bg-gradient-to-br from-red-50 to-red-100 p-6 rounded-xl">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="p-2 bg-red-200 rounded-lg">
+                    <AlertTriangle className="w-6 h-6 text-red-700" />
+                  </div>
+                  <span className="text-sm font-medium text-red-700">Frete Indisponível</span>
+                </div>
+                <p className="text-3xl font-bold text-red-900">
+                  {formatNumber(metrics.totalCalculationsFreightUnavailable)}
+                </p>
+                <p className="text-xs text-red-600 mt-1">Cálculos sem opção de frete</p>
+              </div>
+
               <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 p-6 rounded-xl">
                 <div className="flex items-center gap-3 mb-3">
                   <div className="p-2 bg-indigo-200 rounded-lg">
@@ -414,6 +464,24 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
                 </th>
                 <th 
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('calculations_freight_unavailable')}
+                >
+                  <div className="flex items-center gap-1">
+                    Frete Indisponível
+                    {getSortIcon('calculations_freight_unavailable', sortField, sortDirection)}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('freightSuccessRate')}
+                >
+                  <div className="flex items-center gap-1">
+                    Taxa de Sucesso
+                    {getSortIcon('freightSuccessRate', sortField, sortDirection)}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleSort('transactions')}
                 >
                   <div className="flex items-center gap-1">
@@ -459,17 +527,42 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
                     {formatNumber(region.calculations)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <div className="flex items-center">
+                      <span className={`text-sm font-medium ${
+                        region.calculations_freight_unavailable > 0 ? 'text-red-600' : 'text-gray-600'
+                      }`}>
+                        {formatNumber(region.calculations_freight_unavailable)}
+                      </span>
+                      {region.calculations_freight_unavailable > 0 && (
+                        <AlertTriangle className="w-4 h-4 text-red-600 ml-1" />
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <span className={`text-sm font-medium ${
+                        region.freightSuccessRate >= avgFreightSuccessRate * 1.1 ? 'text-green-600' : 
+                        region.freightSuccessRate >= avgFreightSuccessRate * 0.9 ? 'text-yellow-600' : 'text-red-600'
+                      }`}>
+                        {formatPercentage(region.freightSuccessRate)}
+                      </span>
+                      {region.freightSuccessRate >= avgFreightSuccessRate * 1.1 && (
+                        <CheckCircle className="w-4 h-4 text-green-600 ml-1" />
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {formatNumber(region.transactions)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       <span className={`text-sm font-medium ${
-                        region.conversionRate >= 5 ? 'text-green-600' : 
-                        region.conversionRate >= 2 ? 'text-yellow-600' : 'text-red-600'
+                        region.conversionRate >= avgConversionRate * 1.2 ? 'text-green-600' : 
+                        region.conversionRate >= avgConversionRate * 0.8 ? 'text-yellow-600' : 'text-red-600'
                       }`}>
                         {formatPercentage(region.conversionRate)}
                       </span>
-                      {region.conversionRate >= 5 && (
+                      {region.conversionRate >= avgConversionRate * 1.2 && (
                         <TrendingUp className="w-4 h-4 text-green-600 ml-1" />
                       )}
                     </div>
@@ -544,6 +637,15 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
                 </th>
                 <th 
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleDetailSort('calculations_freight_unavailable')}
+                >
+                  <div className="flex items-center gap-1">
+                    Frete Indisponível
+                    {getSortIcon('calculations_freight_unavailable', detailSortField, detailSortDirection)}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                   onClick={() => handleDetailSort('transactions')}
                 >
                   <div className="flex items-center gap-1">
@@ -584,6 +686,18 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {formatNumber(item.calculations)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <div className="flex items-center">
+                      <span className={`text-sm font-medium ${
+                        item.calculations_freight_unavailable > 0 ? 'text-red-600' : 'text-gray-600'
+                      }`}>
+                        {formatNumber(item.calculations_freight_unavailable)}
+                      </span>
+                      {item.calculations_freight_unavailable > 0 && (
+                        <AlertTriangle className="w-4 h-4 text-red-600 ml-1" />
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {formatNumber(item.transactions)}
