@@ -209,6 +209,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       currentMonthReceitaPaga
     }
   }
+
   
   const [metrics, setMetrics] = useState<MetricsDataItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -228,6 +229,9 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const [showSubmenu, setShowSubmenu] = useState(false)
 
   const [attributionModel, setAttributionModel] = useState<string>('Último Clique Não Direto')
+  
+  // Estado para alternar entre TACoS e ROAS
+  const [showROAS, setShowROAS] = useState(false)
   
   // Estado para filtro de cluster
   const [selectedCluster, setSelectedCluster] = useState<string>('')
@@ -517,7 +521,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     // Limpar cache de pedidos quando mudar tabela, datas ou modelo de atribuição
     setDownloadedOrders(new Set())
     setDownloadingOrders(new Set())
-  }, [user, selectedTable, startDate, endDate, attributionModel])
+  }, [user, selectedTable, startDate, endDate, attributionModel, activeTab])
 
   // Verificação periódica do token removida - não é mais necessária
   // useEffect(() => {
@@ -639,6 +643,16 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const newCustomerRate = totals.pedidos > 0 ? (totals.novosClientes / totals.pedidos) * 100 : 0
   // Taxa de adição ao carrinho - limitando a um máximo de 100% por sessão
   const addToCartRate = totals.sessoes > 0 ? Math.min((totals.adicoesCarrinho / totals.sessoes) * 100, 100) : 0
+
+  // Calcular ROAS usando receita paga geral e investimento total
+  const roas = totals.investimento > 0 ? totals.receitaPaga / totals.investimento : 0
+  
+  // Debug logs
+  console.log('🔍 ROAS calculation:', {
+    receitaPaga: totals.receitaPaga,
+    investimento: totals.investimento,
+    roas: roas
+  })
 
   // Métricas do período anterior
   const previousAvgOrderValue = previousTotals.pedidos > 0 ? previousTotals.receita / previousTotals.pedidos : 0
@@ -2068,14 +2082,14 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       color: "red"
                     },
                     {
-                      title: "TACoS (Invest/Receita)",
-                      value: totals.receitaPaga > 0 ? (totals.investimento / totals.receitaPaga) * 100 : 0,
+                      title: showROAS ? "ROAS (Receita/Invest)" : "TACoS (Invest/Receita)",
+                      value: showROAS ? roas : (totals.receitaPaga > 0 ? (totals.investimento / totals.receitaPaga) * 100 : 0),
                       icon: TrendingUp,
-                      growth: calculateGrowth(
+                      growth: showROAS ? 0 : calculateGrowth(
                         totals.receitaPaga > 0 ? (totals.investimento / totals.receitaPaga) * 100 : 0,
                         previousTotals.receitaPaga > 0 ? (previousTotals.investimento / previousTotals.receitaPaga) * 100 : 0
                       ),
-                      format: "percentage",
+                      format: showROAS ? "number" : "percentage",
                       color: "green"
                     },
                     {
@@ -2241,17 +2255,37 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       format="currency"
                       color="red"
                     />
-                    <MetricCard
-                      title="TACoS (Invest/Receita)"
-                      value={totals.receitaPaga > 0 ? (totals.investimento / totals.receitaPaga) * 100 : 0}
-                      icon={TrendingUp}
-                      growth={calculateGrowth(
-                        totals.receitaPaga > 0 ? (totals.investimento / totals.receitaPaga) * 100 : 0,
-                        previousTotals.receitaPaga > 0 ? (previousTotals.investimento / previousTotals.receitaPaga) * 100 : 0
-                      )}
-                      format="percentage"
-                      color="green"
-                    />
+                    <div 
+                      className="bg-white rounded-xl shadow-lg p-4 border border-gray-100 hover:shadow-xl transition-all duration-200 cursor-pointer"
+                      onClick={() => setShowROAS(!showROAS)}
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="p-2.5 rounded-lg bg-gray-300 text-gray-700">
+                          <TrendingUp className="w-5 h-5" />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                          <span className="text-xs text-gray-500">Clique para alternar</span>
+                        </div>
+                      </div>
+                      <div className="mb-2">
+                        <h3 className="text-sm font-medium text-gray-600">
+                          {showROAS ? 'ROAS (Receita/Invest)' : 'TACoS (Invest/Receita)'}
+                        </h3>
+                      </div>
+                      <div className="text-2xl font-bold text-green-600">
+                        {showROAS 
+                          ? `${roas.toFixed(2)}x`
+                          : `${(totals.receitaPaga > 0 ? (totals.investimento / totals.receitaPaga) * 100 : 0).toFixed(1)}%`
+                        }
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {showROAS 
+                          ? `R$ ${formatNumber(totals.receitaPaga)} / R$ ${formatNumber(totals.investimento)}`
+                          : `R$ ${formatNumber(totals.investimento)} / R$ ${formatNumber(totals.receitaPaga)}`
+                        }
+                      </div>
+                    </div>
                     <MetricCard
                       title="Ticket Médio"
                       value={avgOrderValue}
@@ -2297,6 +2331,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       growth={calculateGrowth(newCustomerRate, previousNewCustomerRate)}
                     />
                   </div>
+
                 </div>
 
 

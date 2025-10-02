@@ -41,6 +41,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
   const [attributionModel, setAttributionModel] = useState<'origin_stack' | 'last_non_direct'>('origin_stack')
   const [isComparisonExpanded, setIsComparisonExpanded] = useState(false)
   const [isExplanationExpanded, setIsExplanationExpanded] = useState(false)
+  const [showPlatformComparison, setShowPlatformComparison] = useState(false)
   const [selectedCampaign, setSelectedCampaign] = useState<string | null>(null)
   const [cacheInfo, setCacheInfo] = useState<CacheInfo | null>(null)
   const [summary, setSummary] = useState<AdsCampaignSummary | null>(null)
@@ -281,57 +282,9 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         console.log('📊 Amostra dos dados convertidos:', convertedData.slice(0, 3))
     } catch (error) {
       console.error('❌ Erro ao buscar dados de criativos:', error)
-      // Em caso de erro, usar dados mockados como fallback
-      const mockData: AdsCreativeData[] = [
-        {
-          platform: 'google_ads',
-          campaign_name: 'Campanha Google - Produtos',
-          ad_group_name: 'Grupo Anúncio 1',
-          creative_name: 'Criativo A - Imagem Principal',
-          date: startDate,
-          cost: 1500,
-          impressions: 50000,
-          clicks: 2500,
-          leads: 150,
-          transactions: 75,
-          revenue: 7500,
-          transactions_first: 60,
-          revenue_first: 6000,
-          transactions_origin_stack: 75,
-          revenue_origin_stack: 7500,
-          transactions_first_origin_stack: 60,
-          revenue_first_origin_stack: 6000
-        },
-        {
-          platform: 'meta_ads',
-          campaign_name: 'Campanha Meta - Remarketing',
-          ad_group_name: 'Grupo Anúncio 2',
-          creative_name: 'Criativo B - Video',
-          date: startDate,
-          cost: 2000,
-          impressions: 80000,
-          clicks: 4000,
-          leads: 200,
-          transactions: 100,
-          revenue: 10000,
-          transactions_first: 80,
-          revenue_first: 8000,
-          transactions_origin_stack: 100,
-          revenue_origin_stack: 10000,
-          transactions_first_origin_stack: 80,
-          revenue_first_origin_stack: 8000
-        }
-      ]
-      
-        setCreativeData(mockData)
-        setCacheInfo({
-          source: 'fallback',
-          cached_at: new Date().toISOString(),
-          ttl_hours: 1
-        })
-        
-        console.log('🔄 Usando dados mockados como fallback:', mockData.length, 'registros')
-        console.log('📊 Amostra dos dados mockados:', mockData.slice(0, 3))
+      // Em caso de erro, limpar dados e manter loading state
+      setCreativeData([])
+      setCacheInfo(null)
     } finally {
       setIsLoadingCreatives(false)
     }
@@ -1225,6 +1178,89 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     }
   }
 
+  // Comparativo por plataforma (Google vs Meta)
+  const platformAttributionComparison = campaignData.length > 0 ? {
+    google: {
+      last_non_direct: campaignData
+        .filter((item: any) => item.platform?.toLowerCase().includes('google') || 
+                               (item.platform?.toLowerCase().includes('ads') && !item.platform?.toLowerCase().includes('meta')))
+        .reduce((acc: any, item: any) => ({
+          transactions: acc.transactions + item.transactions,
+          revenue: acc.revenue + item.revenue,
+          transactions_first: acc.transactions_first + item.transactions_first,
+          revenue_first: acc.revenue_first + item.revenue_first,
+          cost: acc.cost + item.cost,
+        }), {
+          transactions: 0,
+          revenue: 0,
+          transactions_first: 0,
+          revenue_first: 0,
+          cost: 0,
+        }),
+      origin_stack: campaignData
+        .filter((item: any) => item.platform?.toLowerCase().includes('google') || 
+                               (item.platform?.toLowerCase().includes('ads') && !item.platform?.toLowerCase().includes('meta')))
+        .reduce((acc: any, item: any) => ({
+          transactions: acc.transactions + item.transactions_origin_stack,
+          revenue: acc.revenue + item.revenue_origin_stack,
+          transactions_first: acc.transactions_first + item.transactions_first_origin_stack,
+          revenue_first: acc.revenue_first + item.revenue_first_origin_stack,
+          cost: acc.cost + item.cost,
+        }), {
+          transactions: 0,
+          revenue: 0,
+          transactions_first: 0,
+          revenue_first: 0,
+          cost: 0,
+        })
+    },
+    meta: {
+      last_non_direct: campaignData
+        .filter((item: any) => item.platform?.toLowerCase().includes('meta') || 
+                               item.platform?.toLowerCase().includes('facebook') || 
+                               item.platform?.toLowerCase().includes('instagram'))
+        .reduce((acc: any, item: any) => ({
+          transactions: acc.transactions + item.transactions,
+          revenue: acc.revenue + item.revenue,
+          transactions_first: acc.transactions_first + item.transactions_first,
+          revenue_first: acc.revenue_first + item.revenue_first,
+          cost: acc.cost + item.cost,
+        }), {
+          transactions: 0,
+          revenue: 0,
+          transactions_first: 0,
+          revenue_first: 0,
+          cost: 0,
+        }),
+      origin_stack: campaignData
+        .filter((item: any) => item.platform?.toLowerCase().includes('meta') || 
+                               item.platform?.toLowerCase().includes('facebook') || 
+                               item.platform?.toLowerCase().includes('instagram'))
+        .reduce((acc: any, item: any) => ({
+          transactions: acc.transactions + item.transactions_origin_stack,
+          revenue: acc.revenue + item.revenue_origin_stack,
+          transactions_first: acc.transactions_first + item.transactions_first_origin_stack,
+          revenue_first: acc.revenue_first + item.revenue_first_origin_stack,
+          cost: acc.cost + item.cost,
+        }), {
+          transactions: 0,
+          revenue: 0,
+          transactions_first: 0,
+          revenue_first: 0,
+          cost: 0,
+        })
+    }
+  } : {
+    google: {
+      last_non_direct: { transactions: 0, revenue: 0, transactions_first: 0, revenue_first: 0, cost: 0 },
+      origin_stack: { transactions: 0, revenue: 0, transactions_first: 0, revenue_first: 0, cost: 0 }
+    },
+    meta: {
+      last_non_direct: { transactions: 0, revenue: 0, transactions_first: 0, revenue_first: 0, cost: 0 },
+      origin_stack: { transactions: 0, revenue: 0, transactions_first: 0, revenue_first: 0, cost: 0 }
+    }
+  }
+
   // Calcular métricas para cada modelo
   const lastNonDirectMetrics = {
     cpv: attributionComparison.last_non_direct.transactions > 0 
@@ -1246,6 +1282,53 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       ? totals.cost / attributionComparison.origin_stack.transactions_first : 0,
     roasFirst: totals.cost > 0 
       ? attributionComparison.origin_stack.revenue_first / totals.cost : 0,
+  }
+
+  // Métricas por plataforma
+  const googleMetrics = {
+    lastNonDirect: {
+      cpv: platformAttributionComparison.google.last_non_direct.transactions > 0 
+        ? platformAttributionComparison.google.last_non_direct.cost / platformAttributionComparison.google.last_non_direct.transactions : 0,
+      roas: platformAttributionComparison.google.last_non_direct.cost > 0 
+        ? platformAttributionComparison.google.last_non_direct.revenue / platformAttributionComparison.google.last_non_direct.cost : 0,
+      cpa: platformAttributionComparison.google.last_non_direct.transactions_first > 0 
+        ? platformAttributionComparison.google.last_non_direct.cost / platformAttributionComparison.google.last_non_direct.transactions_first : 0,
+      roasFirst: platformAttributionComparison.google.last_non_direct.cost > 0 
+        ? platformAttributionComparison.google.last_non_direct.revenue_first / platformAttributionComparison.google.last_non_direct.cost : 0,
+    },
+    originStack: {
+      cpv: platformAttributionComparison.google.origin_stack.transactions > 0 
+        ? platformAttributionComparison.google.origin_stack.cost / platformAttributionComparison.google.origin_stack.transactions : 0,
+      roas: platformAttributionComparison.google.origin_stack.cost > 0 
+        ? platformAttributionComparison.google.origin_stack.revenue / platformAttributionComparison.google.origin_stack.cost : 0,
+      cpa: platformAttributionComparison.google.origin_stack.transactions_first > 0 
+        ? platformAttributionComparison.google.origin_stack.cost / platformAttributionComparison.google.origin_stack.transactions_first : 0,
+      roasFirst: platformAttributionComparison.google.origin_stack.cost > 0 
+        ? platformAttributionComparison.google.origin_stack.revenue_first / platformAttributionComparison.google.origin_stack.cost : 0,
+    }
+  }
+
+  const metaMetrics = {
+    lastNonDirect: {
+      cpv: platformAttributionComparison.meta.last_non_direct.transactions > 0 
+        ? platformAttributionComparison.meta.last_non_direct.cost / platformAttributionComparison.meta.last_non_direct.transactions : 0,
+      roas: platformAttributionComparison.meta.last_non_direct.cost > 0 
+        ? platformAttributionComparison.meta.last_non_direct.revenue / platformAttributionComparison.meta.last_non_direct.cost : 0,
+      cpa: platformAttributionComparison.meta.last_non_direct.transactions_first > 0 
+        ? platformAttributionComparison.meta.last_non_direct.cost / platformAttributionComparison.meta.last_non_direct.transactions_first : 0,
+      roasFirst: platformAttributionComparison.meta.last_non_direct.cost > 0 
+        ? platformAttributionComparison.meta.last_non_direct.revenue_first / platformAttributionComparison.meta.last_non_direct.cost : 0,
+    },
+    originStack: {
+      cpv: platformAttributionComparison.meta.origin_stack.transactions > 0 
+        ? platformAttributionComparison.meta.origin_stack.cost / platformAttributionComparison.meta.origin_stack.transactions : 0,
+      roas: platformAttributionComparison.meta.origin_stack.cost > 0 
+        ? platformAttributionComparison.meta.origin_stack.revenue / platformAttributionComparison.meta.origin_stack.cost : 0,
+      cpa: platformAttributionComparison.meta.origin_stack.transactions_first > 0 
+        ? platformAttributionComparison.meta.origin_stack.cost / platformAttributionComparison.meta.origin_stack.transactions_first : 0,
+      roasFirst: platformAttributionComparison.meta.origin_stack.cost > 0 
+        ? platformAttributionComparison.meta.origin_stack.revenue_first / platformAttributionComparison.meta.origin_stack.cost : 0,
+    }
   }
 
   // Função para lidar com ordenação
@@ -1970,7 +2053,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       )}
       
       {/* Timeline de Criativos */}
-      {activeTab === 'creatives' && creativeTimelineData.length > 0 && (
+      {(activeTab as string) === 'creatives' && creativeTimelineData && creativeTimelineData.length > 0 && (
         <PaidMediaTimeline
           data={creativeTimelineData}
           title="📈 Timeline de Performance - Criativos"
@@ -1984,15 +2067,33 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
           onClick={() => setIsComparisonExpanded(!isComparisonExpanded)}
         >
           <h3 className="text-lg font-semibold text-gray-900">⚖️ Comparativo: Modelos de Atribuição</h3>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">
-              {isComparisonExpanded ? 'Minimizar' : 'Expandir'}
-            </span>
-            {isComparisonExpanded ? (
-              <ChevronUp className="w-5 h-5 text-gray-500" />
-            ) : (
-              <ChevronDown className="w-5 h-5 text-gray-500" />
-            )}
+          <div className="flex items-center gap-4">
+            {/* Toggle para comparativo por plataforma */}
+            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+              <label className="text-sm text-gray-600">Por plataforma:</label>
+              <button
+                onClick={() => setShowPlatformComparison(!showPlatformComparison)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  showPlatformComparison ? 'bg-blue-600' : 'bg-gray-200'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    showPlatformComparison ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">
+                {isComparisonExpanded ? 'Minimizar' : 'Expandir'}
+              </span>
+              {isComparisonExpanded ? (
+                <ChevronUp className="w-5 h-5 text-gray-500" />
+              ) : (
+                <ChevronDown className="w-5 h-5 text-gray-500" />
+              )}
+            </div>
           </div>
         </div>
         
@@ -2494,6 +2595,351 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         </div>
           </div>
         )}
+
+        {/* Comparativo por Plataforma */}
+        {isComparisonExpanded && showPlatformComparison && (
+          <div className="mt-8">
+            <div className="mb-6">
+              <h4 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                <span className="text-xl">🏢</span>
+                Comparativo por Plataforma: Google vs Meta
+              </h4>
+              <p className="text-sm text-gray-600">
+                Análise detalhada dos modelos de atribuição separados por plataforma
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Google Ads */}
+              <div className="border border-green-200 rounded-lg p-6 bg-gradient-to-br from-green-50 to-emerald-50">
+                <div className="flex items-center justify-between mb-6">
+                  <h5 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                    Google Ads
+                  </h5>
+                  <div className="text-sm text-gray-600">
+                    Investimento: {formatCurrency(platformAttributionComparison.google.last_non_direct.cost)}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  {/* Last Non-Direct para Google */}
+                  <div className="bg-white/80 rounded-lg p-4 border border-green-200">
+                    <h6 className="text-sm font-semibold text-gray-700 mb-3">Last Non-Direct</h6>
+                    <div className="space-y-3">
+                      <div className="text-center">
+                        <p className="text-xs text-gray-600">Transações</p>
+                        <p className="text-lg font-bold text-gray-900">
+                          {formatNumber(platformAttributionComparison.google.last_non_direct.transactions)}
+                        </p>
+                        <p className="text-xs text-green-600">
+                          CPV: {formatCurrency(googleMetrics.lastNonDirect.cpv)}
+                        </p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs text-gray-600">Receita</p>
+                        <p className="text-lg font-bold text-gray-900">
+                          {formatCurrency(platformAttributionComparison.google.last_non_direct.revenue)}
+                        </p>
+                        <p className={`text-xs ${
+                          googleMetrics.lastNonDirect.roas >= 3 ? 'text-green-600' : 
+                          googleMetrics.lastNonDirect.roas >= 2 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          ROAS: {googleMetrics.lastNonDirect.roas.toFixed(2)}x
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Origin Stack para Google */}
+                  <div className="bg-white/80 rounded-lg p-4 border border-green-200">
+                    <h6 className="text-sm font-semibold text-gray-700 mb-3">Origin Stack</h6>
+                    <div className="space-y-3">
+                      <div className="text-center">
+                        <p className="text-xs text-gray-600">Transações</p>
+                        <p className="text-lg font-bold text-gray-900">
+                          {formatNumber(platformAttributionComparison.google.origin_stack.transactions)}
+                        </p>
+                        <p className="text-xs text-green-600">
+                          CPV: {formatCurrency(googleMetrics.originStack.cpv)}
+                        </p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs text-gray-600">Receita</p>
+                        <p className="text-lg font-bold text-gray-900">
+                          {formatCurrency(platformAttributionComparison.google.origin_stack.revenue)}
+                        </p>
+                        <p className={`text-xs ${
+                          googleMetrics.originStack.roas >= 3 ? 'text-green-600' : 
+                          googleMetrics.originStack.roas >= 2 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          ROAS: {googleMetrics.originStack.roas.toFixed(2)}x
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ganho Google */}
+                <div className="bg-white/60 rounded-lg p-4 border border-green-200">
+                  <h6 className="text-sm font-semibold text-gray-700 mb-3 text-center">Ganho Origin Stack vs Last Non-Direct</h6>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="text-center">
+                      <p className="text-xs text-gray-600">Transações</p>
+                      <p className={`text-lg font-bold ${
+                        platformAttributionComparison.google.origin_stack.transactions > platformAttributionComparison.google.last_non_direct.transactions 
+                          ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {(() => {
+                          const lnds = platformAttributionComparison.google.last_non_direct.transactions
+                          const origin = platformAttributionComparison.google.origin_stack.transactions
+                          const gain = lnds > 0 ? ((origin - lnds) / lnds * 100) : 0
+                          return gain > 0 ? `+${gain.toFixed(1)}%` : `${gain.toFixed(1)}%`
+                        })()}
+                      </p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-gray-600">Receita</p>
+                      <p className={`text-lg font-bold ${
+                        platformAttributionComparison.google.origin_stack.revenue > platformAttributionComparison.google.last_non_direct.revenue 
+                          ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {(() => {
+                          const lnds = platformAttributionComparison.google.last_non_direct.revenue
+                          const origin = platformAttributionComparison.google.origin_stack.revenue
+                          const gain = lnds > 0 ? ((origin - lnds) / lnds * 100) : 0
+                          return gain > 0 ? `+${gain.toFixed(1)}%` : `${gain.toFixed(1)}%`
+                        })()}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Meta Ads */}
+              <div className="border border-blue-200 rounded-lg p-6 bg-gradient-to-br from-blue-50 to-indigo-50">
+                <div className="flex items-center justify-between mb-6">
+                  <h5 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                    <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                    Meta Ads
+                  </h5>
+                  <div className="text-sm text-gray-600">
+                    Investimento: {formatCurrency(platformAttributionComparison.meta.last_non_direct.cost)}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  {/* Last Non-Direct para Meta */}
+                  <div className="bg-white/80 rounded-lg p-4 border border-blue-200">
+                    <h6 className="text-sm font-semibold text-gray-700 mb-3">Last Non-Direct</h6>
+                    <div className="space-y-3">
+                      <div className="text-center">
+                        <p className="text-xs text-gray-600">Transações</p>
+                        <p className="text-lg font-bold text-gray-900">
+                          {formatNumber(platformAttributionComparison.meta.last_non_direct.transactions)}
+                        </p>
+                        <p className="text-xs text-blue-600">
+                          CPV: {formatCurrency(metaMetrics.lastNonDirect.cpv)}
+                        </p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs text-gray-600">Receita</p>
+                        <p className="text-lg font-bold text-gray-900">
+                          {formatCurrency(platformAttributionComparison.meta.last_non_direct.revenue)}
+                        </p>
+                        <p className={`text-xs ${
+                          metaMetrics.lastNonDirect.roas >= 3 ? 'text-green-600' : 
+                          metaMetrics.lastNonDirect.roas >= 2 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          ROAS: {metaMetrics.lastNonDirect.roas.toFixed(2)}x
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Origin Stack para Meta */}
+                  <div className="bg-white/80 rounded-lg p-4 border border-blue-200">
+                    <h6 className="text-sm font-semibold text-gray-700 mb-3">Origin Stack</h6>
+                    <div className="space-y-3">
+                      <div className="text-center">
+                        <p className="text-xs text-gray-600">Transações</p>
+                        <p className="text-lg font-bold text-gray-900">
+                          {formatNumber(platformAttributionComparison.meta.origin_stack.transactions)}
+                        </p>
+                        <p className="text-xs text-blue-600">
+                          CPV: {formatCurrency(metaMetrics.originStack.cpv)}
+                        </p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs text-gray-600">Receita</p>
+                        <p className="text-lg font-bold text-gray-900">
+                          {formatCurrency(platformAttributionComparison.meta.origin_stack.revenue)}
+                        </p>
+                        <p className={`text-xs ${
+                          metaMetrics.originStack.roas >= 3 ? 'text-green-600' : 
+                          metaMetrics.originStack.roas >= 2 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          ROAS: {metaMetrics.originStack.roas.toFixed(2)}x
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ganho Meta */}
+                <div className="bg-white/60 rounded-lg p-4 border border-blue-200">
+                  <h6 className="text-sm font-semibold text-gray-700 mb-3 text-center">Ganho Origin Stack vs Last Non-Direct</h6>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="text-center">
+                      <p className="text-xs text-gray-600">Transações</p>
+                      <p className={`text-lg font-bold ${
+                        platformAttributionComparison.meta.origin_stack.transactions > platformAttributionComparison.meta.last_non_direct.transactions 
+                          ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {(() => {
+                          const lnds = platformAttributionComparison.meta.last_non_direct.transactions
+                          const origin = platformAttributionComparison.meta.origin_stack.transactions
+                          const gain = lnds > 0 ? ((origin - lnds) / lnds * 100) : 0
+                          return gain > 0 ? `+${gain.toFixed(1)}%` : `${gain.toFixed(1)}%`
+                        })()}
+                      </p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-gray-600">Receita</p>
+                      <p className={`text-lg font-bold ${
+                        platformAttributionComparison.meta.origin_stack.revenue > platformAttributionComparison.meta.last_non_direct.revenue 
+                          ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {(() => {
+                          const lnds = platformAttributionComparison.meta.last_non_direct.revenue
+                          const origin = platformAttributionComparison.meta.origin_stack.revenue
+                          const gain = lnds > 0 ? ((origin - lnds) / lnds * 100) : 0
+                          return gain > 0 ? `+${gain.toFixed(1)}%` : `${gain.toFixed(1)}%`
+                        })()}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Resumo Comparativo entre Plataformas */}
+            <div className="mt-6 p-6 bg-gradient-to-br from-slate-50 via-gray-50 to-blue-50 rounded-xl border border-gray-200 shadow-md">
+              <h5 className="text-lg font-bold text-gray-800 mb-4 text-center flex items-center justify-center gap-2">
+                <span className="text-xl">📊</span>
+                Resumo Comparativo: Google vs Meta
+              </h5>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Investimento Total */}
+                <div className="bg-white/80 rounded-lg p-4 border border-gray-200 text-center">
+                  <h6 className="text-sm font-semibold text-gray-700 mb-2">Investimento Total</h6>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-600 flex items-center gap-1">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        Google
+                      </span>
+                      <span className="text-sm font-bold text-gray-900">
+                        {formatCurrency(platformAttributionComparison.google.last_non_direct.cost)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-600 flex items-center gap-1">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                        Meta
+                      </span>
+                      <span className="text-sm font-bold text-gray-900">
+                        {formatCurrency(platformAttributionComparison.meta.last_non_direct.cost)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Transações Origin Stack */}
+                <div className="bg-white/80 rounded-lg p-4 border border-gray-200 text-center">
+                  <h6 className="text-sm font-semibold text-gray-700 mb-2">Transações (Origin Stack)</h6>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-600 flex items-center gap-1">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        Google
+                      </span>
+                      <span className="text-sm font-bold text-gray-900">
+                        {formatNumber(platformAttributionComparison.google.origin_stack.transactions)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-600 flex items-center gap-1">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                        Meta
+                      </span>
+                      <span className="text-sm font-bold text-gray-900">
+                        {formatNumber(platformAttributionComparison.meta.origin_stack.transactions)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Receita Origin Stack */}
+                <div className="bg-white/80 rounded-lg p-4 border border-gray-200 text-center">
+                  <h6 className="text-sm font-semibold text-gray-700 mb-2">Receita (Origin Stack)</h6>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-600 flex items-center gap-1">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        Google
+                      </span>
+                      <span className="text-sm font-bold text-gray-900">
+                        {formatCurrency(platformAttributionComparison.google.origin_stack.revenue)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-600 flex items-center gap-1">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                        Meta
+                      </span>
+                      <span className="text-sm font-bold text-gray-900">
+                        {formatCurrency(platformAttributionComparison.meta.origin_stack.revenue)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ROAS Origin Stack */}
+                <div className="bg-white/80 rounded-lg p-4 border border-gray-200 text-center">
+                  <h6 className="text-sm font-semibold text-gray-700 mb-2">ROAS (Origin Stack)</h6>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-600 flex items-center gap-1">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        Google
+                      </span>
+                      <span className={`text-sm font-bold ${
+                        googleMetrics.originStack.roas >= 3 ? 'text-green-600' : 
+                        googleMetrics.originStack.roas >= 2 ? 'text-yellow-600' : 'text-red-600'
+                      }`}>
+                        {googleMetrics.originStack.roas.toFixed(2)}x
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-600 flex items-center gap-1">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                        Meta
+                      </span>
+                      <span className={`text-sm font-bold ${
+                        metaMetrics.originStack.roas >= 3 ? 'text-green-600' : 
+                        metaMetrics.originStack.roas >= 2 ? 'text-yellow-600' : 'text-red-600'
+                      }`}>
+                        {metaMetrics.originStack.roas.toFixed(2)}x
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Tabela de campanhas */}
@@ -2991,7 +3437,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
 
         <div className={`overflow-x-auto ${isFullWidth ? 'h-[calc(100vh-120px)] overflow-y-auto' : ''}`}>
           <table className="w-full">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50 sticky top-0 z-20">
               <tr>
                 {visibleColumns.platform && (
                 <SortableHeader
@@ -3378,6 +3824,14 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
             <div className="flex items-center justify-center h-64">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
             </div>
+          ) : sortedCreativeData.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 text-gray-500">
+              <div className="text-4xl mb-4">📊</div>
+              <h3 className="text-lg font-medium mb-2">Nenhum dado de criativos encontrado</h3>
+              <p className="text-sm text-center">
+                Não há dados de criativos disponíveis para o período selecionado.
+              </p>
+            </div>
           ) : (
             <>
               {/* Métricas principais - Mesmo layout da Visão Geral */}
@@ -3685,7 +4139,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                 
                 <div className="overflow-x-auto">
                   <table className="w-full">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-gray-50 sticky top-0 z-20">
                       <tr>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Plataforma
