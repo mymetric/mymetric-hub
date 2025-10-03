@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import Logo from './Logo'
 
 interface LoadingScreenProps {
@@ -6,6 +7,42 @@ interface LoadingScreenProps {
 }
 
 const LoadingScreen = ({ message = 'Carregando...', showAuthStatus = false }: LoadingScreenProps) => {
+  const [currentQuoteIndex, setCurrentQuoteIndex] = useState(0)
+  const [isVisible, setIsVisible] = useState(true)
+  
+  // Frases motivacionais sobre dados
+  const dataQuotes = [
+    "Os dados são o novo petróleo do século XXI",
+    "Cada métrica conta uma história única",
+    "Transformando números em insights valiosos",
+    "Dados bem analisados são decisões bem tomadas",
+    "A informação é poder, os dados são conhecimento",
+    "Descobrindo padrões ocultos nos seus dados",
+    "Analytics que impulsionam resultados",
+    "Cada clique, cada conversão, cada oportunidade",
+    "Dados em tempo real, insights instantâneos",
+    "Conectando pontos para revelar o quadro completo",
+    "Performance que fala por números",
+    "Otimizando seu negócio através de métricas",
+    "Dados precisos, estratégias certeiras",
+    "Visualizando o futuro através dos números",
+    "Inteligência de dados em ação"
+  ]
+
+  // Rotacionar frases a cada 3 segundos com animação
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIsVisible(false)
+      setTimeout(() => {
+        setCurrentQuoteIndex((prevIndex) => 
+          (prevIndex + 1) % dataQuotes.length
+        )
+        setIsVisible(true)
+      }, 300)
+    }, 3000)
+
+    return () => clearInterval(interval)
+  }, [])
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 via-white to-purple-50">
       <div className="text-center">
@@ -23,6 +60,17 @@ const LoadingScreen = ({ message = 'Carregando...', showAuthStatus = false }: Lo
         <h2 className="text-xl font-semibold text-gray-800 mb-2">
           {message}
         </h2>
+        
+        {/* Frase motivacional sobre dados */}
+        <div className="mb-4 px-4">
+          <div className="min-h-[2.5rem] flex items-center justify-center">
+            <p className={`text-sm text-gray-600 italic transition-all duration-300 ease-in-out ${
+              isVisible ? 'opacity-100 transform translate-y-0' : 'opacity-0 transform translate-y-2'
+            }`}>
+              "{dataQuotes[currentQuoteIndex]}"
+            </p>
+          </div>
+        </div>
         
         {/* Status de autenticação */}
         {showAuthStatus && (
