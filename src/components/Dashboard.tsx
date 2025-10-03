@@ -1999,8 +1999,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Filtros de Data - Global para todas as abas (exceto tempo-real) */}
-        {activeTab !== 'tempo-real' && activeTab !== 'configuracao' && (
+        {/* Filtros de Data - Global para todas as abas (exceto tempo-real e produtos) */}
+        {activeTab !== 'tempo-real' && activeTab !== 'configuracao' && activeTab !== 'produtos' && (
           <div className="mb-6 bg-white rounded-xl shadow-lg p-4 border border-gray-200">
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
               <div>

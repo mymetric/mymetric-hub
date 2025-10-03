@@ -4,17 +4,12 @@ import {
   TrendingDown, 
   Minus, 
   Package, 
-  Calendar,
   ArrowUpRight,
   ArrowDownRight,
   Search,
   SortAsc,
   SortDesc,
-  Loader2,
-  X,
-  AlertTriangle,
-  CheckCircle,
-  Info
+  Loader2
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
 
@@ -36,6 +31,15 @@ interface ProductTrendItem {
   size_score_week_3?: number | null
   size_score_week_4?: number | null
   size_score_trend_status?: string | null
+  // Campos específicos para Google Merchant Center (podem ser null para outros clientes)
+  benchmark_week_1?: number | null
+  benchmark_week_2?: number | null
+  benchmark_week_3?: number | null
+  benchmark_week_4?: number | null
+  clicks_week_1?: number | null
+  clicks_week_2?: number | null
+  clicks_week_3?: number | null
+  clicks_week_4?: number | null
 }
 
 interface ProductsDashboardProps {
@@ -52,9 +56,8 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
   const [limit, setLimit] = useState(100)
   const [totalLoaded, setTotalLoaded] = useState(0)
   const [isAutoLoading, setIsAutoLoading] = useState(false)
-  const [selectedProduct, setSelectedProduct] = useState<ProductTrendItem | null>(null)
-  const [showProductDetail, setShowProductDetail] = useState(false)
   const [isFullWidth, setIsFullWidth] = useState(false)
+  const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set())
 
   // Função para carregar produtos com paginação automática
   const loadProducts = useCallback(async (currentOffset = 0) => {
@@ -214,6 +217,39 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
     return `${value > 0 ? '+' : ''}${value.toFixed(1)}%`
   }
 
+  // Função para calcular variação percentual de benchmark (invertido - queda é positiva)
+  const calculateBenchmarkChange = (current: number | null | undefined, previous: number | null | undefined) => {
+    if (current === null || current === undefined || previous === null || previous === undefined) {
+      return null
+    }
+    if (previous === 0) {
+      return current > 0 ? -100 : 0
+    }
+    return -((current - previous) / previous) * 100
+  }
+
+  // Função para calcular variação percentual de clicks
+  const calculateClicksChange = (current: number | null | undefined, previous: number | null | undefined) => {
+    if (current === null || current === undefined || previous === null || previous === undefined) {
+      return null
+    }
+    if (previous === 0) {
+      return current > 0 ? 100 : 0
+    }
+    return ((current - previous) / previous) * 100
+  }
+
+  // Função para calcular variação percentual de score de grade
+  const calculateSizeScoreChange = (current: number | null | undefined, previous: number | null | undefined) => {
+    if (current === null || current === undefined || previous === null || previous === undefined) {
+      return null
+    }
+    if (previous === 0) {
+      return current > 0 ? 100 : 0
+    }
+    return ((current - previous) / previous) * 100
+  }
+
   // Função para obter ícone de tendência
   const getTrendIcon = (consistency: string) => {
     if (consistency.includes('Growth')) {
@@ -236,25 +272,17 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
     }
   }
 
-  // Função para abrir modal de detalhamento
-  const openProductDetail = (product: ProductTrendItem) => {
-    console.log('🔍 Product detail data:', {
-      item_id: product.item_id,
-      item_name: product.item_name,
-      size_score_week_1: product.size_score_week_1,
-      size_score_week_2: product.size_score_week_2,
-      size_score_week_3: product.size_score_week_3,
-      size_score_week_4: product.size_score_week_4,
-      size_score_trend_status: product.size_score_trend_status
+  // Função para alternar expansão do produto
+  const toggleProductExpansion = (productId: string) => {
+    setExpandedProducts(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(productId)) {
+        newSet.delete(productId)
+      } else {
+        newSet.add(productId)
+      }
+      return newSet
     })
-    setSelectedProduct(product)
-    setShowProductDetail(true)
-  }
-
-  // Função para fechar modal
-  const closeProductDetail = () => {
-    setShowProductDetail(false)
-    setSelectedProduct(null)
   }
 
   // Calcular estatísticas
@@ -291,11 +319,6 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
           </div>
           
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-gray-500" />
-              <span className="text-sm text-gray-600">Últimas 4 semanas</span>
-            </div>
-            
             {/* Indicador de carregamento automático */}
             {isAutoLoading && (
               <div className="flex items-center gap-2 text-sm text-blue-600">
@@ -317,29 +340,6 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
         </div>
       </div>
 
-      {/* Explicação das Faixas de Tempo */}
-      <div className="bg-gray-50 rounded-lg p-3 border border-gray-200 opacity-75 hover:opacity-100 transition-opacity">
-        <div className="flex items-start gap-2">
-          <Calendar className="w-4 h-4 text-gray-500 mt-0.5 flex-shrink-0" />
-          <div className="flex-1">
-            <div className="text-xs text-gray-600 mb-2">Períodos analisados (excluindo hoje)</div>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
-              <div className="text-gray-700">
-                <span className="font-medium">W1:</span> 22-29 dias atrás
-              </div>
-              <div className="text-gray-700">
-                <span className="font-medium">W2:</span> 15-22 dias atrás
-              </div>
-              <div className="text-gray-700">
-                <span className="font-medium">W3:</span> 8-15 dias atrás
-              </div>
-              <div className="text-gray-700">
-                <span className="font-medium">W4:</span> 1-7 dias atrás
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* Estatísticas */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -518,46 +518,32 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Consistência
                 </th>
-                                                      {selectedTable === 'havaianas' && products.some(product => 
-                  product.size_score_week_1 !== null || 
-                  product.size_score_week_2 !== null || 
-                  product.size_score_week_3 !== null || 
-                  product.size_score_week_4 !== null ||
-                  product.size_score_trend_status !== null
-                ) && (
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Score de Grade
-                  </th>
-                )}
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Ações
-                      </th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Ações
+                </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={selectedTable === 'havaianas' && products.some(p => 
-                    p.size_score_week_1 !== null || 
-                    p.size_score_week_2 !== null || 
-                    p.size_score_week_3 !== null || 
-                    p.size_score_week_4 !== null ||
-                    p.size_score_trend_status !== null
-                  ) ? 12 : 11} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={11} className="px-6 py-12 text-center text-gray-500">
                     <Package className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                     <p className="text-lg font-medium">Nenhum produto encontrado</p>
                     <p className="text-sm">Tente ajustar os filtros ou a busca</p>
                   </td>
                 </tr>
               ) : (
-                filteredProducts.map((product) => (
-                  <tr key={product.item_id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">{product.item_name}</div>
-                        <div className="text-sm text-gray-500">ID: {product.item_id}</div>
-                      </div>
-                    </td>
+                filteredProducts.map((product) => {
+                  const isExpanded = expandedProducts.has(product.item_id)
+                  return (
+                    <>
+                      <tr key={product.item_id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => toggleProductExpansion(product.item_id)}>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">{product.item_name}</div>
+                            <div className="text-sm text-gray-500">ID: {product.item_id}</div>
+                          </div>
+                        </td>
                     <td className="px-2 py-4 whitespace-nowrap text-xs text-gray-900 text-center">
                       {formatNumber(product.purchases_week_1)}
                     </td>
@@ -632,44 +618,321 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
                         </span>
                       </div>
                     </td>
-                    {selectedTable === 'havaianas' && products.some(p => 
-                      p.size_score_week_1 !== null || 
-                      p.size_score_week_2 !== null || 
-                      p.size_score_week_3 !== null || 
-                      p.size_score_week_4 !== null ||
-                      p.size_score_trend_status !== null
-                    ) && (
-                      <td className="px-3 py-4 whitespace-nowrap">
-                        {product.size_score_trend_status ? (
-                          <span className="text-sm font-medium text-gray-900">
-                            {product.size_score_trend_status}
-                          </span>
-                        ) : null}
-                      </td>
-                    )}
-                    <td className="px-3 py-4 whitespace-nowrap">
-                      <button
-                        onClick={() => openProductDetail(product)}
-                        className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-1"
-                      >
-                        <Info className="w-3 h-3" />
-                        Ver Detalhes
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                        <td className="px-3 py-4 whitespace-nowrap">
+                          <div className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg flex items-center gap-1">
+                            {isExpanded ? (
+                              <>
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                </svg>
+                                Ocultar
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                                Expandir
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                      
+                      {/* Linha expandida com métricas detalhadas */}
+                      {isExpanded && (
+                        <tr className="bg-gray-50 border-t border-gray-200">
+                          <td colSpan={11} className="px-6 py-4">
+                            <div className="space-y-4">
+                              <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                                <TrendingUp className="w-4 h-4" />
+                                Análise Correlacional - Últimas 4 Semanas
+                              </h4>
+                              
+                              {/* Tabela de correlação - Layout horizontal para fácil comparação */}
+                              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                                <table className="w-full text-xs">
+                                  <thead className="bg-gray-50">
+                                    <tr>
+                                      <th className="px-3 py-2 text-left font-medium text-gray-700">Métrica</th>
+                                      <th className="px-2 py-2 text-center font-medium text-gray-700">W1</th>
+                                      <th className="px-2 py-2 text-center font-medium text-gray-700">W2</th>
+                                      <th className="px-2 py-2 text-center font-medium text-gray-700">W3</th>
+                                      <th className="px-2 py-2 text-center font-medium text-gray-700">W4</th>
+                                      <th className="px-2 py-2 text-center font-medium text-gray-700">W1→W2</th>
+                                      <th className="px-2 py-2 text-center font-medium text-gray-700">W2→W3</th>
+                                      <th className="px-2 py-2 text-center font-medium text-gray-700">W3→W4</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-gray-100">
+                                    {/* Vendas */}
+                                    <tr className="hover:bg-blue-50">
+                                      <td className="px-3 py-2 font-medium text-blue-700">Vendas</td>
+                                      <td className="px-2 py-2 text-center">{formatNumber(product.purchases_week_1)}</td>
+                                      <td className="px-2 py-2 text-center">{formatNumber(product.purchases_week_2)}</td>
+                                      <td className="px-2 py-2 text-center">{formatNumber(product.purchases_week_3)}</td>
+                                      <td className="px-2 py-2 text-center font-medium">{formatNumber(product.purchases_week_4)}</td>
+                                      <td className="px-2 py-2 text-center">
+                                        <div className="flex items-center justify-center gap-1">
+                                          {product.percent_change_w1_w2 > 0 ? (
+                                            <ArrowUpRight className="w-3 h-3 text-green-600" />
+                                          ) : product.percent_change_w1_w2 < 0 ? (
+                                            <ArrowDownRight className="w-3 h-3 text-red-600" />
+                                          ) : (
+                                            <Minus className="w-3 h-3 text-gray-600" />
+                                          )}
+                                          <span className={`font-medium ${
+                                            product.percent_change_w1_w2 > 0 ? 'text-green-600' : 
+                                            product.percent_change_w1_w2 < 0 ? 'text-red-600' : 'text-gray-600'
+                                          }`}>
+                                            {formatPercentage(product.percent_change_w1_w2)}
+                                          </span>
+                                        </div>
+                                      </td>
+                                      <td className="px-2 py-2 text-center">
+                                        <div className="flex items-center justify-center gap-1">
+                                          {product.percent_change_w2_w3 > 0 ? (
+                                            <ArrowUpRight className="w-3 h-3 text-green-600" />
+                                          ) : product.percent_change_w2_w3 < 0 ? (
+                                            <ArrowDownRight className="w-3 h-3 text-red-600" />
+                                          ) : (
+                                            <Minus className="w-3 h-3 text-gray-600" />
+                                          )}
+                                          <span className={`font-medium ${
+                                            product.percent_change_w2_w3 > 0 ? 'text-green-600' : 
+                                            product.percent_change_w2_w3 < 0 ? 'text-red-600' : 'text-gray-600'
+                                          }`}>
+                                            {formatPercentage(product.percent_change_w2_w3)}
+                                          </span>
+                                        </div>
+                                      </td>
+                                      <td className="px-2 py-2 text-center">
+                                        <div className="flex items-center justify-center gap-1">
+                                          {product.percent_change_w3_w4 > 0 ? (
+                                            <ArrowUpRight className="w-3 h-3 text-green-600" />
+                                          ) : product.percent_change_w3_w4 < 0 ? (
+                                            <ArrowDownRight className="w-3 h-3 text-red-600" />
+                                          ) : (
+                                            <Minus className="w-3 h-3 text-gray-600" />
+                                          )}
+                                          <span className={`font-medium ${
+                                            product.percent_change_w3_w4 > 0 ? 'text-green-600' : 
+                                            product.percent_change_w3_w4 < 0 ? 'text-red-600' : 'text-gray-600'
+                                          }`}>
+                                            {formatPercentage(product.percent_change_w3_w4)}
+                                          </span>
+                                        </div>
+                                      </td>
+                                    </tr>
+
+                                    {/* Benchmark (se disponível) */}
+                                    {(product.benchmark_week_1 !== null || 
+                                      product.benchmark_week_2 !== null || 
+                                      product.benchmark_week_3 !== null || 
+                                      product.benchmark_week_4 !== null) && (
+                                      <tr className="hover:bg-green-50">
+                                        <td className="px-3 py-2 font-medium text-green-700">Benchmark (%) - Google Merchant Center</td>
+                                        <td className="px-2 py-2 text-center">
+                                          {product.benchmark_week_1 !== null && product.benchmark_week_1 !== undefined ? `${(product.benchmark_week_1 * 100).toFixed(1)}%` : '-'}
+                                        </td>
+                                        <td className="px-2 py-2 text-center">
+                                          {product.benchmark_week_2 !== null && product.benchmark_week_2 !== undefined ? `${(product.benchmark_week_2 * 100).toFixed(1)}%` : '-'}
+                                        </td>
+                                        <td className="px-2 py-2 text-center">
+                                          {product.benchmark_week_3 !== null && product.benchmark_week_3 !== undefined ? `${(product.benchmark_week_3 * 100).toFixed(1)}%` : '-'}
+                                        </td>
+                                        <td className="px-2 py-2 text-center font-medium">
+                                          {product.benchmark_week_4 !== null && product.benchmark_week_4 !== undefined ? `${(product.benchmark_week_4 * 100).toFixed(1)}%` : '-'}
+                                        </td>
+                                        <td className="px-2 py-2 text-center">
+                                          {(() => {
+                                            const change = calculateBenchmarkChange(product.benchmark_week_2, product.benchmark_week_1)
+                                            return change !== null ? (
+                                              <div className="flex items-center justify-center gap-1">
+                                                {change > 0 ? <ArrowUpRight className="w-3 h-3 text-green-600" /> : change < 0 ? <ArrowDownRight className="w-3 h-3 text-red-600" /> : <Minus className="w-3 h-3 text-gray-600" />}
+                                                <span className={`font-medium ${change > 0 ? 'text-green-600' : change < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                                                  {formatPercentage(change)}
+                                                </span>
+                                              </div>
+                                            ) : <span className="text-gray-400">-</span>
+                                          })()}
+                                        </td>
+                                        <td className="px-2 py-2 text-center">
+                                          {(() => {
+                                            const change = calculateBenchmarkChange(product.benchmark_week_3, product.benchmark_week_2)
+                                            return change !== null ? (
+                                              <div className="flex items-center justify-center gap-1">
+                                                {change > 0 ? <ArrowUpRight className="w-3 h-3 text-green-600" /> : change < 0 ? <ArrowDownRight className="w-3 h-3 text-red-600" /> : <Minus className="w-3 h-3 text-gray-600" />}
+                                                <span className={`font-medium ${change > 0 ? 'text-green-600' : change < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                                                  {formatPercentage(change)}
+                                                </span>
+                                              </div>
+                                            ) : <span className="text-gray-400">-</span>
+                                          })()}
+                                        </td>
+                                        <td className="px-2 py-2 text-center">
+                                          {(() => {
+                                            const change = calculateBenchmarkChange(product.benchmark_week_4, product.benchmark_week_3)
+                                            return change !== null ? (
+                                              <div className="flex items-center justify-center gap-1">
+                                                {change > 0 ? <ArrowUpRight className="w-3 h-3 text-green-600" /> : change < 0 ? <ArrowDownRight className="w-3 h-3 text-red-600" /> : <Minus className="w-3 h-3 text-gray-600" />}
+                                                <span className={`font-medium ${change > 0 ? 'text-green-600' : change < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                                                  {formatPercentage(change)}
+                                                </span>
+                                              </div>
+                                            ) : <span className="text-gray-400">-</span>
+                                          })()}
+                                        </td>
+                                      </tr>
+                                    )}
+
+                                    {/* Cliques (se disponível) */}
+                                    {(product.clicks_week_1 !== null || 
+                                      product.clicks_week_2 !== null || 
+                                      product.clicks_week_3 !== null || 
+                                      product.clicks_week_4 !== null) && (
+                                      <tr className="hover:bg-purple-50">
+                                        <td className="px-3 py-2 font-medium text-purple-700">Cliques - Google Merchant Center</td>
+                                        <td className="px-2 py-2 text-center">
+                                          {product.clicks_week_1 !== null && product.clicks_week_1 !== undefined ? formatNumber(product.clicks_week_1) : '-'}
+                                        </td>
+                                        <td className="px-2 py-2 text-center">
+                                          {product.clicks_week_2 !== null && product.clicks_week_2 !== undefined ? formatNumber(product.clicks_week_2) : '-'}
+                                        </td>
+                                        <td className="px-2 py-2 text-center">
+                                          {product.clicks_week_3 !== null && product.clicks_week_3 !== undefined ? formatNumber(product.clicks_week_3) : '-'}
+                                        </td>
+                                        <td className="px-2 py-2 text-center font-medium">
+                                          {product.clicks_week_4 !== null && product.clicks_week_4 !== undefined ? formatNumber(product.clicks_week_4) : '-'}
+                                        </td>
+                                        <td className="px-2 py-2 text-center">
+                                          {(() => {
+                                            const change = calculateClicksChange(product.clicks_week_2, product.clicks_week_1)
+                                            return change !== null ? (
+                                              <div className="flex items-center justify-center gap-1">
+                                                {change > 0 ? <ArrowUpRight className="w-3 h-3 text-green-600" /> : change < 0 ? <ArrowDownRight className="w-3 h-3 text-red-600" /> : <Minus className="w-3 h-3 text-gray-600" />}
+                                                <span className={`font-medium ${change > 0 ? 'text-green-600' : change < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                                                  {formatPercentage(change)}
+                                                </span>
+                                              </div>
+                                            ) : <span className="text-gray-400">-</span>
+                                          })()}
+                                        </td>
+                                        <td className="px-2 py-2 text-center">
+                                          {(() => {
+                                            const change = calculateClicksChange(product.clicks_week_3, product.clicks_week_2)
+                                            return change !== null ? (
+                                              <div className="flex items-center justify-center gap-1">
+                                                {change > 0 ? <ArrowUpRight className="w-3 h-3 text-green-600" /> : change < 0 ? <ArrowDownRight className="w-3 h-3 text-red-600" /> : <Minus className="w-3 h-3 text-gray-600" />}
+                                                <span className={`font-medium ${change > 0 ? 'text-green-600' : change < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                                                  {formatPercentage(change)}
+                                                </span>
+                                              </div>
+                                            ) : <span className="text-gray-400">-</span>
+                                          })()}
+                                        </td>
+                                        <td className="px-2 py-2 text-center">
+                                          {(() => {
+                                            const change = calculateClicksChange(product.clicks_week_4, product.clicks_week_3)
+                                            return change !== null ? (
+                                              <div className="flex items-center justify-center gap-1">
+                                                {change > 0 ? <ArrowUpRight className="w-3 h-3 text-green-600" /> : change < 0 ? <ArrowDownRight className="w-3 h-3 text-red-600" /> : <Minus className="w-3 h-3 text-gray-600" />}
+                                                <span className={`font-medium ${change > 0 ? 'text-green-600' : change < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                                                  {formatPercentage(change)}
+                                                </span>
+                                              </div>
+                                            ) : <span className="text-gray-400">-</span>
+                                          })()}
+                                        </td>
+                                      </tr>
+                                    )}
+
+                                    {/* Score de Grade - Havaianas (se disponível) */}
+                                    {selectedTable === 'havaianas' && (
+                                      product.size_score_week_1 !== null || 
+                                      product.size_score_week_2 !== null || 
+                                      product.size_score_week_3 !== null || 
+                                      product.size_score_week_4 !== null
+                                    ) && (
+                                      <tr className="hover:bg-blue-50">
+                                        <td className="px-3 py-2 font-medium text-blue-700">Score de Grade (%)</td>
+                                        <td className="px-2 py-2 text-center">
+                                          {product.size_score_week_1 !== null && product.size_score_week_1 !== undefined ? `${(product.size_score_week_1 * 100).toFixed(1)}%` : '-'}
+                                        </td>
+                                        <td className="px-2 py-2 text-center">
+                                          {product.size_score_week_2 !== null && product.size_score_week_2 !== undefined ? `${(product.size_score_week_2 * 100).toFixed(1)}%` : '-'}
+                                        </td>
+                                        <td className="px-2 py-2 text-center">
+                                          {product.size_score_week_3 !== null && product.size_score_week_3 !== undefined ? `${(product.size_score_week_3 * 100).toFixed(1)}%` : '-'}
+                                        </td>
+                                        <td className="px-2 py-2 text-center font-medium">
+                                          {product.size_score_week_4 !== null && product.size_score_week_4 !== undefined ? `${(product.size_score_week_4 * 100).toFixed(1)}%` : '-'}
+                                        </td>
+                                        <td className="px-2 py-2 text-center">
+                                          {(() => {
+                                            const change = calculateSizeScoreChange(product.size_score_week_2, product.size_score_week_1)
+                                            return change !== null ? (
+                                              <div className="flex items-center justify-center gap-1">
+                                                {change > 0 ? <ArrowUpRight className="w-3 h-3 text-green-600" /> : change < 0 ? <ArrowDownRight className="w-3 h-3 text-red-600" /> : <Minus className="w-3 h-3 text-gray-600" />}
+                                                <span className={`font-medium ${change > 0 ? 'text-green-600' : change < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                                                  {formatPercentage(change)}
+                                                </span>
+                                              </div>
+                                            ) : <span className="text-gray-400">-</span>
+                                          })()}
+                                        </td>
+                                        <td className="px-2 py-2 text-center">
+                                          {(() => {
+                                            const change = calculateSizeScoreChange(product.size_score_week_3, product.size_score_week_2)
+                                            return change !== null ? (
+                                              <div className="flex items-center justify-center gap-1">
+                                                {change > 0 ? <ArrowUpRight className="w-3 h-3 text-green-600" /> : change < 0 ? <ArrowDownRight className="w-3 h-3 text-red-600" /> : <Minus className="w-3 h-3 text-gray-600" />}
+                                                <span className={`font-medium ${change > 0 ? 'text-green-600' : change < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                                                  {formatPercentage(change)}
+                                                </span>
+                                              </div>
+                                            ) : <span className="text-gray-400">-</span>
+                                          })()}
+                                        </td>
+                                        <td className="px-2 py-2 text-center">
+                                          {(() => {
+                                            const change = calculateSizeScoreChange(product.size_score_week_4, product.size_score_week_3)
+                                            return change !== null ? (
+                                              <div className="flex items-center justify-center gap-1">
+                                                {change > 0 ? <ArrowUpRight className="w-3 h-3 text-green-600" /> : change < 0 ? <ArrowDownRight className="w-3 h-3 text-red-600" /> : <Minus className="w-3 h-3 text-gray-600" />}
+                                                <span className={`font-medium ${change > 0 ? 'text-green-600' : change < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                                                  {formatPercentage(change)}
+                                                </span>
+                                              </div>
+                                            ) : <span className="text-gray-400">-</span>
+                                          })()}
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              {/* Observações específicas */}
+                              {selectedTable === 'havaianas' && product.size_score_trend_status && (
+                                <div className="bg-purple-50 rounded-lg p-3 border border-purple-200">
+                                  <h5 className="font-medium text-purple-900 mb-2">Score de Grade</h5>
+                                  <p className="text-purple-700">{product.size_score_trend_status}</p>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  )
+                })
               )}
               
               {/* Indicador de carregamento automático */}
               {isAutoLoading && (
                 <tr>
-                  <td colSpan={selectedTable === 'havaianas' && products.some(p => 
-                    p.size_score_week_1 !== null || 
-                    p.size_score_week_2 !== null || 
-                    p.size_score_week_3 !== null || 
-                    p.size_score_week_4 !== null ||
-                    p.size_score_trend_status !== null
-                  ) ? 12 : 11} className="px-6 py-6 text-center bg-blue-50">
+                  <td colSpan={11} className="px-6 py-6 text-center bg-blue-50">
                     <div className="flex items-center justify-center gap-3">
                       <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
                       <span className="text-blue-600 font-medium">Carregando mais produtos automaticamente...</span>
@@ -717,196 +980,6 @@ const ProductsDashboard = ({ selectedTable }: ProductsDashboardProps) => {
         </div>
       </div>
 
-      {/* Modal de Detalhamento do Produto */}
-      {showProductDetail && selectedProduct && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            {/* Header do Modal */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <div>
-                <h2 className="text-xl font-bold text-gray-900">{selectedProduct.item_name}</h2>
-                <p className="text-sm text-gray-600">ID: {selectedProduct.item_id}</p>
-              </div>
-              <button
-                onClick={closeProductDetail}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Conteúdo do Modal */}
-            <div className="p-6 space-y-6">
-              {/* Análise de Tendência de Vendas */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5" />
-                  Análise de Tendência de Vendas
-                </h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="text-center">
-                    <p className="text-sm text-gray-600">W1 (22-29 dias atrás)</p>
-                    <p className="text-lg font-bold text-gray-900">{formatNumber(selectedProduct.purchases_week_1)}</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm text-gray-600">W2 (15-22 dias atrás)</p>
-                    <p className="text-lg font-bold text-gray-900">{formatNumber(selectedProduct.purchases_week_2)}</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm text-gray-600">W3 (8-15 dias atrás)</p>
-                    <p className="text-lg font-bold text-gray-900">{formatNumber(selectedProduct.purchases_week_3)}</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm text-gray-600">W4 (1-7 dias atrás)</p>
-                    <p className="text-lg font-bold text-gray-900">{formatNumber(selectedProduct.purchases_week_4)}</p>
-                  </div>
-                </div>
-                <div className="mt-4">
-                  <p className="text-sm text-gray-600 mb-2">Status da Tendência:</p>
-                  <div className="flex items-center gap-2">
-                    {getTrendIcon(selectedProduct.trend_consistency)}
-                    <span className={`text-sm px-2 py-1 rounded-full border ${getTrendColor(selectedProduct.trend_consistency)}`}>
-                      {selectedProduct.trend_consistency.replace('🔴', '').replace('🟢', '').replace('⚪', '').trim()}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Análise de Score de Grade (apenas para Havaianas e quando há dados) */}
-              {selectedTable === 'havaianas' && (
-                selectedProduct.size_score_week_1 !== null || 
-                selectedProduct.size_score_week_2 !== null || 
-                selectedProduct.size_score_week_3 !== null || 
-                selectedProduct.size_score_week_4 !== null
-              ) && (
-                <div className="bg-blue-50 rounded-lg p-4">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                    <Package className="w-5 h-5" />
-                    Análise de Score de Grade de Tamanhos
-                  </h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                    <div className="text-center">
-                      <p className="text-sm text-gray-600">W1</p>
-                      <p className="text-lg font-bold text-gray-900">
-                        {selectedProduct.size_score_week_1 !== null ? `${(selectedProduct.size_score_week_1 * 100).toFixed(1)}%` : 'N/A'}
-                      </p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-sm text-gray-600">W2</p>
-                      <p className="text-lg font-bold text-gray-900">
-                        {selectedProduct.size_score_week_2 !== null ? `${(selectedProduct.size_score_week_2 * 100).toFixed(1)}%` : 'N/A'}
-                      </p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-sm text-gray-600">W3</p>
-                      <p className="text-lg font-bold text-gray-900">
-                        {selectedProduct.size_score_week_3 !== null ? `${(selectedProduct.size_score_week_3 * 100).toFixed(1)}%` : 'N/A'}
-                      </p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-sm text-gray-600">W4</p>
-                      <p className="text-lg font-bold text-gray-900">
-                        {selectedProduct.size_score_week_4 !== null ? `${(selectedProduct.size_score_week_4 * 100).toFixed(1)}%` : 'N/A'}
-                      </p>
-                    </div>
-                  </div>
-                  
-                  {/* Análise de Problemas de Estoque */}
-                  <div className="bg-white rounded-lg p-4 border border-blue-200">
-                    <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4" />
-                      Análise de Possíveis Problemas de Estoque
-                    </h4>
-                    {(() => {
-                      const scores = [
-                        selectedProduct.size_score_week_1,
-                        selectedProduct.size_score_week_2,
-                        selectedProduct.size_score_week_3,
-                        selectedProduct.size_score_week_4
-                      ].filter(score => score !== null && score !== undefined) as number[]
-                      
-                      const avgScore = scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length) * 100 : 0
-                      const hasLowScore = avgScore < 50
-                      const isDeclining = selectedProduct.trend_consistency.includes('Decline')
-                      
-                      if (hasLowScore && isDeclining) {
-                        return (
-                          <div className="flex items-start gap-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                            <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
-                            <div>
-                              <p className="font-medium text-red-800">⚠️ Possível problema de estoque identificado</p>
-                              <p className="text-sm text-red-700 mt-1">
-                                O produto apresenta score de grade baixo ({avgScore.toFixed(1)}%) e tendência de declínio nas vendas. 
-                                Isso pode indicar falta de tamanhos específicos no estoque.
-                              </p>
-                            </div>
-                          </div>
-                        )
-                      } else if (hasLowScore) {
-                        return (
-                          <div className="flex items-start gap-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                            <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
-                            <div>
-                              <p className="font-medium text-yellow-800">⚠️ Score de grade baixo</p>
-                              <p className="text-sm text-yellow-700 mt-1">
-                                O produto apresenta score de grade baixo ({avgScore.toFixed(1)}%). 
-                                Monitore o estoque de tamanhos específicos.
-                              </p>
-                            </div>
-                          </div>
-                        )
-                      } else {
-                        return (
-                          <div className="flex items-start gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                            <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
-                            <div>
-                              <p className="font-medium text-green-800">✅ Score de grade adequado</p>
-                              <p className="text-sm text-green-700 mt-1">
-                                O produto apresenta score de grade adequado ({avgScore.toFixed(1)}%). 
-                                O estoque de tamanhos parece estar bem distribuído.
-                              </p>
-                            </div>
-                          </div>
-                        )
-                      }
-                    })()}
-                  </div>
-                </div>
-              )}
-
-              {/* Recomendações */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <Info className="w-5 h-5" />
-                  Recomendações
-                </h3>
-                <div className="space-y-2 text-sm text-gray-700">
-                  {selectedProduct.trend_consistency.includes('Decline') && (
-                    <p>• <strong>Declínio nas vendas:</strong> Considere promoções ou ajustes de preço</p>
-                  )}
-                  {selectedProduct.trend_consistency.includes('Growth') && (
-                    <p>• <strong>Crescimento nas vendas:</strong> Aumente o estoque para aproveitar a demanda</p>
-                  )}
-                  {selectedProduct.size_score_week_1 !== null && selectedProduct.size_score_week_1 < 0.5 && (
-                    <p>• <strong>Score de grade baixo:</strong> Verifique a disponibilidade de tamanhos específicos</p>
-                  )}
-                  <p>• <strong>Monitoramento:</strong> Acompanhe as métricas semanalmente para identificar tendências</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Footer do Modal */}
-            <div className="flex justify-end p-6 border-t border-gray-200">
-              <button
-                onClick={closeProductDetail}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
