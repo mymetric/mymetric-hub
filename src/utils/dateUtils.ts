@@ -120,6 +120,25 @@ export const isValidDateString = (dateString: string): boolean => {
 }
 
 /**
+ * Cria uma data sem problemas de timezone a partir de uma string YYYY-MM-DD
+ * Evita o deslocamento de um dia que ocorre com new Date(string)
+ */
+export const parseDateString = (dateString: string): Date => {
+  const [year, month, day] = dateString.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
+/**
+ * Compara duas datas no formato string YYYY-MM-DD
+ * Retorna -1 se a primeira é menor, 0 se iguais, 1 se maior
+ */
+export const compareDateStrings = (dateA: string, dateB: string): number => {
+  if (dateA < dateB) return -1
+  if (dateA > dateB) return 1
+  return 0
+}
+
+/**
  * Valida se o período de datas é válido
  */
 export const validateDateRange = (startDate: string, endDate: string) => {

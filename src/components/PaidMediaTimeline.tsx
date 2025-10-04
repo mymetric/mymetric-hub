@@ -9,6 +9,7 @@ import {
 } from 'recharts'
 import { TrendingUp, DollarSign, Users, ShoppingCart, Target, Eye, MousePointer } from 'lucide-react'
 import React, { useState } from 'react'
+import { parseDateString } from '../utils/dateUtils'
 
 interface PaidMediaTimelineData {
   date: string
@@ -69,7 +70,7 @@ const PaidMediaTimeline = ({ data, title }: PaidMediaTimelineProps) => {
       return (
         <div className="bg-white p-4 border border-gray-200 rounded-lg shadow-lg">
           <p className="font-semibold text-gray-900 mb-2">
-            {new Date(label).toLocaleDateString('pt-BR')}
+            {parseDateString(label).toLocaleDateString('pt-BR')}
           </p>
           {payload.map((entry: any, index: number) => {
             const metric = paidMediaMetrics.find(m => m.key === entry.dataKey)
@@ -315,7 +316,7 @@ const PaidMediaTimeline = ({ data, title }: PaidMediaTimelineProps) => {
               dataKey="date" 
               stroke="#666"
               fontSize={12}
-              tickFormatter={(value) => new Date(value).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+              tickFormatter={(value) => parseDateString(value).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
             />
             <YAxis 
               yAxisId="left"

@@ -19,6 +19,7 @@ import {
 import { api, validateTableName } from '../services/api'
 import { AdsCampaignData, AdsCampaignResponse, CacheInfo, AdsCampaignSummary, AdsCreativeData, AdsCreativeResponse } from '../types'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { compareDateStrings, parseDateString } from '../utils/dateUtils'
 import SortableHeader from './SortableHeader'
 import PaidMediaTimeline from './PaidMediaTimeline'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
@@ -135,12 +136,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
   }
   
   const filterDataByDateRange = (data: AdsCampaignData[], start: string, end: string) => {
-    const startDate = new Date(start)
-    const endDate = new Date(end)
-    
     return data.filter(campaign => {
-      const campaignDate = new Date(campaign.date)
-      return campaignDate >= startDate && campaignDate <= endDate
+      return campaign.date >= start && campaign.date <= end
     })
   }
   
@@ -219,8 +216,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         const roas = totalCost > 0 ? (totalRevenue / totalCost).toFixed(1) : '0.0'
         
         // Formata as datas para exibição
-        const startDateFormatted = new Date(startDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
-        const endDateFormatted = new Date(endDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+        const startDateFormatted = parseDateString(startDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+        const endDateFormatted = parseDateString(endDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
         
         const filterInfo = selectedCampaign ? ` | Filtrado: ${selectedCampaign}` : ''
         return `✅ ${filteredData.length} campanhas | R$ ${totalCost.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} | ROAS ${roas}x | ${startDateFormatted} - ${endDateFormatted}${filterInfo} - Mídia Paga`
@@ -1427,7 +1424,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     cpa: item.transactions_first > 0 ? item.cost / item.transactions_first : 0,
     roas: item.cost > 0 ? item.revenue / item.cost : 0,
     roas_first: item.cost > 0 ? item.revenue_first / item.cost : 0
-  })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()) : []
+  })).sort((a, b) => compareDateStrings(a.date, b.date)) : []
 
   // Processar dados para timeline de criativos (usar dados de criativos)
   const creativeTimelineData = creativeData.length > 0 ? creativeData.reduce((acc, item) => {
