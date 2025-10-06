@@ -13,4 +13,14 @@ export default defineConfig({
   optimizeDeps: {
     include: ['recharts'],
   },
+  server: {
+    proxy: {
+      '/api': {
+        target: 'https://api.mymetric.app',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+    },
+  },
 }) 

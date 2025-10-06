@@ -51,6 +51,7 @@ import TokenDebug from './TokenDebug'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useUrlParams } from '../hooks/useUrlParams'
 import { getDefaultPeriodForTab, getDatePresets, formatDateToString } from '../utils/dateUtils'
+import OrdersTab from './OrdersTab'
 
 interface User {
   email: string
@@ -1388,7 +1389,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     'funil-conversao',
     'dados-detalhados',
     'produtos',
-    'tempo-real'
+    'tempo-real',
+    'pedidos'
   ]
 
   // Abas que ficam no submenu
@@ -1498,7 +1500,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 'dados-detalhados': { label: 'Dados Detalhados', icon: Database },
                 'frete': { label: 'Frete', icon: Truck },
                 'produtos': { label: 'Produtos', icon: ShoppingCart },
-                'tempo-real': { label: 'Tempo Real', icon: Activity }
+                'tempo-real': { label: 'Tempo Real', icon: Activity },
+                'pedidos': { label: 'Pedidos', icon: ShoppingBag }
               }[tabId]
 
               if (!tabConfig) return null
@@ -1596,6 +1599,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   {activeTab === 'ab-testing' && 'Testes A/B'}
                   {activeTab === 'tempo-real' && 'Tempo Real'}
                   {activeTab === 'configuracao' && user?.admin && 'Configuração'}
+                  {activeTab === 'pedidos' && 'Pedidos'}
                 </span>
               </div>
               
@@ -1822,6 +1826,26 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                         )}
                       </div>
                     </button>
+
+                    <button
+                      onClick={() => {
+                        handleTabChange('pedidos')
+                        setShowMobileTabMenu(false)
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                        activeTab === 'pedidos'
+                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <ShoppingBag className="w-5 h-5" />
+                        <span>Pedidos</span>
+                        {activeTab === 'pedidos' && (
+                          <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full"></div>
+                        )}
+                      </div>
+                    </button>
                   </div>
                 </div>
               </>
@@ -2009,6 +2033,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   {activeTab === 'visao-geral' && 'Padrão: Mês atual até hoje'}
                   {activeTab === 'funil-conversao' && 'Padrão: Últimos 60 dias até hoje'}
                   {activeTab === 'dados-detalhados' && 'Padrão: Últimos 7 dias até hoje'}
+                  {activeTab === 'pedidos' && 'Padrão: Hoje'}
                   {!['visao-geral', 'funil-conversao', 'dados-detalhados'].includes(activeTab) && 'Padrão: Mês atual até hoje'}
                 </p>
               </div>
@@ -2831,6 +2856,10 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         {/* Token Debug Tab - apenas para usuários admin */}
         {activeTab === 'tokendebug' && user?.admin && (
           <TokenDebug />
+        )}
+
+        {activeTab === 'pedidos' && (
+          <OrdersTab selectedTable={selectedTable} startDate={startDate} endDate={endDate} />
         )}
 
       </main>

@@ -1,6 +1,8 @@
 import { AdsCampaignRequest, AdsCampaignResponse, FreteRequest, FreteResponse } from '../types'
 
-const API_BASE_URL = 'https://api.mymetric.app'
+const API_BASE_URL = (typeof window !== 'undefined' && window.location.origin.includes('localhost'))
+  ? '/api'
+  : 'https://api.mymetric.app'
 
 // Função para validar table_name - não permite "all" ou strings vazias como valores válidos para consultas
 export const validateTableName = (tableName: string): boolean => {
@@ -510,6 +512,10 @@ export const api = {
       console.log('📦 Orders API Response data:', data)
       return data
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('⏹️ Orders request aborted (AbortError)')
+        throw error
+      }
       console.error('❌ Orders fetch error:', error)
       throw new Error('Erro ao buscar pedidos.')
     }

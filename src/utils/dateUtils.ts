@@ -99,6 +99,11 @@ export const getDefaultPeriodForTab = (tab: string) => {
         start: presets.last7days.start,
         end: presets.last7days.end
       }
+    case 'pedidos':
+      return {
+        start: presets.today.start,
+        end: presets.today.end
+      }
     default:
       return {
         start: presets.thisMonth.start,
