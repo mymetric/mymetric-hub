@@ -48,6 +48,7 @@ import RealtimeData from './RealtimeData'
 import SessionStatus from './SessionStatus'
 import Configuracao from './UsersConfig'
 import TokenDebug from './TokenDebug'
+import OrdersByLocation from './OrdersByLocation'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useUrlParams } from '../hooks/useUrlParams'
 import { getDefaultPeriodForTab, getDatePresets, formatDateToString } from '../utils/dateUtils'
@@ -2766,6 +2767,15 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       </button>
                     </div>
                   )}
+                </div>
+
+                {/* Orders by Location */}
+                <div className="mt-6">
+                  <OrdersByLocation
+                    selectedTable={selectedTable}
+                    startDate={startDate}
+                    endDate={endDate}
+                  />
                 </div>
               </>
             )}

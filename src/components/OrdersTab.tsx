@@ -36,6 +36,9 @@ interface OrderItem {
 	Conteudo_Primeiro_Lead: string
 	Pagina_de_Entrada_Primeiro_Lead: string
 	Parametros_de_URL_Primeiro_Lead: string
+	city?: string
+	region?: string
+	country?: string
 	[key: string]: any
 }
 
