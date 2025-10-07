@@ -297,24 +297,24 @@ const OrdersTab = ({ selectedTable, startDate, endDate }: OrdersTabProps) => {
 			} else {
 				setOrders(newOrders)
 				console.log(`📊 Definindo ${newOrders.length} pedidos como inicial`)
+				// Liberar loading inicial imediatamente após primeiro lote
+				setIsLoading(false)
+				setIsInitialLoadComplete(true)
 			}
 
 			// Se retornou 100 pedidos, assume que pode haver mais e tenta buscar a próxima página
 			if (newOrders.length === 100) {
 				console.log(`🔄 Retornou 100 pedidos, tentando próxima página: offset ${offset + 100}`)
-				try {
-					await fetchOrders(offset + 100, true, 0)
-				} catch (nextPageError) {
+				// Buscar próxima página em background (não esperar)
+				setIsLoadingMore(true)
+				fetchOrders(offset + 100, true, 0).catch(() => {
 					// Se a próxima página falhar (provavelmente não há mais dados), continua normalmente
 					console.log(`✅ Não há mais páginas disponíveis. Busca finalizada com ${newOrders.length} pedidos nesta página`)
-				}
+					setIsLoadingMore(false)
+				})
 			} else {
 				console.log(`✅ Busca finalizada: ${newOrders.length} pedidos nesta página (menos de 100, última página)`)
-			}
-
-			// Marcar busca inicial como completa quando não há mais páginas para buscar
-			if (offset === 0 || newOrders.length < 100) {
-				setIsInitialLoadComplete(true)
+				setIsLoadingMore(false)
 			}
 		} catch (err) {
 			if (err instanceof Error && err.name === 'AbortError') {
@@ -337,16 +337,13 @@ const OrdersTab = ({ selectedTable, startDate, endDate }: OrdersTabProps) => {
 			
 			console.error('❌ Erro ao obter pedidos após todas as tentativas:', err)
 			setError(err instanceof Error ? err.message : 'Erro ao obter pedidos')
+			
+			// Limpar estados de loading em caso de erro
+			setIsLoading(false)
+			setIsLoadingMore(false)
 		} finally {
-			if (offset === 0) {
-				setIsLoading(false)
-			} else {
-				setIsLoadingMore(false)
-			}
-			// Garantir que a busca inicial está marcada como completa
-			if (offset === 0) {
-				setIsInitialLoadComplete(true)
-			}
+			// Não precisa fazer nada aqui, pois o loading já é gerenciado
+			// no bloco try após cada lote ser carregado
 		}
 	}, [selectedTable, startDate, endDate])
 
