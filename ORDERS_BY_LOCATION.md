@@ -46,6 +46,8 @@ O componente permite visualizar dados agrupados por:
 - Ticket médio calculado automaticamente
 - Percentual de pedidos por localização
 - Design responsivo para mobile e desktop
+- **Limite inicial de 10 registros** com botão "Ver mais"
+- Botão "Ver menos" para recolher a lista expandida
 
 #### 5. **Estados Visuais**
 - Loading durante carregamento
@@ -93,6 +95,12 @@ Componentes atualizados:
    - Ticket médio (receita / pedidos)
 
 4. Ordena e exibe os resultados em uma tabela interativa
+
+5. Mostra inicialmente apenas **10 localizações** (as primeiras após ordenação)
+
+6. Exibe um botão "Ver mais" quando há mais de 10 resultados
+
+7. Permite expandir para ver todas as localizações ou recolher de volta
 
 ## 🎨 Design
 

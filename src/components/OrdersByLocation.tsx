@@ -44,10 +44,12 @@ const OrdersByLocation = ({ selectedTable, startDate, endDate }: OrdersByLocatio
   const [groupBy, setGroupBy] = useState<'city' | 'region' | 'country'>('city')
   const [sortField, setSortField] = useState<'orders' | 'revenue'>('revenue')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
+  const [showAll, setShowAll] = useState(false)
 
+  // Resetar showAll quando mudar o agrupamento
   useEffect(() => {
-    loadMetrics()
-  }, [selectedTable, startDate, endDate])
+    setShowAll(false)
+  }, [groupBy])
 
   const loadMetrics = async () => {
     if (!selectedTable || !validateTableName(selectedTable)) {
@@ -71,6 +73,12 @@ const OrdersByLocation = ({ selectedTable, startDate, endDate }: OrdersByLocatio
       console.log('🌍 Metrics by Location API Request:', requestParams)
       
       const response = await api.getMetrics(token, requestParams)
+      
+      if (!response || !response.data) {
+        console.error('❌ Resposta da API inválida:', response)
+        throw new Error('Resposta da API está vazia ou inválida')
+      }
+
       const newMetrics = (response.data || []) as MetricItem[]
       
       console.log('📦 Metrics received:', newMetrics.length)
@@ -78,7 +86,8 @@ const OrdersByLocation = ({ selectedTable, startDate, endDate }: OrdersByLocatio
         console.log('📍 Sample metric location data:', {
           city: (newMetrics[0] as any).city,
           region: (newMetrics[0] as any).region,
-          country: (newMetrics[0] as any).country
+          country: (newMetrics[0] as any).country,
+          allFields: Object.keys(newMetrics[0])
         })
       }
 
@@ -91,6 +100,11 @@ const OrdersByLocation = ({ selectedTable, startDate, endDate }: OrdersByLocatio
       setIsLoading(false)
     }
   }
+
+  useEffect(() => {
+    loadMetrics()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTable, startDate, endDate])
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -146,6 +160,9 @@ const OrdersByLocation = ({ selectedTable, startDate, endDate }: OrdersByLocatio
   }
 
   const locationData = groupedData()
+  const INITIAL_DISPLAY_LIMIT = 10
+  const displayedData = showAll ? locationData : locationData.slice(0, INITIAL_DISPLAY_LIMIT)
+  const hasMore = locationData.length > INITIAL_DISPLAY_LIMIT
 
   const handleSort = (field: 'orders' | 'revenue') => {
     if (sortField === field) {
@@ -176,7 +193,16 @@ const OrdersByLocation = ({ selectedTable, startDate, endDate }: OrdersByLocatio
           <MapPin className="w-5 h-5" />
           <h3 className="text-lg font-semibold">Erro ao carregar dados de localização</h3>
         </div>
-        <p className="text-sm text-red-600">{error}</p>
+        <p className="text-sm text-red-600 mb-4">{error}</p>
+        <button
+          onClick={() => loadMetrics()}
+          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
+        >
+          Tentar novamente
+        </button>
+        <p className="text-xs text-gray-500 mt-3">
+          Verifique o console do navegador (F12) para mais detalhes sobre o erro.
+        </p>
       </div>
     )
   }
@@ -318,7 +344,7 @@ const OrdersByLocation = ({ selectedTable, startDate, endDate }: OrdersByLocatio
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {locationData.map((location: LocationStats, index: number) => {
+              {displayedData.map((location: LocationStats, index: number) => {
                 const percentOfTotal = totalOrders > 0 ? (location.orders / totalOrders) * 100 : 0
                 const locationName = groupBy === 'city' ? location.city : groupBy === 'region' ? location.region : location.country
                 
@@ -366,6 +392,36 @@ const OrdersByLocation = ({ selectedTable, startDate, endDate }: OrdersByLocatio
               })}
             </tbody>
           </table>
+
+          {/* Ver Mais Button */}
+          {hasMore && !showAll && (
+            <div className="mt-4 text-center border-t border-gray-200 pt-4">
+              <button
+                onClick={() => setShowAll(true)}
+                className="inline-flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
+              >
+                <span>Ver mais {locationData.length - INITIAL_DISPLAY_LIMIT} {groupBy === 'city' ? 'cidades' : groupBy === 'region' ? 'estados/regiões' : 'países'}</span>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            </div>
+          )}
+
+          {/* Ver Menos Button */}
+          {showAll && hasMore && (
+            <div className="mt-4 text-center border-t border-gray-200 pt-4">
+              <button
+                onClick={() => setShowAll(false)}
+                className="inline-flex items-center gap-2 px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors font-medium text-sm"
+              >
+                <span>Ver menos</span>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                </svg>
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
