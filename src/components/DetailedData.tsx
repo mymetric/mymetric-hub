@@ -493,19 +493,23 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel }: D
           existingDate.paidRevenue += item.Receita_Paga
           existingDate.newCustomerRevenue += item.Receita_Novos_Clientes || 0
           existingDate.investment += item.Investimento || 0
+          existingDate.averageTicket = existingDate.orders > 0 ? existingDate.revenue / existingDate.orders : 0
         } else {
+          const orders = item.Pedidos
+          const revenue = item.Receita
           acc.push({
             date: item.Data,
             sessions: item.Sessoes,
-            revenue: item.Receita,
+            revenue: revenue,
             clicks: item.Cliques || 0,
             addToCart: item.Adicoes_ao_Carrinho,
-            orders: item.Pedidos,
+            orders: orders,
             newCustomers: item.Novos_Clientes || 0,
             paidOrders: item.Pedidos_Pagos,
             paidRevenue: item.Receita_Paga,
             newCustomerRevenue: item.Receita_Novos_Clientes || 0,
-            investment: item.Investimento || 0
+            investment: item.Investimento || 0,
+            averageTicket: orders > 0 ? revenue / orders : 0
           })
         }
         return acc
@@ -521,6 +525,7 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel }: D
         paidRevenue: number;
         newCustomerRevenue: number;
         investment: number;
+        averageTicket: number;
       }[])
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
   }, [dataForMetrics])

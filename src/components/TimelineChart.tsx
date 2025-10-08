@@ -22,6 +22,7 @@ interface TimelineData {
   paidRevenue: number
   newCustomerRevenue: number
   investment: number
+  averageTicket: number
   sessionsMA?: number
   revenueMA?: number
   clicksMA?: number
@@ -32,6 +33,7 @@ interface TimelineData {
   paidRevenueMA?: number
   newCustomerRevenueMA?: number
   investmentMA?: number
+  averageTicketMA?: number
 }
 
 interface TimelineChartProps {
@@ -52,6 +54,7 @@ const availableMetrics = [
   { key: 'paidRevenue', label: 'Receita Paga', color: '#059669', icon: DollarSign, yAxisId: 'right' },
   { key: 'newCustomerRevenue', label: 'Receita Novos', color: '#7c3aed', icon: DollarSign, yAxisId: 'right' },
   { key: 'investment', label: 'Investimento', color: '#dc2626', icon: DollarSign, yAxisId: 'right' },
+  { key: 'averageTicket', label: 'Ticket Médio', color: '#f97316', icon: DollarSign, yAxisId: 'right' },
   // Métricas de média móvel
   { key: 'sessionsMA', label: 'Sessões (MM)', color: '#1d4ed8', icon: Users, yAxisId: 'left', isMovingAverage: true },
   { key: 'revenueMA', label: 'Receita (MM)', color: '#047857', icon: DollarSign, yAxisId: 'right', isMovingAverage: true },
@@ -62,7 +65,8 @@ const availableMetrics = [
   { key: 'paidOrdersMA', label: 'Pedidos Pagos (MM)', color: '#65a30d', icon: Package, yAxisId: 'left', isMovingAverage: true },
   { key: 'paidRevenueMA', label: 'Receita Paga (MM)', color: '#065f46', icon: DollarSign, yAxisId: 'right', isMovingAverage: true },
   { key: 'newCustomerRevenueMA', label: 'Receita Novos (MM)', color: '#7c2d12', icon: DollarSign, yAxisId: 'right', isMovingAverage: true },
-  { key: 'investmentMA', label: 'Investimento (MM)', color: '#991b1b', icon: DollarSign, yAxisId: 'right', isMovingAverage: true }
+  { key: 'investmentMA', label: 'Investimento (MM)', color: '#991b1b', icon: DollarSign, yAxisId: 'right', isMovingAverage: true },
+  { key: 'averageTicketMA', label: 'Ticket Médio (MM)', color: '#ea580c', icon: DollarSign, yAxisId: 'right', isMovingAverage: true }
 ]
 
 const TimelineChart = ({ data, title, showMovingAverage = false }: TimelineChartProps) => {
@@ -122,7 +126,12 @@ const TimelineChart = ({ data, title, showMovingAverage = false }: TimelineChart
       style: 'currency',
       currency: 'BRL',
       minimumFractionDigits: 0
-    }).format(item.investment)
+    }).format(item.investment),
+    averageTicketFormatted: new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+      minimumFractionDigits: 2
+    }).format(item.averageTicket)
   }))
 
 
@@ -140,7 +149,8 @@ const TimelineChart = ({ data, title, showMovingAverage = false }: TimelineChart
         paidOrders: acc.paidOrders + (item.paidOrdersMA || 0),
         paidRevenue: acc.paidRevenue + (item.paidRevenueMA || 0),
         newCustomerRevenue: acc.newCustomerRevenue + (item.newCustomerRevenueMA || 0),
-        investment: acc.investment + (item.investmentMA || 0)
+        investment: acc.investment + (item.investmentMA || 0),
+        averageTicket: acc.averageTicket + (item.averageTicketMA || 0)
       }
     } else {
       // No modo normal, usar os valores originais
@@ -154,7 +164,8 @@ const TimelineChart = ({ data, title, showMovingAverage = false }: TimelineChart
         paidOrders: acc.paidOrders + (item.paidOrders || 0),
         paidRevenue: acc.paidRevenue + (item.paidRevenue || 0),
         newCustomerRevenue: acc.newCustomerRevenue + (item.newCustomerRevenue || 0),
-        investment: acc.investment + (item.investment || 0)
+        investment: acc.investment + (item.investment || 0),
+        averageTicket: acc.averageTicket + (item.averageTicket || 0)
       }
     }
   }, {
@@ -167,7 +178,8 @@ const TimelineChart = ({ data, title, showMovingAverage = false }: TimelineChart
     paidOrders: 0,
     paidRevenue: 0,
     newCustomerRevenue: 0,
-    investment: 0
+    investment: 0,
+    averageTicket: 0
   })
 
   // Função para alternar métrica selecionada (apenas métricas normais)
@@ -379,6 +391,12 @@ const TimelineChart = ({ data, title, showMovingAverage = false }: TimelineChart
                         currency: 'BRL',
                         minimumFractionDigits: 0
                       }).format(total)
+                    : metric.key === 'averageTicket'
+                    ? new Intl.NumberFormat('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL',
+                        minimumFractionDigits: 2
+                      }).format(total / data.length)
                     : new Intl.NumberFormat('pt-BR').format(total)
                   }
                 </p>

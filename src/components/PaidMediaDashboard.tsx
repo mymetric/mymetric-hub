@@ -70,25 +70,62 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
   const [drilldownLevel, setDrilldownLevel] = useState<'campaign' | 'adgroup' | 'creative'>('campaign')
   const [selectedCreativeCampaign, setSelectedCreativeCampaign] = useState<string | null>(null)
   const [selectedAdGroup, setSelectedAdGroup] = useState<string | null>(null)
-  const [creativeVisibleColumns, setCreativeVisibleColumns] = useState({
-    platform: true,
-    campaign_name: true,
-    cost: true,
-    impressions: false,
-    clicks: false,
-    ctr: false,
-    cpc: false,
-    leads: false,
-    transactions: true,
-    transactions_first: false,
-    revenue: true,
-    revenue_first: false,
-    cpv: false,
-    cpa: false,
-    roas: true,
-    roas_first: false
-  })
+  // Carregar colunas visíveis de criativos do localStorage ou usar padrão
+  const getInitialCreativeVisibleColumns = () => {
+    const saved = localStorage.getItem('paidMediaCreativeVisibleColumns')
+    if (saved) {
+      try {
+        return JSON.parse(saved)
+      } catch {
+        return {
+          platform: true,
+          campaign_name: true,
+          cost: true,
+          impressions: false,
+          clicks: false,
+          ctr: false,
+          cpc: false,
+          leads: false,
+          transactions: true,
+          transactions_first: false,
+          new_customers_percentage: true,
+          revenue: true,
+          revenue_first: false,
+          cpv: false,
+          cpa: false,
+          roas: true,
+          roas_first: false
+        }
+      }
+    }
+    return {
+      platform: true,
+      campaign_name: true,
+      cost: true,
+      impressions: false,
+      clicks: false,
+      ctr: false,
+      cpc: false,
+      leads: false,
+      transactions: true,
+      transactions_first: false,
+      new_customers_percentage: true,
+      revenue: true,
+      revenue_first: false,
+      cpv: false,
+      cpa: false,
+      roas: true,
+      roas_first: false
+    }
+  }
+  
+  const [creativeVisibleColumns, setCreativeVisibleColumns] = useState(getInitialCreativeVisibleColumns())
   const [showCreativeColumnSelector, setShowCreativeColumnSelector] = useState(false)
+  
+  // Salvar colunas visíveis de criativos no localStorage quando mudarem
+  useEffect(() => {
+    localStorage.setItem('paidMediaCreativeVisibleColumns', JSON.stringify(creativeVisibleColumns))
+  }, [creativeVisibleColumns])
 
   // Funções auxiliares para cache inteligente
   const getCacheKey = (start: string, end: string) => `${start}_${end}`
@@ -181,25 +218,63 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       avg_roas_first: avgROASFirst
     }
   }
-  const [visibleColumns, setVisibleColumns] = useState({
-    platform: true,
-    campaign_name: true,
-    cost: true,
-    impressions: false,
-    clicks: false,
-    ctr: false,
-    cpc: false,
-    leads: false,
-    transactions: true,
-    transactions_first: false,
-    revenue: true,
-    revenue_first: false,
-    roas: true,
-    roas_first: false,
-    cpv: false,
-    cpa: false
-  })
+  
+  // Carregar colunas visíveis do localStorage ou usar padrão
+  const getInitialVisibleColumns = () => {
+    const saved = localStorage.getItem('paidMediaVisibleColumns')
+    if (saved) {
+      try {
+        return JSON.parse(saved)
+      } catch {
+        return {
+          platform: true,
+          campaign_name: true,
+          cost: true,
+          impressions: false,
+          clicks: false,
+          ctr: false,
+          cpc: false,
+          leads: false,
+          transactions: true,
+          transactions_first: false,
+          new_customers_percentage: true,
+          revenue: true,
+          revenue_first: false,
+          roas: true,
+          roas_first: false,
+          cpv: false,
+          cpa: false
+        }
+      }
+    }
+    return {
+      platform: true,
+      campaign_name: true,
+      cost: true,
+      impressions: false,
+      clicks: false,
+      ctr: false,
+      cpc: false,
+      leads: false,
+      transactions: true,
+      transactions_first: false,
+      new_customers_percentage: true,
+      revenue: true,
+      revenue_first: false,
+      roas: true,
+      roas_first: false,
+      cpv: false,
+      cpa: false
+    }
+  }
+  
+  const [visibleColumns, setVisibleColumns] = useState(getInitialVisibleColumns())
   const [showColumnSelector, setShowColumnSelector] = useState(false)
+
+  // Salvar colunas visíveis no localStorage quando mudarem
+  useEffect(() => {
+    localStorage.setItem('paidMediaVisibleColumns', JSON.stringify(visibleColumns))
+  }, [visibleColumns])
 
   // Título dinâmico da aba baseado no estado de carregamento
   const getPageTitle = () => {
@@ -659,6 +734,14 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         case 'transactions_first':
           aValue = a.transactions_first
           bValue = b.transactions_first
+          break
+        case 'new_customers_percentage':
+          const aTransactions = attributionModel === 'origin_stack' ? (a.transactions_origin_stack || a.transactions) : a.transactions
+          const aTransactionsFirst = attributionModel === 'origin_stack' ? (a.transactions_first_origin_stack || a.transactions_first) : a.transactions_first
+          aValue = aTransactions > 0 ? (aTransactionsFirst / aTransactions) * 100 : 0
+          const bTransactions = attributionModel === 'origin_stack' ? (b.transactions_origin_stack || b.transactions) : b.transactions
+          const bTransactionsFirst = attributionModel === 'origin_stack' ? (b.transactions_first_origin_stack || b.transactions_first) : b.transactions_first
+          bValue = bTransactions > 0 ? (bTransactionsFirst / bTransactions) * 100 : 0
           break
         case 'revenue':
           aValue = a.revenue
@@ -3161,6 +3244,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                         { key: 'leads', label: 'Leads', icon: '🎯' },
                         { key: 'transactions', label: 'Transações', icon: '🛒' },
                         { key: 'transactions_first', label: 'Trans. 1ª Compra', icon: '🆕' },
+                        { key: 'new_customers_percentage', label: '% Novos Clientes', icon: '👥' },
                         { key: 'revenue', label: 'Receita', icon: '💵' },
                         { key: 'revenue_first', label: 'Receita 1ª Compra', icon: '💎' },
                         { key: 'roas', label: 'ROAS', icon: '📈' },
@@ -3538,6 +3622,16 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                   Trans. 1ª Compra
                 </SortableHeader>
                 )}
+                {visibleColumns.new_customers_percentage && (
+                <SortableHeader
+                  field="new_customers_percentage"
+                  currentSortField={sortField}
+                  currentSortDirection={sortDirection}
+                  onSort={handleSort}
+                >
+                  % Novos Clientes
+                </SortableHeader>
+                )}
                 {visibleColumns.revenue && (
                 <SortableHeader
                   field="revenue"
@@ -3608,6 +3702,11 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                 const roasFirst = campaign.cost > 0 ? campaign.revenue_first / campaign.cost : 0
                 const cpv = campaign.transactions > 0 ? campaign.cost / campaign.transactions : 0
                 const cpa = campaign.transactions_first > 0 ? campaign.cost / campaign.transactions_first : 0
+                
+                // Calcular % de novos clientes baseado no modelo de atribuição
+                const currentTransactions = attributionModel === 'origin_stack' ? (campaign.transactions_origin_stack || campaign.transactions) : campaign.transactions
+                const currentTransactionsFirst = attributionModel === 'origin_stack' ? (campaign.transactions_first_origin_stack || campaign.transactions_first) : campaign.transactions_first
+                const newCustomersPercentage = currentTransactions > 0 ? (currentTransactionsFirst / currentTransactions) * 100 : 0
 
                 return (
                   <tr key={index} className={`hover:bg-gray-50 transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
@@ -3674,6 +3773,11 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                     {visibleColumns.transactions_first && (
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">
                       {formatNumber(campaign.transactions_first)}
+                    </td>
+                    )}
+                    {visibleColumns.new_customers_percentage && (
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">
+                      {currentTransactions > 0 ? `${newCustomersPercentage.toFixed(1)}%` : '-'}
                     </td>
                     )}
                     {visibleColumns.revenue && (
@@ -4152,6 +4256,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                         {creativeVisibleColumns.leads && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Leads</th>)}
                         {creativeVisibleColumns.transactions && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transações</th>)}
                         {creativeVisibleColumns.transactions_first && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transações 1ª</th>)}
+                        {creativeVisibleColumns.new_customers_percentage && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">% Novos Clientes</th>)}
                         {creativeVisibleColumns.ctr && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CTR</th>)}
                         {creativeVisibleColumns.cpc && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CPC</th>)}
                         {creativeVisibleColumns.cpv && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CPV</th>)}
@@ -4171,6 +4276,11 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                         const displayName = drilldownLevel === 'campaign' ? item.campaign_name : 
                                            drilldownLevel === 'adgroup' ? item.ad_group_name : 
                                            item.creative_name
+                        
+                        // Calcular % de novos clientes
+                        const currentTransactions = attributionModel === 'origin_stack' ? (item.transactions_origin_stack || item.transactions) : item.transactions
+                        const currentTransactionsFirst = attributionModel === 'origin_stack' ? (item.transactions_first_origin_stack || item.transactions_first) : item.transactions_first
+                        const newCustomersPercentage = currentTransactions > 0 ? (currentTransactionsFirst / currentTransactions) * 100 : 0
                         
                         console.log('🔍 Renderizando item:', {
                           index,
@@ -4202,6 +4312,11 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                             {creativeVisibleColumns.leads && (<td className="px-4 py-3 text-sm text-gray-900">{formatNumber(item.leads)}</td>)}
                             {creativeVisibleColumns.transactions && (<td className="px-4 py-3 text-sm text-gray-900">{formatNumber(attributionModel === 'origin_stack' ? (item.transactions_origin_stack || item.transactions) : item.transactions)}</td>)}
                             {creativeVisibleColumns.transactions_first && (<td className="px-4 py-3 text-sm text-gray-900">{formatNumber(attributionModel === 'origin_stack' ? (item.transactions_first_origin_stack || item.transactions_first) : item.transactions_first)}</td>)}
+                            {creativeVisibleColumns.new_customers_percentage && (
+                              <td className="px-4 py-3 text-sm font-medium text-indigo-600">
+                                {currentTransactions > 0 ? `${newCustomersPercentage.toFixed(1)}%` : '-'}
+                              </td>
+                            )}
                             {creativeVisibleColumns.ctr && (<td className="px-4 py-3 text-sm text-gray-900">{(item.impressions > 0 ? (item.clicks / item.impressions) * 100 : 0).toFixed(2)}%</td>)}
                             {creativeVisibleColumns.cpc && (<td className="px-4 py-3 text-sm text-gray-900">{item.clicks > 0 ? formatCurrency(item.cost / item.clicks) : '—'}</td>)}
                             {creativeVisibleColumns.cpv && (<td className="px-4 py-3 text-sm text-gray-900">{(attributionModel === 'origin_stack' ? (item.transactions_origin_stack || item.transactions) : item.transactions) > 0 ? formatCurrency(item.cost / (attributionModel === 'origin_stack' ? (item.transactions_origin_stack || item.transactions) : item.transactions)) : '—'}</td>)}

@@ -741,19 +741,23 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         existingDate.paidRevenue += item.Receita_Paga
         existingDate.newCustomerRevenue += item.Receita_Novos_Clientes
         existingDate.investment += item.Investimento
+        existingDate.averageTicket = existingDate.orders > 0 ? existingDate.revenue / existingDate.orders : 0
       } else {
+        const orders = item.Pedidos
+        const revenue = item.Receita
         acc.push({
           date: item.Data,
           sessions: item.Sessoes,
-          revenue: item.Receita,
+          revenue: revenue,
           clicks: item.Cliques,
           addToCart: item.Adicoes_ao_Carrinho,
-          orders: item.Pedidos,
+          orders: orders,
           newCustomers: item.Novos_Clientes,
           paidOrders: item.Pedidos_Pagos,
           paidRevenue: item.Receita_Paga,
           newCustomerRevenue: item.Receita_Novos_Clientes,
-          investment: item.Investimento
+          investment: item.Investimento,
+          averageTicket: orders > 0 ? revenue / orders : 0
         })
       }
       return acc
@@ -769,6 +773,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       paidRevenue: number;
       newCustomerRevenue: number;
       investment: number;
+      averageTicket: number;
     }[])
     .sort((a, b) => {
       // Ordenar datas de forma segura para evitar problemas de timezone
@@ -795,6 +800,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     const paidRevenue = timelineData.map(d => d.paidRevenue)
     const newCustomerRevenue = timelineData.map(d => d.newCustomerRevenue)
     const investment = timelineData.map(d => d.investment)
+    const averageTicket = timelineData.map(d => d.averageTicket)
     
     // Calcular média móvel para todas as métricas
     const sessionsMA = calculateMovingAverage(sessions)
@@ -807,6 +813,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     const paidRevenueMA = calculateMovingAverage(paidRevenue)
     const newCustomerRevenueMA = calculateMovingAverage(newCustomerRevenue)
     const investmentMA = calculateMovingAverage(investment)
+    const averageTicketMA = calculateMovingAverage(averageTicket)
     
     // Retornar apenas os dados a partir do 7º dia (índice 6)
     return timelineData.slice(6).map((item, index) => ({
@@ -820,7 +827,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       paidOrdersMA: paidOrdersMA[index],
       paidRevenueMA: paidRevenueMA[index],
       newCustomerRevenueMA: newCustomerRevenueMA[index],
-      investmentMA: investmentMA[index]
+      investmentMA: investmentMA[index],
+      averageTicketMA: averageTicketMA[index]
     }))
   })() : timelineData
 
