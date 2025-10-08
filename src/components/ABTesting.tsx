@@ -7,7 +7,12 @@ import {
   TrendingUpIcon,
   TrendingDownIcon,
   Monitor,
-  Smartphone
+  Smartphone,
+  ChevronDown,
+  ChevronUp,
+  Maximize2,
+  X,
+  DollarSign
 } from 'lucide-react'
 import TimelineAB from './TimelineAB'
 
@@ -20,6 +25,10 @@ interface ExperimentData {
   sessions: number
   transactions: number
   revenue: number
+  add_to_cart: number
+  begin_checkout: number
+  add_shipping_info: number
+  add_payment_info: number
 }
 
 interface AggregatedExperiment {
@@ -36,6 +45,14 @@ interface AggregatedExperiment {
       avg_order_value: number
       category: string
       variant: string
+      add_to_cart: number
+      begin_checkout: number
+      add_shipping_info: number
+      add_payment_info: number
+      add_to_cart_rate: number
+      begin_checkout_rate: number
+      add_shipping_info_rate: number
+      add_payment_info_rate: number
     }
   }
   total_sessions: number
@@ -60,7 +77,7 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedExperimentForTimeline, setSelectedExperimentForTimeline] = useState<string>('')
-
+  const [fullscreenTable, setFullscreenTable] = useState<string | null>(null)
 
   // Buscar dados dos experimentos
   const fetchExperiments = async () => {
@@ -149,13 +166,25 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
           revenue_per_session: 0,
           avg_order_value: 0,
           category: exp.category,
-          variant: variant
+          variant: variant,
+          add_to_cart: 0,
+          begin_checkout: 0,
+          add_shipping_info: 0,
+          add_payment_info: 0,
+          add_to_cart_rate: 0,
+          begin_checkout_rate: 0,
+          add_shipping_info_rate: 0,
+          add_payment_info_rate: 0
         }
       }
 
       experiment.variants[categoryKey].sessions += exp.sessions
       experiment.variants[categoryKey].transactions += exp.transactions
       experiment.variants[categoryKey].revenue += exp.revenue
+      experiment.variants[categoryKey].add_to_cart += exp.add_to_cart || 0
+      experiment.variants[categoryKey].begin_checkout += exp.begin_checkout || 0
+      experiment.variants[categoryKey].add_shipping_info += exp.add_shipping_info || 0
+      experiment.variants[categoryKey].add_payment_info += exp.add_payment_info || 0
 
       experiment.total_sessions += exp.sessions
       experiment.total_transactions += exp.transactions
@@ -194,6 +223,10 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
         variant.conversion_rate = variant.sessions > 0 ? (variant.transactions / variant.sessions) * 100 : 0
         variant.revenue_per_session = variant.sessions > 0 ? variant.revenue / variant.sessions : 0
         variant.avg_order_value = variant.transactions > 0 ? variant.revenue / variant.transactions : 0
+        variant.add_to_cart_rate = variant.sessions > 0 ? (variant.add_to_cart / variant.sessions) * 100 : 0
+        variant.begin_checkout_rate = variant.sessions > 0 ? (variant.begin_checkout / variant.sessions) * 100 : 0
+        variant.add_shipping_info_rate = variant.sessions > 0 ? (variant.add_shipping_info / variant.sessions) * 100 : 0
+        variant.add_payment_info_rate = variant.sessions > 0 ? (variant.add_payment_info / variant.sessions) * 100 : 0
       })
 
       // Métricas gerais do experimento
@@ -217,8 +250,8 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
     }
   }, [experiments])
 
-  // Filtrar dados agregados (sem filtros, mostrar todos)
-  const filteredAndSortedExperiments = aggregatedExperiments
+  // Filtrar dados agregados (remover experimentos com menos de 50 sessões)
+  const filteredAndSortedExperiments = aggregatedExperiments.filter(exp => exp.total_sessions >= 50)
 
 
 
@@ -244,7 +277,7 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
   const exportToCSV = () => {
     if (filteredAndSortedExperiments.length === 0) return
 
-    const headers = ['ID do Experimento', 'Nome do Experimento', 'Categoria', 'Variante', 'Sessões', 'Transações', 'Receita', 'Taxa de Conversão', 'Receita por Sessão', 'Ticket Médio']
+    const headers = ['ID do Experimento', 'Nome do Experimento', 'Categoria', 'Variante', 'Sessões', 'Transações', 'Receita', 'Taxa de Conversão', 'Receita por Sessão', 'Ticket Médio', 'Add to Cart', 'Taxa Add to Cart', 'Begin Checkout', 'Taxa Begin Checkout', 'Add Shipping Info', 'Taxa Add Shipping Info', 'Add Payment Info', 'Taxa Add Payment Info']
     const csvContent = [
       headers.join(','),
       ...filteredAndSortedExperiments.flatMap(exp => 
@@ -258,7 +291,15 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
           data.revenue,
           data.conversion_rate.toFixed(2),
           data.revenue_per_session.toFixed(2),
-          data.avg_order_value.toFixed(2)
+          data.avg_order_value.toFixed(2),
+          data.add_to_cart,
+          data.add_to_cart_rate.toFixed(2),
+          data.begin_checkout,
+          data.begin_checkout_rate.toFixed(2),
+          data.add_shipping_info,
+          data.add_shipping_info_rate.toFixed(2),
+          data.add_payment_info,
+          data.add_payment_info_rate.toFixed(2)
         ].join(','))
       )
     ].join('\n')
@@ -275,7 +316,7 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
   }
 
   // Calcular lift entre variantes
-  const calculateLift = (control: any, variant: any, metric: 'revenue_per_session' | 'conversion_rate') => {
+  const calculateLift = (control: any, variant: any, metric: 'revenue_per_session' | 'conversion_rate' | 'add_to_cart_rate' | 'begin_checkout_rate' | 'add_shipping_info_rate' | 'add_payment_info_rate') => {
     if (!control || !variant || control[metric] === 0) return null
     
     const lift = ((variant[metric] - control[metric]) / control[metric]) * 100
@@ -416,6 +457,13 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
 
   return (
     <div className="space-y-6">
+      {/* Informação sobre filtro de sessões */}
+      {aggregatedExperiments.length > filteredAndSortedExperiments.length && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+          <span className="font-medium">Filtro ativo:</span> Ocultando {aggregatedExperiments.length - filteredAndSortedExperiments.length} experimento(s) com menos de 50 sessões totais.
+        </div>
+      )}
+      
       {/* Botão Exportar CSV */}
       <div className="flex justify-end mb-4">
         <button
@@ -442,9 +490,9 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
 
 
       {/* Lista de experimentos agregados */}
-      <div className="space-y-6">
+      <div className="space-y-8">
         {filteredAndSortedExperiments.map(experiment => (
-          <div key={experiment.experiment_id} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+          <div key={experiment.experiment_id} className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
             {/* Header do experimento */}
             <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
               <div className="flex items-center justify-between">
@@ -469,11 +517,14 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
               </div>
             </div>
 
-            {/* Tabela de variantes */}
-            <div className="overflow-x-auto">
-              {/* Seção de Métricas por Dispositivo */}
-              <div className="px-6 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-200">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Seção de Métricas por Dispositivo */}
+            <div className="m-6 bg-gradient-to-r from-blue-50 to-indigo-50 border border-gray-200 rounded-lg">
+              <div className="px-6 py-3 border-b border-blue-200">
+                <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  📊 Resumo por Dispositivo
+                </h4>
+              </div>
+              <div className="px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Card: Desktop */}
                   <div className="bg-white rounded-lg p-4 border border-blue-200 shadow-sm">
                     <div className="flex items-center gap-3 mb-3">
@@ -595,38 +646,211 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
                       </div>
                     </div>
                   </div>
+
+                  {/* Card: Projeção Anual */}
+                  {(() => {
+                    const desktopControl = experiment.variants['desktop_controle']
+                    const desktopVariant = experiment.variants['desktop_1'] || experiment.variants['desktop_2']
+                    const mobileControl = experiment.variants['mobile_controle']
+                    const mobileVariant = experiment.variants['mobile_1'] || experiment.variants['mobile_2']
+                    
+                    let desktopProjection = 0
+                    let mobileProjection = 0
+                    let hasDesktopWinner = false
+                    let hasMobileWinner = false
+                    
+                    // Calcular projeção desktop
+                    if (desktopControl && desktopVariant) {
+                      const significance = calculateStatisticalSignificance(desktopControl, desktopVariant)
+                      if (significance?.isSignificant && desktopVariant.revenue_per_session > desktopControl.revenue_per_session) {
+                        const liftValue = desktopVariant.revenue_per_session - desktopControl.revenue_per_session
+                        const dailySessions = desktopControl.sessions + desktopVariant.sessions
+                        const daysInPeriod = Math.max(1, (new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24) + 1)
+                        const avgDailySessions = dailySessions / daysInPeriod
+                        desktopProjection = liftValue * avgDailySessions * 365
+                        hasDesktopWinner = true
+                      }
+                    }
+                    
+                    // Calcular projeção mobile
+                    if (mobileControl && mobileVariant) {
+                      const significance = calculateStatisticalSignificance(mobileControl, mobileVariant)
+                      if (significance?.isSignificant && mobileVariant.revenue_per_session > mobileControl.revenue_per_session) {
+                        const liftValue = mobileVariant.revenue_per_session - mobileControl.revenue_per_session
+                        const dailySessions = mobileControl.sessions + mobileVariant.sessions
+                        const daysInPeriod = Math.max(1, (new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24) + 1)
+                        const avgDailySessions = dailySessions / daysInPeriod
+                        mobileProjection = liftValue * avgDailySessions * 365
+                        hasMobileWinner = true
+                      }
+                    }
+                    
+                    const totalProjection = desktopProjection + mobileProjection
+                    
+                    if (!hasDesktopWinner && !hasMobileWinner) return null
+                    
+                    return (
+                      <div className="bg-white rounded-lg p-4 border-2 border-green-300 shadow-sm col-span-full">
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="p-2 bg-gradient-to-br from-green-100 to-emerald-100 rounded-lg">
+                            <DollarSign className="w-5 h-5 text-green-600" />
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-gray-900">💰 Projeção de Receita Adicional Anual</h4>
+                            <p className="text-sm text-gray-600">Ganho potencial ao implementar a variante vencedora</p>
+                          </div>
+                        </div>
+                        
+                        <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-4 border border-green-200">
+                          <div className="text-center mb-4">
+                            <div className="text-3xl font-bold text-green-700 mb-2">
+                              +{formatCurrency(totalProjection)}
+                            </div>
+                            <div className="text-sm text-green-600">
+                              por ano em receita adicional estimada (total)
+                            </div>
+                          </div>
+                          
+                          {/* Projeção por Dispositivo */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                            {hasDesktopWinner && (
+                              <div className="bg-white rounded-lg p-3 border border-blue-200">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <Monitor className="w-4 h-4 text-blue-600" />
+                                  <span className="text-sm font-medium text-gray-700">Desktop</span>
+                                </div>
+                                <div className="text-2xl font-bold text-blue-600">
+                                  +{formatCurrency(desktopProjection)}
+                                </div>
+                                <div className="text-xs text-gray-600 mt-1">
+                                  {((desktopProjection / totalProjection) * 100).toFixed(1)}% do total
+                                </div>
+                              </div>
+                            )}
+                            
+                            {hasMobileWinner && (
+                              <div className="bg-white rounded-lg p-3 border border-green-200">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <Smartphone className="w-4 h-4 text-green-600" />
+                                  <span className="text-sm font-medium text-gray-700">Mobile</span>
+                                </div>
+                                <div className="text-2xl font-bold text-green-600">
+                                  +{formatCurrency(mobileProjection)}
+                                </div>
+                                <div className="text-xs text-gray-600 mt-1">
+                                  {((mobileProjection / totalProjection) * 100).toFixed(1)}% do total
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          
+                          <div className="pt-3 border-t border-green-200">
+                            <div className="text-xs text-gray-600 space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span>📊 Base de cálculo:</span>
+                                <span className="font-medium">Lift de receita/sessão × volume anual</span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span>📅 Período analisado:</span>
+                                <span className="font-medium">{new Date(startDate).toLocaleDateString('pt-BR')} a {new Date(endDate).toLocaleDateString('pt-BR')}</span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span>✅ Significância:</span>
+                                <span className="font-medium text-green-600">Estatisticamente comprovado (p &lt; 0.05)</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="mt-3 text-xs text-gray-500 bg-blue-50 rounded px-3 py-2">
+                          💡 <strong>Nota:</strong> Esta é uma projeção conservadora baseada no desempenho atual. Resultados reais podem variar devido a sazonalidade e mudanças no comportamento do usuário.
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </div>
               </div>
 
-              <table className="min-w-full divide-y divide-gray-200">
+            {/* Tabela de variantes */}
+            <div className="m-6 border border-gray-200 rounded-lg shadow-sm">
+              <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  📈 Detalhamento por Variante e Dispositivo
+                </h4>
+                <button
+                  onClick={() => setFullscreenTable(experiment.experiment_id)}
+                  className="flex items-center gap-2 px-3 py-1 text-xs font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors"
+                >
+                  <Maximize2 className="w-4 h-4" />
+                  Tela Cheia
+                </button>
+              </div>
+              
+              {/* Legenda dos Eventos de Conversão */}
+              <div className="px-6 py-3 bg-purple-50 border-b border-purple-200">
+                <div className="flex items-center gap-2 text-xs text-purple-800">
+                  <span className="font-semibold">Eventos do Funil:</span>
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 bg-purple-400 rounded-full"></span>
+                    Carrinho = Add to Cart
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 bg-purple-400 rounded-full"></span>
+                    Checkout = Begin Checkout
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 bg-purple-400 rounded-full"></span>
+                    Envio = Add Shipping Info
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 bg-purple-400 rounded-full"></span>
+                    Pagamento = Add Payment Info
+                  </span>
+                </div>
+              </div>
+
+              <div className="overflow-auto">
+                <table className="w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Variante
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Sessões
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Transações
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Receita
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Taxa de Conversão
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Taxa Conv.
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Receita por Sessão
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Rec./Sessão
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Ticket Médio
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Lift vs Controle
+                    <th className="px-3 py-3 text-center text-xs font-medium text-purple-700 uppercase tracking-wider bg-purple-50 border-l-2 border-purple-200">
+                      Carrinho
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Significância
+                    <th className="px-3 py-3 text-center text-xs font-medium text-purple-700 uppercase tracking-wider bg-purple-50">
+                      Checkout
+                    </th>
+                    <th className="px-3 py-3 text-center text-xs font-medium text-purple-700 uppercase tracking-wider bg-purple-50">
+                      Envio
+                    </th>
+                    <th className="px-3 py-3 text-center text-xs font-medium text-purple-700 uppercase tracking-wider bg-purple-50 border-r-2 border-purple-200">
+                      Pagamento
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Lift
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Signif.
                     </th>
                   </tr>
                 </thead>
@@ -642,46 +866,104 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
                     const liftRevenuePerSession = !isControl && controlData ? 
                       calculateLift(controlData, data, 'revenue_per_session') : null
                     
+                    // Calcular lifts para os eventos do funil
+                    const liftAddToCart = !isControl && controlData ? 
+                      calculateLift(controlData, data, 'add_to_cart_rate') : null
+                    const liftBeginCheckout = !isControl && controlData ? 
+                      calculateLift(controlData, data, 'begin_checkout_rate') : null
+                    const liftAddShipping = !isControl && controlData ? 
+                      calculateLift(controlData, data, 'add_shipping_info_rate') : null
+                    const liftAddPayment = !isControl && controlData ? 
+                      calculateLift(controlData, data, 'add_payment_info_rate') : null
+                    
                     return (
                       <tr key={variantKey} className={`${isControl ? 'bg-blue-50' : 'hover:bg-gray-50'} ${isMobile ? 'border-l-4 border-l-blue-200' : 'border-l-4 border-l-green-200'}`}>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center gap-2">
-                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <div className="flex items-center gap-1">
+                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium ${
                               isMobile ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
                             }`}>
                               {isMobile ? <Smartphone className="w-3 h-3" /> : <Monitor className="w-3 h-3" />}
                               {category}
                             </span>
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                               isControl 
                                 ? 'bg-blue-100 text-blue-800' 
                                 : 'bg-green-100 text-green-800'
                             }`}>
-                              {isControl ? 'Controle' : `Variante ${variant}`}
+                              {isControl ? 'Ctrl' : `V${variant}`}
                             </span>
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
                           {formatNumber(data.sessions)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
                           {formatNumber(data.transactions)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        <td className="px-3 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                           {formatCurrency(data.revenue)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
                           {formatPercentage(data.conversion_rate)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        <td className="px-3 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                           {formatCurrency(data.revenue_per_session)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
                           {formatCurrency(data.avg_order_value)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900 bg-purple-50 border-l-2 border-purple-200">
+                          <div className="text-center">
+                            <div className="font-medium">{formatNumber(data.add_to_cart)}</div>
+                            <div className="text-xs text-gray-600">{formatPercentage(data.add_to_cart_rate)}</div>
+                            {!isControl && liftAddToCart !== null && (
+                              <div className={`text-xs font-medium ${liftAddToCart > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {liftAddToCart > 0 ? '↑' : '↓'}{Math.abs(liftAddToCart).toFixed(1)}%
+                              </div>
+                            )}
+                            {isControl && <div className="text-xs text-gray-400">controle</div>}
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900 bg-purple-50">
+                          <div className="text-center">
+                            <div className="font-medium">{formatNumber(data.begin_checkout)}</div>
+                            <div className="text-xs text-gray-600">{formatPercentage(data.begin_checkout_rate)}</div>
+                            {!isControl && liftBeginCheckout !== null && (
+                              <div className={`text-xs font-medium ${liftBeginCheckout > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {liftBeginCheckout > 0 ? '↑' : '↓'}{Math.abs(liftBeginCheckout).toFixed(1)}%
+                              </div>
+                            )}
+                            {isControl && <div className="text-xs text-gray-400">controle</div>}
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900 bg-purple-50">
+                          <div className="text-center">
+                            <div className="font-medium">{formatNumber(data.add_shipping_info)}</div>
+                            <div className="text-xs text-gray-600">{formatPercentage(data.add_shipping_info_rate)}</div>
+                            {!isControl && liftAddShipping !== null && (
+                              <div className={`text-xs font-medium ${liftAddShipping > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {liftAddShipping > 0 ? '↑' : '↓'}{Math.abs(liftAddShipping).toFixed(1)}%
+                              </div>
+                            )}
+                            {isControl && <div className="text-xs text-gray-400">controle</div>}
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900 bg-purple-50 border-r-2 border-purple-200">
+                          <div className="text-center">
+                            <div className="font-medium">{formatNumber(data.add_payment_info)}</div>
+                            <div className="text-xs text-gray-600">{formatPercentage(data.add_payment_info_rate)}</div>
+                            {!isControl && liftAddPayment !== null && (
+                              <div className={`text-xs font-medium ${liftAddPayment > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {liftAddPayment > 0 ? '↑' : '↓'}{Math.abs(liftAddPayment).toFixed(1)}%
+                              </div>
+                            )}
+                            {isControl && <div className="text-xs text-gray-400">controle</div>}
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap">
                           {!isControl && liftRevenuePerSession !== null ? (
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1">
                               {liftRevenuePerSession > 0 ? (
                                 <TrendingUpIcon className="w-4 h-4 text-green-600" />
                               ) : (
@@ -690,22 +972,22 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
                               <span className={`text-sm font-medium ${
                                 liftRevenuePerSession > 0 ? 'text-green-600' : 'text-red-600'
                               }`}>
-                                {liftRevenuePerSession > 0 ? '+' : ''}{liftRevenuePerSession.toFixed(2)}%
+                                {liftRevenuePerSession > 0 ? '+' : ''}{liftRevenuePerSession.toFixed(1)}%
                               </span>
                             </div>
                           ) : (
                             <span className="text-sm text-gray-400">-</span>
                           )}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-3 py-3 whitespace-nowrap">
                           {!isControl && controlData ? (
                             (() => {
                               const significance = calculateStatisticalSignificance(controlData, data)
                               if (!significance) return <span className="text-sm text-gray-400">-</span>
                               
                               return (
-                                <div className="flex items-center gap-2">
-                                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                <div className="flex items-center gap-1">
+                                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
                                     significance.isSignificant 
                                       ? 'bg-green-100 text-green-800' 
                                       : 'bg-yellow-100 text-yellow-800'
@@ -718,14 +1000,8 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
                                     }`}>
                                       {significance.confidence}
                                     </div>
-                                    <div className="text-gray-500">
-                                      p &lt; {significance.pValue.toFixed(3)}
-                                    </div>
-                                    <div className="text-gray-400 text-xs">
-                                      Z: {significance.zScore.toFixed(2)}
-                                    </div>
-                                    <div className="text-gray-400 text-xs">
-                                      Power: {(significance.power * 100).toFixed(0)}%
+                                    <div className="text-gray-500 text-xs">
+                                      p={significance.pValue.toFixed(3)}
                                     </div>
                                   </div>
                                 </div>
@@ -740,6 +1016,7 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
           </div>
         ))}
@@ -754,6 +1031,240 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
           </div>
         )}
       </div>
+
+      {/* Modal Tela Cheia */}
+      {fullscreenTable && (() => {
+        const experiment = filteredAndSortedExperiments.find(exp => exp.experiment_id === fullscreenTable)
+        if (!experiment) return null
+
+        return (
+          <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg shadow-2xl w-full h-full max-w-[98vw] max-h-[98vh] flex flex-col">
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gray-50">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">{experiment.experiment_name}</h3>
+                  <p className="text-sm text-gray-600 mt-1">ID: {experiment.experiment_id}</p>
+                </div>
+                <button
+                  onClick={() => setFullscreenTable(null)}
+                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* Conteúdo da Tabela */}
+              <div className="flex-1 overflow-auto p-6">
+                <table className="w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Variante
+                      </th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Sessões
+                      </th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Transações
+                      </th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Receita
+                      </th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Taxa Conv.
+                      </th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Rec./Sessão
+                      </th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Ticket Médio
+                      </th>
+                      <th className="px-3 py-3 text-center text-xs font-medium text-purple-700 uppercase tracking-wider bg-purple-50 border-l-2 border-purple-200">
+                        Carrinho
+                      </th>
+                      <th className="px-3 py-3 text-center text-xs font-medium text-purple-700 uppercase tracking-wider bg-purple-50">
+                        Checkout
+                      </th>
+                      <th className="px-3 py-3 text-center text-xs font-medium text-purple-700 uppercase tracking-wider bg-purple-50">
+                        Envio
+                      </th>
+                      <th className="px-3 py-3 text-center text-xs font-medium text-purple-700 uppercase tracking-wider bg-purple-50 border-r-2 border-purple-200">
+                        Pagamento
+                      </th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Lift
+                      </th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Signif.
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {Object.entries(experiment.variants).map(([variantKey, data]) => {
+                      const [category, variant] = variantKey.split('_')
+                      const isControl = variant === 'controle'
+                      const isMobile = category === 'mobile'
+                      
+                      const controlKey = isMobile ? 'mobile_controle' : 'desktop_controle'
+                      const controlData = experiment.variants[controlKey]
+                      const liftRevenuePerSession = !isControl && controlData ? 
+                        calculateLift(controlData, data, 'revenue_per_session') : null
+                      
+                      const liftAddToCart = !isControl && controlData ? 
+                        calculateLift(controlData, data, 'add_to_cart_rate') : null
+                      const liftBeginCheckout = !isControl && controlData ? 
+                        calculateLift(controlData, data, 'begin_checkout_rate') : null
+                      const liftAddShipping = !isControl && controlData ? 
+                        calculateLift(controlData, data, 'add_shipping_info_rate') : null
+                      const liftAddPayment = !isControl && controlData ? 
+                        calculateLift(controlData, data, 'add_payment_info_rate') : null
+
+                      return (
+                        <tr key={variantKey} className={`${isControl ? 'bg-blue-50' : 'hover:bg-gray-50'} ${isMobile ? 'border-l-4 border-l-blue-200' : 'border-l-4 border-l-green-200'}`}>
+                          <td className="px-3 py-3 whitespace-nowrap">
+                            <div className="flex items-center gap-1">
+                              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium ${
+                                isMobile ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
+                              }`}>
+                                {isMobile ? <Smartphone className="w-3 h-3" /> : <Monitor className="w-3 h-3" />}
+                                {category}
+                              </span>
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                                isControl 
+                                  ? 'bg-blue-100 text-blue-800' 
+                                  : 'bg-green-100 text-green-800'
+                              }`}>
+                                {isControl ? 'Ctrl' : `V${variant}`}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
+                            {formatNumber(data.sessions)}
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
+                            {formatNumber(data.transactions)}
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                            {formatCurrency(data.revenue)}
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
+                            {formatPercentage(data.conversion_rate)}
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                            {formatCurrency(data.revenue_per_session)}
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
+                            {formatCurrency(data.avg_order_value)}
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900 bg-purple-50 border-l-2 border-purple-200">
+                            <div className="text-center">
+                              <div className="font-medium">{formatNumber(data.add_to_cart)}</div>
+                              <div className="text-xs text-gray-600">{formatPercentage(data.add_to_cart_rate)}</div>
+                              {!isControl && liftAddToCart !== null && (
+                                <div className={`text-xs font-medium ${liftAddToCart > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                  {liftAddToCart > 0 ? '↑' : '↓'}{Math.abs(liftAddToCart).toFixed(1)}%
+                                </div>
+                              )}
+                              {isControl && <div className="text-xs text-gray-400">controle</div>}
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900 bg-purple-50">
+                            <div className="text-center">
+                              <div className="font-medium">{formatNumber(data.begin_checkout)}</div>
+                              <div className="text-xs text-gray-600">{formatPercentage(data.begin_checkout_rate)}</div>
+                              {!isControl && liftBeginCheckout !== null && (
+                                <div className={`text-xs font-medium ${liftBeginCheckout > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                  {liftBeginCheckout > 0 ? '↑' : '↓'}{Math.abs(liftBeginCheckout).toFixed(1)}%
+                                </div>
+                              )}
+                              {isControl && <div className="text-xs text-gray-400">controle</div>}
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900 bg-purple-50">
+                            <div className="text-center">
+                              <div className="font-medium">{formatNumber(data.add_shipping_info)}</div>
+                              <div className="text-xs text-gray-600">{formatPercentage(data.add_shipping_info_rate)}</div>
+                              {!isControl && liftAddShipping !== null && (
+                                <div className={`text-xs font-medium ${liftAddShipping > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                  {liftAddShipping > 0 ? '↑' : '↓'}{Math.abs(liftAddShipping).toFixed(1)}%
+                                </div>
+                              )}
+                              {isControl && <div className="text-xs text-gray-400">controle</div>}
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900 bg-purple-50 border-r-2 border-purple-200">
+                            <div className="text-center">
+                              <div className="font-medium">{formatNumber(data.add_payment_info)}</div>
+                              <div className="text-xs text-gray-600">{formatPercentage(data.add_payment_info_rate)}</div>
+                              {!isControl && liftAddPayment !== null && (
+                                <div className={`text-xs font-medium ${liftAddPayment > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                  {liftAddPayment > 0 ? '↑' : '↓'}{Math.abs(liftAddPayment).toFixed(1)}%
+                                </div>
+                              )}
+                              {isControl && <div className="text-xs text-gray-400">controle</div>}
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap">
+                            {!isControl && liftRevenuePerSession !== null ? (
+                              <div className="flex items-center gap-1">
+                                {liftRevenuePerSession > 0 ? (
+                                  <TrendingUpIcon className="w-4 h-4 text-green-600" />
+                                ) : (
+                                  <TrendingDownIcon className="w-4 h-4 text-red-600" />
+                                )}
+                                <span className={`text-sm font-medium ${
+                                  liftRevenuePerSession > 0 ? 'text-green-600' : 'text-red-600'
+                                }`}>
+                                  {liftRevenuePerSession > 0 ? '+' : ''}{liftRevenuePerSession.toFixed(1)}%
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-sm text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap">
+                            {!isControl && controlData ? (
+                              (() => {
+                                const significance = calculateStatisticalSignificance(controlData, data)
+                                if (!significance) return <span className="text-sm text-gray-400">-</span>
+                                
+                                return (
+                                  <div className="flex items-center gap-1">
+                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                                      significance.isSignificant 
+                                        ? 'bg-green-100 text-green-800' 
+                                        : 'bg-yellow-100 text-yellow-800'
+                                    }`}>
+                                      {significance.isSignificant ? '✓' : '⚠️'}
+                                    </span>
+                                    <div className="text-xs">
+                                      <div className={`font-medium ${
+                                        significance.isSignificant ? 'text-green-700' : 'text-yellow-700'
+                                      }`}>
+                                        {significance.confidence}
+                                      </div>
+                                      <div className="text-gray-500 text-xs">
+                                        p={significance.pValue.toFixed(3)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )
+                              })()
+                            ) : (
+                              <span className="text-sm text-gray-400">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

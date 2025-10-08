@@ -386,34 +386,22 @@ const TimelineAB = ({ data, selectedExperimentId, onExperimentSelect }: Timeline
       {/* Seleção de Experimento */}
       {experiments.length > 1 && (
         <div className="mb-6">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-sm font-medium text-gray-700">Experimento:</span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => onExperimentSelect?.('')}
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                !selectedExperimentId
-                  ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
-                  : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
-              }`}
-            >
-              Todos os Experimentos
-            </button>
+          <label htmlFor="experiment-select" className="block text-sm font-medium text-gray-700 mb-2">
+            Selecione o Experimento:
+          </label>
+          <select
+            id="experiment-select"
+            value={selectedExperimentId || ''}
+            onChange={(e) => onExperimentSelect?.(e.target.value)}
+            className="w-full md:w-96 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+          >
+            <option value="">Todos os Experimentos</option>
             {experiments.map((experiment) => (
-              <button
-                key={experiment.id}
-                onClick={() => onExperimentSelect?.(experiment.id)}
-                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                  selectedExperimentId === experiment.id
-                    ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
-                    : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
-                }`}
-              >
+              <option key={experiment.id} value={experiment.id}>
                 {experiment.name}
-              </button>
+              </option>
             ))}
-          </div>
+          </select>
         </div>
       )}
 
