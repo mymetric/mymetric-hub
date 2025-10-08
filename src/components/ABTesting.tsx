@@ -23,6 +23,7 @@ interface ExperimentData {
   experiment_variant: string
   category: string
   sessions: number
+  users: number
   transactions: number
   revenue: number
   add_to_cart: number
@@ -38,10 +39,13 @@ interface AggregatedExperiment {
   variants: {
     [variant: string]: {
       sessions: number
+      users: number
+      users_percentage: number
       transactions: number
       revenue: number
       conversion_rate: number
       revenue_per_session: number
+      sessions_per_user: number
       avg_order_value: number
       category: string
       variant: string
@@ -56,6 +60,7 @@ interface AggregatedExperiment {
     }
   }
   total_sessions: number
+  total_users: number
   total_transactions: number
   total_revenue: number
   overall_conversion_rate: number
@@ -143,6 +148,7 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
           category: 'mixed', // Categoria mista para indicar que tem mobile e desktop
           variants: {},
           total_sessions: 0,
+          total_users: 0,
           total_transactions: 0,
           total_revenue: 0,
           overall_conversion_rate: 0,
@@ -160,10 +166,13 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
       if (!experiment.variants[categoryKey]) {
         experiment.variants[categoryKey] = {
           sessions: 0,
+          users: 0,
+          users_percentage: 0,
           transactions: 0,
           revenue: 0,
           conversion_rate: 0,
           revenue_per_session: 0,
+          sessions_per_user: 0,
           avg_order_value: 0,
           category: exp.category,
           variant: variant,
@@ -179,6 +188,7 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
       }
 
       experiment.variants[categoryKey].sessions += exp.sessions
+      experiment.variants[categoryKey].users += exp.users || 0
       experiment.variants[categoryKey].transactions += exp.transactions
       experiment.variants[categoryKey].revenue += exp.revenue
       experiment.variants[categoryKey].add_to_cart += exp.add_to_cart || 0
@@ -187,6 +197,7 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
       experiment.variants[categoryKey].add_payment_info += exp.add_payment_info || 0
 
       experiment.total_sessions += exp.sessions
+      experiment.total_users += exp.users || 0
       experiment.total_transactions += exp.transactions
       experiment.total_revenue += exp.revenue
 
@@ -218,15 +229,29 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
 
     // Calcular métricas derivadas
     experimentMap.forEach(experiment => {
+      // Primeiro, calcular total de usuários por categoria para calcular percentuais
+      const mobileUsers = Object.entries(experiment.variants)
+        .filter(([key]) => key.startsWith('mobile_'))
+        .reduce((sum, [, variant]) => sum + variant.users, 0)
+      
+      const desktopUsers = Object.entries(experiment.variants)
+        .filter(([key]) => key.startsWith('desktop_'))
+        .reduce((sum, [, variant]) => sum + variant.users, 0)
+      
       // Métricas por variante
       Object.values(experiment.variants).forEach(variant => {
         variant.conversion_rate = variant.sessions > 0 ? (variant.transactions / variant.sessions) * 100 : 0
         variant.revenue_per_session = variant.sessions > 0 ? variant.revenue / variant.sessions : 0
+        variant.sessions_per_user = variant.users > 0 ? variant.sessions / variant.users : 0
         variant.avg_order_value = variant.transactions > 0 ? variant.revenue / variant.transactions : 0
         variant.add_to_cart_rate = variant.sessions > 0 ? (variant.add_to_cart / variant.sessions) * 100 : 0
         variant.begin_checkout_rate = variant.sessions > 0 ? (variant.begin_checkout / variant.sessions) * 100 : 0
         variant.add_shipping_info_rate = variant.sessions > 0 ? (variant.add_shipping_info / variant.sessions) * 100 : 0
         variant.add_payment_info_rate = variant.sessions > 0 ? (variant.add_payment_info / variant.sessions) * 100 : 0
+        
+        // Calcular percentual de usuários por categoria
+        const totalUsersInCategory = variant.category === 'mobile' ? mobileUsers : desktopUsers
+        variant.users_percentage = totalUsersInCategory > 0 ? (variant.users / totalUsersInCategory) * 100 : 0
       })
 
       // Métricas gerais do experimento
@@ -277,7 +302,7 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
   const exportToCSV = () => {
     if (filteredAndSortedExperiments.length === 0) return
 
-    const headers = ['ID do Experimento', 'Nome do Experimento', 'Categoria', 'Variante', 'Sessões', 'Transações', 'Receita', 'Taxa de Conversão', 'Receita por Sessão', 'Ticket Médio', 'Add to Cart', 'Taxa Add to Cart', 'Begin Checkout', 'Taxa Begin Checkout', 'Add Shipping Info', 'Taxa Add Shipping Info', 'Add Payment Info', 'Taxa Add Payment Info']
+    const headers = ['ID do Experimento', 'Nome do Experimento', 'Categoria', 'Variante', 'Sessões', 'Usuários', '% Tráfego (Usuários)', 'Sessões/Usuário', 'Transações', 'Receita', 'Taxa de Conversão', 'Receita por Sessão', 'Ticket Médio', 'Add to Cart', 'Taxa Add to Cart', 'Begin Checkout', 'Taxa Begin Checkout', 'Add Shipping Info', 'Taxa Add Shipping Info', 'Add Payment Info', 'Taxa Add Payment Info']
     const csvContent = [
       headers.join(','),
       ...filteredAndSortedExperiments.flatMap(exp => 
@@ -287,6 +312,9 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
           exp.category,
           variant === 'controle' ? 'Controle' : `Variante ${variant}`,
           data.sessions,
+          data.users,
+          data.users_percentage.toFixed(2),
+          data.sessions_per_user.toFixed(2),
           data.transactions,
           data.revenue,
           data.conversion_rate.toFixed(2),
@@ -511,6 +539,7 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
                       </span>
                     </span>
                     <span><strong>Total Sessões:</strong> {formatNumber(experiment.total_sessions)}</span>
+                    <span><strong>Total Usuários:</strong> {formatNumber(experiment.total_users)}</span>
                     <span><strong>Total Receita:</strong> {formatCurrency(experiment.total_revenue)}</span>
                   </div>
                 </div>
@@ -820,6 +849,12 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
                       Sessões
                     </th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Usuários
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Sessões/Usuário
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Transações
                     </th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -897,6 +932,15 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
                         </td>
                         <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
                           {formatNumber(data.sessions)}
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
+                          <div>
+                            <div className="font-medium">{formatNumber(data.users)}</div>
+                            <div className="text-xs text-gray-500">{formatPercentage(data.users_percentage)} do tráfego</div>
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
+                          {data.sessions_per_user.toFixed(2)}
                         </td>
                         <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
                           {formatNumber(data.transactions)}
@@ -1066,6 +1110,12 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
                         Sessões
                       </th>
                       <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Usuários
+                      </th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Sessões/Usuário
+                      </th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Transações
                       </th>
                       <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1141,6 +1191,15 @@ const ABTesting = ({ selectedTable, startDate, endDate }: ABTestingProps) => {
                           </td>
                           <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
                             {formatNumber(data.sessions)}
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
+                            <div>
+                              <div className="font-medium">{formatNumber(data.users)}</div>
+                              <div className="text-xs text-gray-500">{formatPercentage(data.users_percentage)} do tráfego</div>
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
+                            {data.sessions_per_user.toFixed(2)}
                           </td>
                           <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-900">
                             {formatNumber(data.transactions)}
