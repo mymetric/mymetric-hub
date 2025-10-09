@@ -138,6 +138,11 @@ export interface FreteDataItem {
   calculations_freight_unavailable: number
   transactions: number
   revenue: number | null
+  item_id?: string
+  item_name?: string
+  item_brand?: string
+  item_variant?: string
+  item_category?: string
 }
 
 export interface FreteRequest {

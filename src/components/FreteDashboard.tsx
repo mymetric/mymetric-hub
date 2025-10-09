@@ -15,7 +15,10 @@ import {
   ChevronUp,
   ChevronDown,
   AlertTriangle,
-  CheckCircle
+  CheckCircle,
+  Package,
+  Maximize2,
+  Minimize2
 } from 'lucide-react'
 
 interface FreteDashboardProps {
@@ -36,6 +39,29 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [detailSortField, setDetailSortField] = useState<string>('event_date')
   const [detailSortDirection, setDetailSortDirection] = useState<'asc' | 'desc'>('desc')
+  const [productSortField, setProductSortField] = useState<string>('calculations')
+  const [productSortDirection, setProductSortDirection] = useState<'asc' | 'desc'>('desc')
+  const [showAllProducts, setShowAllProducts] = useState(false)
+  const [showAllRegions, setShowAllRegions] = useState(false)
+  const [isProductTableFullscreen, setIsProductTableFullscreen] = useState(false)
+  const [minCalculations, setMinCalculations] = useState<number>(100)
+  const [selectedRegion, setSelectedRegion] = useState<string | null>(null)
+
+  // Resetar showAllProducts quando mudar a ordenação
+  useEffect(() => {
+    setShowAllProducts(false)
+  }, [productSortField, productSortDirection])
+
+  // Resetar showAllRegions quando mudar a ordenação
+  useEffect(() => {
+    setShowAllRegions(false)
+  }, [sortField, sortDirection])
+
+  // Resetar visualizações quando mudar o filtro de mínimo
+  useEffect(() => {
+    setShowAllProducts(false)
+    setShowAllRegions(false)
+  }, [minCalculations])
 
   // Buscar dados de frete
   useEffect(() => {
@@ -71,16 +97,23 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
     }
   }, [selectedTable, startDate, endDate])
 
+  // Filtrar dados por região selecionada
+  const filteredFreteData = React.useMemo(() => {
+    if (!selectedRegion) return freteData
+    return freteData.filter(item => item.zipcode_region === selectedRegion)
+  }, [freteData, selectedRegion])
+
   // Calcular métricas agregadas
   const calculateMetrics = () => {
-    if (!freteData.length) return null
+    const dataToUse = filteredFreteData
+    if (!dataToUse.length) return null
 
-    const totalCalculations = freteData.reduce((sum, item) => sum + item.calculations, 0)
-    const totalCalculationsFreightUnavailable = freteData.reduce((sum, item) => sum + item.calculations_freight_unavailable, 0)
-    const totalTransactions = freteData.reduce((sum, item) => sum + item.transactions, 0)
-    const totalRevenue = freteData.reduce((sum, item) => sum + (item.revenue || 0), 0)
-    const uniqueZipcodes = new Set(freteData.map(item => item.zipcode)).size
-    const uniqueRegions = new Set(freteData.map(item => item.zipcode_region)).size
+    const totalCalculations = dataToUse.reduce((sum, item) => sum + item.calculations, 0)
+    const totalCalculationsFreightUnavailable = dataToUse.reduce((sum, item) => sum + item.calculations_freight_unavailable, 0)
+    const totalTransactions = dataToUse.reduce((sum, item) => sum + item.transactions, 0)
+    const totalRevenue = dataToUse.reduce((sum, item) => sum + (item.revenue || 0), 0)
+    const uniqueZipcodes = new Set(dataToUse.map(item => item.zipcode)).size
+    const uniqueRegions = new Set(dataToUse.map(item => item.zipcode_region)).size
     const conversionRate = totalCalculations > 0 ? (totalTransactions / totalCalculations) * 100 : 0
     
     // Taxa de sucesso do frete = (cálculos totais - cálculos indisponíveis) / cálculos totais * 100
@@ -123,14 +156,16 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
       return acc
     }, {} as Record<string, any>)
 
-    const regionData = Object.values(result).map((region: any) => ({
-      ...region,
-      zipcodeCount: region.zipcodes.size,
-      conversionRate: region.calculations > 0 ? (region.transactions / region.calculations) * 100 : 0,
-      freightSuccessRate: region.calculations > 0 
-        ? ((region.calculations - region.calculations_freight_unavailable) / region.calculations) * 100 
-        : 0
-    }))
+    const regionData = Object.values(result)
+      .map((region: any) => ({
+        ...region,
+        zipcodeCount: region.zipcodes.size,
+        conversionRate: region.calculations > 0 ? (region.transactions / region.calculations) * 100 : 0,
+        freightSuccessRate: region.calculations > 0 
+          ? ((region.calculations - region.calculations_freight_unavailable) / region.calculations) * 100 
+          : 0
+      }))
+      .filter((region: any) => region.calculations >= minCalculations)
 
     // Calcular médias das taxas
     const avgConversionRate = regionData.length > 0 
@@ -159,13 +194,80 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
     })
     
     return { regionData, avgConversionRate, avgFreightSuccessRate }
-  }, [freteData, sortField, sortDirection])
+  }, [freteData, sortField, sortDirection, minCalculations])
 
   const { regionData, avgConversionRate, avgFreightSuccessRate } = dataByRegion
 
+  // Agrupar dados por produto - otimizado para grandes volumes
+  const dataByProduct = React.useMemo(() => {
+    // Filtrar apenas itens com dados de produto
+    const itemsWithProduct = filteredFreteData.filter(item => item.item_id && item.item_name)
+    
+    const result = itemsWithProduct.reduce((acc, item) => {
+      const productKey = `${item.item_id}_${item.item_name}`
+      if (!acc[productKey]) {
+        acc[productKey] = {
+          item_id: item.item_id!,
+          item_name: item.item_name!,
+          item_brand: item.item_brand || 'Não informado',
+          item_category: item.item_category || 'Não informado',
+          calculations: 0,
+          calculations_freight_unavailable: 0,
+          transactions: 0,
+          revenue: 0
+        }
+      }
+      acc[productKey].calculations += item.calculations
+      acc[productKey].calculations_freight_unavailable += item.calculations_freight_unavailable
+      acc[productKey].transactions += item.transactions
+      acc[productKey].revenue += item.revenue || 0
+      return acc
+    }, {} as Record<string, any>)
+
+    const productData = Object.values(result)
+      .map((product: any) => ({
+        ...product,
+        conversionRate: product.calculations > 0 ? (product.transactions / product.calculations) * 100 : 0,
+        freightSuccessRate: product.calculations > 0 
+          ? ((product.calculations - product.calculations_freight_unavailable) / product.calculations) * 100 
+          : 0
+      }))
+      .filter((product: any) => product.calculations >= minCalculations)
+
+    // Calcular médias das taxas
+    const avgProductConversionRate = productData.length > 0 
+      ? productData.reduce((sum, product) => sum + product.conversionRate, 0) / productData.length 
+      : 0
+    
+    const avgProductFreightSuccessRate = productData.length > 0 
+      ? productData.reduce((sum, product) => sum + product.freightSuccessRate, 0) / productData.length 
+      : 0
+
+    // Ordenar por campo selecionado
+    productData.sort((a, b) => {
+      let aValue = a[productSortField]
+      let bValue = b[productSortField]
+      
+      if (productSortField === 'item_name' || productSortField === 'item_brand' || productSortField === 'item_category') {
+        aValue = aValue.toLowerCase()
+        bValue = bValue.toLowerCase()
+      }
+      
+      if (productSortDirection === 'asc') {
+        return aValue > bValue ? 1 : aValue < bValue ? -1 : 0
+      } else {
+        return aValue < bValue ? 1 : aValue > bValue ? -1 : 0
+      }
+    })
+    
+    return { productData, avgProductConversionRate, avgProductFreightSuccessRate }
+  }, [filteredFreteData, productSortField, productSortDirection, minCalculations])
+
+  const { productData, avgProductConversionRate, avgProductFreightSuccessRate } = dataByProduct
+
   // Ordenar dados detalhados
   const sortedDetailData = React.useMemo(() => {
-    const sorted = [...freteData].sort((a, b) => {
+    const sorted = [...filteredFreteData].sort((a, b) => {
       let aValue = a[detailSortField as keyof FreteDataItem]
       let bValue = b[detailSortField as keyof FreteDataItem]
       
@@ -191,7 +293,7 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
     })
     
     return sorted
-  }, [freteData, detailSortField, detailSortDirection])
+  }, [filteredFreteData, detailSortField, detailSortDirection])
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -224,6 +326,15 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
     } else {
       setDetailSortField(field)
       setDetailSortDirection('desc')
+    }
+  }
+
+  const handleProductSort = (field: string) => {
+    if (productSortField === field) {
+      setProductSortDirection(productSortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setProductSortField(field)
+      setProductSortDirection('desc')
     }
   }
 
@@ -298,10 +409,39 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
               </p>
             </div>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">
-            <Download className="w-4 h-4" />
-            Exportar
-          </button>
+          <div className="flex items-center gap-3">
+            {selectedRegion && (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-100 rounded-lg">
+                <MapPin className="w-4 h-4 text-blue-600" />
+                <span className="text-sm font-medium text-blue-700">
+                  Filtro: {selectedRegion}
+                </span>
+                <button
+                  onClick={() => setSelectedRegion(null)}
+                  className="ml-1 text-blue-600 hover:text-blue-800"
+                  title="Remover filtro"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">
+                Mín. Cálculos:
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={minCalculations}
+                onChange={(e) => setMinCalculations(Number(e.target.value))}
+                className="w-24 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <button className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">
+              <Download className="w-4 h-4" />
+              Exportar
+            </button>
+          </div>
         </div>
 
         {/* Métricas Principais - Primeira Linha */}
@@ -427,7 +567,7 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
             Performance por Região
           </h3>
           <p className="text-gray-600 mt-1">
-            Análise detalhada dos cálculos de frete por região
+            Análise detalhada dos cálculos de frete por região • <span className="font-medium text-blue-600">Clique em uma região para filtrar o dashboard</span>
           </p>
         </div>
 
@@ -510,8 +650,17 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {regionData.map((region, index) => (
-                <tr key={region.region} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+              {(showAllRegions ? regionData : regionData.slice(0, 10)).map((region, index) => (
+                <tr 
+                  key={region.region} 
+                  onClick={() => setSelectedRegion(region.region)}
+                  className={`cursor-pointer transition-colors ${
+                    selectedRegion === region.region 
+                      ? 'bg-blue-100 hover:bg-blue-200' 
+                      : index % 2 === 0 ? 'bg-white hover:bg-gray-100' : 'bg-gray-50 hover:bg-gray-100'
+                  }`}
+                  title="Clique para filtrar por esta região"
+                >
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       <MapPin className="w-4 h-4 text-gray-400 mr-2" />
@@ -575,7 +724,254 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
             </tbody>
           </table>
         </div>
+
+        {/* Botões Ver Mais / Ver Menos para Regiões */}
+        {regionData.length > 10 && (
+          <div className="p-4 border-t border-gray-200">
+            {!showAllRegions ? (
+              <button
+                onClick={() => setShowAllRegions(true)}
+                className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                <span>Ver mais {regionData.length - 10} regiões</span>
+                <ChevronDown className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowAllRegions(false)}
+                className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors font-medium"
+              >
+                <span>Ver menos</span>
+                <ChevronUp className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Dados por Produto */}
+      {productData.length > 0 && (
+        <div className={`bg-white rounded-xl shadow-lg border border-gray-200 ${
+          isProductTableFullscreen ? 'fixed inset-0 z-50 overflow-auto' : ''
+        }`}>
+          <div className="p-6 border-b border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <Package className="w-5 h-5 text-blue-600" />
+                  Performance por Produto
+                </h3>
+                <p className="text-gray-600 mt-1">
+                  Análise detalhada dos cálculos de frete por produto
+                </p>
+              </div>
+              <button
+                onClick={() => setIsProductTableFullscreen(!isProductTableFullscreen)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                title={isProductTableFullscreen ? "Sair da tela cheia" : "Tela cheia"}
+              >
+                {isProductTableFullscreen ? (
+                  <Minimize2 className="w-5 h-5 text-gray-600" />
+                ) : (
+                  <Maximize2 className="w-5 h-5 text-gray-600" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th 
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleProductSort('item_id')}
+                  >
+                    <div className="flex items-center gap-1">
+                      ID
+                      {getSortIcon('item_id', productSortField, productSortDirection)}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleProductSort('item_name')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Produto
+                      {getSortIcon('item_name', productSortField, productSortDirection)}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleProductSort('item_brand')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Marca
+                      {getSortIcon('item_brand', productSortField, productSortDirection)}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleProductSort('item_category')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Categoria
+                      {getSortIcon('item_category', productSortField, productSortDirection)}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleProductSort('calculations')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Cálculos
+                      {getSortIcon('calculations', productSortField, productSortDirection)}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleProductSort('calculations_freight_unavailable')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Frete Indisponível
+                      {getSortIcon('calculations_freight_unavailable', productSortField, productSortDirection)}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleProductSort('freightSuccessRate')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Taxa de Sucesso
+                      {getSortIcon('freightSuccessRate', productSortField, productSortDirection)}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleProductSort('transactions')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Transações
+                      {getSortIcon('transactions', productSortField, productSortDirection)}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleProductSort('conversionRate')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Taxa de Conversão
+                      {getSortIcon('conversionRate', productSortField, productSortDirection)}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleProductSort('revenue')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Receita
+                      {getSortIcon('revenue', productSortField, productSortDirection)}
+                    </div>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {(showAllProducts ? productData : productData.slice(0, 10)).map((product, index) => (
+                  <tr key={`${product.item_id}-${product.item_name}`} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-600">
+                      {product.item_id}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <Package className="w-4 h-4 text-gray-400 mr-2" />
+                        <span className="text-sm font-medium text-gray-900">
+                          {product.item_name}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {product.item_brand}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {product.item_category}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {formatNumber(product.calculations)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <div className="flex items-center">
+                        <span className={`text-sm font-medium ${
+                          product.calculations_freight_unavailable > 0 ? 'text-red-600' : 'text-gray-600'
+                        }`}>
+                          {formatNumber(product.calculations_freight_unavailable)}
+                        </span>
+                        {product.calculations_freight_unavailable > 0 && (
+                          <AlertTriangle className="w-4 h-4 text-red-600 ml-1" />
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <span className={`text-sm font-medium ${
+                          product.freightSuccessRate >= avgProductFreightSuccessRate * 1.1 ? 'text-green-600' : 
+                          product.freightSuccessRate >= avgProductFreightSuccessRate * 0.9 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {formatPercentage(product.freightSuccessRate)}
+                        </span>
+                        {product.freightSuccessRate >= avgProductFreightSuccessRate * 1.1 && (
+                          <CheckCircle className="w-4 h-4 text-green-600 ml-1" />
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {formatNumber(product.transactions)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <span className={`text-sm font-medium ${
+                          product.conversionRate >= avgProductConversionRate * 1.2 ? 'text-green-600' : 
+                          product.conversionRate >= avgProductConversionRate * 0.8 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {formatPercentage(product.conversionRate)}
+                        </span>
+                        {product.conversionRate >= avgProductConversionRate * 1.2 && (
+                          <TrendingUp className="w-4 h-4 text-green-600 ml-1" />
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {formatCurrency(product.revenue)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Botões Ver Mais / Ver Menos */}
+          {productData.length > 10 && (
+            <div className="p-4 border-t border-gray-200">
+              {!showAllProducts ? (
+                <button
+                  onClick={() => setShowAllProducts(true)}
+                  className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                >
+                  <span>Ver mais {productData.length - 10} produtos</span>
+                  <ChevronDown className="w-4 h-4" />
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowAllProducts(false)}
+                  className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors font-medium"
+                >
+                  <span>Ver menos</span>
+                  <ChevronUp className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Dados Detalhados */}
       <div className="bg-white rounded-xl shadow-lg border border-gray-200">
@@ -591,8 +987,8 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
 
         <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
           <p className="text-sm text-blue-700">
-            <strong>Mostrando os primeiros 100 registros</strong> de {formatNumber(freteData.length)} registros totais.
-            Para ver todos os dados, considere filtrar por um período menor.
+            <strong>Mostrando os primeiros 100 registros</strong> de {formatNumber(filteredFreteData.length)} registros{selectedRegion ? ' filtrados' : ' totais'}.
+            {!selectedRegion && ' Para ver todos os dados, considere filtrar por um período menor.'}
           </p>
         </div>
         <div className="overflow-x-auto max-h-96">
