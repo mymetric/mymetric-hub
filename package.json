@@ -15,7 +15,8 @@
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.48.2",
     "recharts": "^2.8.0",
-    "swiper": "^11.2.10"
+    "swiper": "^11.2.10",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/node": "^24.2.0",

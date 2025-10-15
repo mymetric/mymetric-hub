@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import * as XLSX from 'xlsx'
 import { 
   TrendingUp, 
   Eye, 
@@ -38,6 +39,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [selectedPlatform, setSelectedPlatform] = useState<string>('')
   const [searchTerm, setSearchTerm] = useState<string>('')
+  const [metricSearchTerm, setMetricSearchTerm] = useState<string>('')
   const [showAllRecords, setShowAllRecords] = useState(false)
   const [attributionModel, setAttributionModel] = useState<'origin_stack' | 'last_non_direct'>('origin_stack')
   const [isComparisonExpanded, setIsComparisonExpanded] = useState(false)
@@ -88,11 +90,13 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
           leads: false,
           transactions: true,
           transactions_first: false,
+          transactions_delta: true,
           new_customers_percentage: true,
           revenue: true,
           revenue_first: false,
           cpv: false,
           cpa: false,
+          cpa_delta: true,
           roas: true,
           roas_first: false
         }
@@ -109,11 +113,13 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       leads: false,
       transactions: true,
       transactions_first: false,
+      transactions_delta: true,
       new_customers_percentage: true,
       revenue: true,
       revenue_first: false,
       cpv: false,
       cpa: false,
+      cpa_delta: true,
       roas: true,
       roas_first: false
     }
@@ -189,7 +195,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       transactions: acc.transactions + campaign.transactions,
       transactions_first: acc.transactions_first + campaign.transactions_first,
       revenue: acc.revenue + campaign.revenue,
-      revenue_first: acc.revenue_first + campaign.revenue_first
+      revenue_first: acc.revenue_first + campaign.revenue_first,
     }), {
       cost: 0,
       impressions: 0,
@@ -198,7 +204,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       transactions: 0,
       transactions_first: 0,
       revenue: 0,
-      revenue_first: 0
+      revenue_first: 0,
+      fsm_transactions: 0
     })
     
     const avgCTR = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0
@@ -237,13 +244,15 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
           leads: false,
           transactions: true,
           transactions_first: false,
+          transactions_delta: true,
           new_customers_percentage: true,
           revenue: true,
           revenue_first: false,
           roas: true,
           roas_first: false,
           cpv: false,
-          cpa: false
+          cpa: false,
+          cpa_delta: true
         }
       }
     }
@@ -258,13 +267,15 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       leads: false,
       transactions: true,
       transactions_first: false,
+      transactions_delta: true,
       new_customers_percentage: true,
       revenue: true,
       revenue_first: false,
       roas: true,
       roas_first: false,
       cpv: false,
-      cpa: false
+      cpa: false,
+      cpa_delta: true
     }
   }
   
@@ -681,6 +692,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     acc[key].revenue_origin_stack += item.revenue_origin_stack
     acc[key].transactions_first_origin_stack += item.transactions_first_origin_stack
     acc[key].revenue_first_origin_stack += item.revenue_first_origin_stack
+    acc[key].fsm_transactions += (item.fsm_transactions || 0)
     acc[key].records.push(item)
     
     return acc
@@ -735,6 +747,28 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
           aValue = a.transactions_first
           bValue = b.transactions_first
           break
+        case 'transactions_delta':
+          // Usar valores originais (não afetados pelo filtro de atribuição)
+          const aRevenueLND = a.records && a.records.length > 0 
+            ? a.records.reduce((sum: number, record: any) => sum + record.revenue, 0)
+            : a.revenue;
+          const aRevenueOS = a.records && a.records.length > 0 
+            ? a.records.reduce((sum: number, record: any) => sum + (record.revenue_origin_stack || 0), 0)
+            : a.revenue_origin_stack;
+          const aRoasLND = a.cost > 0 ? aRevenueLND / a.cost : 0
+          const aRoasOS = a.cost > 0 ? aRevenueOS / a.cost : 0
+          aValue = aRoasLND > 0 ? ((aRoasOS - aRoasLND) / aRoasLND) * 100 : 0
+          
+          const bRevenueLND = b.records && b.records.length > 0 
+            ? b.records.reduce((sum: number, record: any) => sum + record.revenue, 0)
+            : b.revenue;
+          const bRevenueOS = b.records && b.records.length > 0 
+            ? b.records.reduce((sum: number, record: any) => sum + (record.revenue_origin_stack || 0), 0)
+            : b.revenue_origin_stack;
+          const bRoasLND = b.cost > 0 ? bRevenueLND / b.cost : 0
+          const bRoasOS = b.cost > 0 ? bRevenueOS / b.cost : 0
+          bValue = bRoasLND > 0 ? ((bRoasOS - bRoasLND) / bRoasLND) * 100 : 0
+          break
         case 'new_customers_percentage':
           const aTransactions = attributionModel === 'origin_stack' ? (a.transactions_origin_stack || a.transactions) : a.transactions
           const aTransactionsFirst = attributionModel === 'origin_stack' ? (a.transactions_first_origin_stack || a.transactions_first) : a.transactions_first
@@ -766,6 +800,28 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         case 'cpa':
           aValue = a.transactions_first > 0 ? a.cost / a.transactions_first : 0
           bValue = b.transactions_first > 0 ? b.cost / b.transactions_first : 0
+          break
+        case 'cpa_delta':
+          // Usar valores originais (não afetados pelo filtro de atribuição)
+          const aTransactionsFirstLND = a.records && a.records.length > 0 
+            ? a.records.reduce((sum: number, record: any) => sum + record.transactions_first, 0)
+            : a.transactions_first;
+          const aTransactionsFirstOS = a.records && a.records.length > 0 
+            ? a.records.reduce((sum: number, record: any) => sum + (record.transactions_first_origin_stack || 0), 0)
+            : a.transactions_first_origin_stack;
+          const aCPALND = aTransactionsFirstLND > 0 ? a.cost / aTransactionsFirstLND : 0
+          const aCPAOS = aTransactionsFirstOS > 0 ? a.cost / aTransactionsFirstOS : 0
+          aValue = aCPALND > 0 ? ((aCPALND - aCPAOS) / aCPALND) * 100 : 0
+          
+          const bTransactionsFirstLND = b.records && b.records.length > 0 
+            ? b.records.reduce((sum: number, record: any) => sum + record.transactions_first, 0)
+            : b.transactions_first;
+          const bTransactionsFirstOS = b.records && b.records.length > 0 
+            ? b.records.reduce((sum: number, record: any) => sum + (record.transactions_first_origin_stack || 0), 0)
+            : b.transactions_first_origin_stack;
+          const bCPALND = bTransactionsFirstLND > 0 ? b.cost / bTransactionsFirstLND : 0
+          const bCPAOS = bTransactionsFirstOS > 0 ? b.cost / bTransactionsFirstOS : 0
+          bValue = bCPALND > 0 ? ((bCPALND - bCPAOS) / bCPALND) * 100 : 0
           break
         default:
           aValue = a.cost
@@ -916,7 +972,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
             transactions_origin_stack: 0,
             revenue_origin_stack: 0,
             transactions_first_origin_stack: 0,
-            revenue_first_origin_stack: 0
+            revenue_first_origin_stack: 0,
+            fsm_transactions: 0
           }
         }
         acc[key].cost += item.cost
@@ -931,6 +988,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         acc[key].revenue_origin_stack += item.revenue_origin_stack
         acc[key].transactions_first_origin_stack += item.transactions_first_origin_stack
         acc[key].revenue_first_origin_stack += item.revenue_first_origin_stack
+        acc[key].fsm_transactions += (item.fsm_transactions || 0)
         return acc
       }, {} as Record<string, any>)
       
@@ -970,7 +1028,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
             transactions_origin_stack: 0,
             revenue_origin_stack: 0,
             transactions_first_origin_stack: 0,
-            revenue_first_origin_stack: 0
+            revenue_first_origin_stack: 0,
+            fsm_transactions: 0
           }
         }
         acc[key].cost += item.cost
@@ -985,6 +1044,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         acc[key].revenue_origin_stack += item.revenue_origin_stack
         acc[key].transactions_first_origin_stack += item.transactions_first_origin_stack
         acc[key].revenue_first_origin_stack += item.revenue_first_origin_stack
+        acc[key].fsm_transactions += (item.fsm_transactions || 0)
         return acc
       }, {} as Record<string, any>)
       
@@ -1022,7 +1082,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
             transactions_origin_stack: 0,
             revenue_origin_stack: 0,
             transactions_first_origin_stack: 0,
-            revenue_first_origin_stack: 0
+            revenue_first_origin_stack: 0,
+            fsm_transactions: 0
           }
         }
         acc[key].cost += item.cost
@@ -1037,6 +1098,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         acc[key].revenue_origin_stack += item.revenue_origin_stack
         acc[key].transactions_first_origin_stack += item.transactions_first_origin_stack
         acc[key].revenue_first_origin_stack += item.revenue_first_origin_stack
+        acc[key].fsm_transactions += (item.fsm_transactions || 0)
         return acc
       }, {} as Record<string, any>)
       
@@ -1126,6 +1188,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     revenue_origin_stack: 0,
     transactions_first_origin_stack: 0,
     revenue_first_origin_stack: 0,
+    fsm_transactions: 0,
   }) : {
     cost: 0,
     impressions: 0,
@@ -1139,6 +1202,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     revenue_origin_stack: 0,
     transactions_first_origin_stack: 0,
     revenue_first_origin_stack: 0,
+    fsm_transactions: 0,
   }
 
   // Calcular totais separados para o comparativo
@@ -1418,6 +1482,72 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     } else {
       setSortField(field)
       setSortDirection('desc')
+    }
+  }
+
+  // Função para download XLSX
+  const handleDownloadXLSX = () => {
+    try {
+      // Preparar dados para exportação
+      const dataToExport = sortedData.map(campaign => ({
+        'Plataforma': campaign.platform,
+        'Campanha': campaign.campaign_name,
+        'Investimento': campaign.cost,
+        'Impressões': campaign.impressions,
+        'Cliques': campaign.clicks,
+        'CTR (%)': campaign.impressions > 0 ? ((campaign.clicks / campaign.impressions) * 100).toFixed(2) : '0.00',
+        'CPC': campaign.clicks > 0 ? campaign.cost / campaign.clicks : 0,
+        'Leads': campaign.leads,
+        'Transações': campaign.transactions,
+        'Transações 1ª Compra': campaign.transactions_first,
+        '% Novos Clientes': campaign.transactions > 0 ? ((campaign.transactions_first / campaign.transactions) * 100).toFixed(1) : '0.0',
+        'Receita': campaign.revenue,
+        'Receita 1ª Compra': campaign.revenue_first,
+        'ROAS': campaign.cost > 0 ? (campaign.revenue / campaign.cost).toFixed(2) : '0.00',
+        'ROAS 1ª Compra': campaign.cost > 0 ? (campaign.revenue_first / campaign.cost).toFixed(2) : '0.00',
+        'CPV': campaign.transactions > 0 ? campaign.cost / campaign.transactions : 0,
+        'CPA': campaign.transactions_first > 0 ? campaign.cost / campaign.transactions_first : 0
+      }))
+
+      // Criar workbook e worksheet
+      const wb = XLSX.utils.book_new()
+      const ws = XLSX.utils.json_to_sheet(dataToExport)
+
+      // Ajustar largura das colunas
+      const colWidths = [
+        { wch: 15 }, // Plataforma
+        { wch: 40 }, // Campanha
+        { wch: 15 }, // Investimento
+        { wch: 15 }, // Impressões
+        { wch: 12 }, // Cliques
+        { wch: 10 }, // CTR
+        { wch: 12 }, // CPC
+        { wch: 10 }, // Leads
+        { wch: 12 }, // Transações
+        { wch: 18 }, // Transações 1ª
+        { wch: 15 }, // % Novos
+        { wch: 15 }, // Receita
+        { wch: 18 }, // Receita 1ª
+        { wch: 10 }, // ROAS
+        { wch: 15 }, // ROAS 1ª
+        { wch: 12 }, // CPV
+        { wch: 12 }  // CPA
+      ]
+      ws['!cols'] = colWidths
+
+      // Adicionar worksheet ao workbook
+      XLSX.utils.book_append_sheet(wb, ws, 'Campanhas')
+
+      // Gerar nome do arquivo com data
+      const today = new Date()
+      const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+      const filename = `paid-media-${selectedTable}-${dateStr}.xlsx`
+
+      // Download do arquivo
+      XLSX.writeFile(wb, filename)
+    } catch (error) {
+      console.error('Erro ao gerar XLSX:', error)
+      alert('Erro ao gerar arquivo Excel. Por favor, tente novamente.')
     }
   }
 
@@ -3077,6 +3207,18 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                   </button>
                 </div>
 
+                {/* Botão Download XLSX */}
+                <button
+                  onClick={handleDownloadXLSX}
+                  className="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 bg-green-600 text-white hover:bg-green-700 shadow-sm"
+                  title="Baixar dados em Excel"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <span>XLSX</span>
+                </button>
+
                 {/* Botão Full Width */}
                 <button
                   onClick={() => setIsFullWidth(!isFullWidth)}
@@ -3211,13 +3353,13 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                     <input
                       type="text"
                       placeholder="Buscar métricas..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
+                      value={metricSearchTerm}
+                      onChange={(e) => setMetricSearchTerm(e.target.value)}
                       className="block w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
-                    {searchTerm && (
+                    {metricSearchTerm && (
                       <button
-                        onClick={() => setSearchTerm('')}
+                        onClick={() => setMetricSearchTerm('')}
                         className="absolute inset-y-0 right-0 pr-3 flex items-center"
                       >
                         <svg className="h-4 w-4 text-gray-400 hover:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3232,7 +3374,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                 <div className="p-6 max-h-96 overflow-y-auto">
                   <div className="grid grid-cols-1 gap-6">
                     {/* Mensagem quando não há resultados */}
-                    {searchTerm && (() => {
+                    {metricSearchTerm && (() => {
                       const allMetrics = [
                         { key: 'platform', label: 'Plataforma', icon: '🏢' },
                         { key: 'campaign_name', label: 'Campanha', icon: '📢' },
@@ -3244,18 +3386,20 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                         { key: 'leads', label: 'Leads', icon: '🎯' },
                         { key: 'transactions', label: 'Transações', icon: '🛒' },
                         { key: 'transactions_first', label: 'Trans. 1ª Compra', icon: '🆕' },
+                        { key: 'transactions_delta', label: 'Δ ROAS %', icon: '📊' },
                         { key: 'new_customers_percentage', label: '% Novos Clientes', icon: '👥' },
                         { key: 'revenue', label: 'Receita', icon: '💵' },
                         { key: 'revenue_first', label: 'Receita 1ª Compra', icon: '💎' },
                         { key: 'roas', label: 'ROAS', icon: '📈' },
                         { key: 'roas_first', label: 'ROAS 1ª Compra', icon: '🚀' },
                         { key: 'cpv', label: 'CPV', icon: '💳' },
-                        { key: 'cpa', label: 'CPA', icon: '🎯' }
+                        { key: 'cpa', label: 'CPA', icon: '🎯' },
+                        { key: 'cpa_delta', label: 'Δ CPA %', icon: '📊' }
                       ]
                       
                       const hasResults = allMetrics.some(metric => 
-                        metric.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        metric.key.toLowerCase().includes(searchTerm.toLowerCase())
+                        metric.label.toLowerCase().includes(metricSearchTerm.toLowerCase()) ||
+                        metric.key.toLowerCase().includes(metricSearchTerm.toLowerCase())
                       )
                       
                       if (!hasResults) {
@@ -3269,7 +3413,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                             <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhuma métrica encontrada</h3>
                             <p className="text-sm text-gray-500 mb-4">Tente buscar por termos como "receita", "cliques", "roas", etc.</p>
                             <button
-                              onClick={() => setSearchTerm('')}
+                              onClick={() => setMetricSearchTerm('')}
                               className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
                             >
                               Limpar busca
@@ -3285,9 +3429,9 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                         { key: 'platform', label: 'Plataforma', icon: '🏢' },
                         { key: 'campaign_name', label: 'Campanha', icon: '📢' }
                       ].filter(metric => 
-                        !searchTerm || 
-                        metric.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        metric.key.toLowerCase().includes(searchTerm.toLowerCase())
+                        !metricSearchTerm || 
+                        metric.label.toLowerCase().includes(metricSearchTerm.toLowerCase()) ||
+                        metric.key.toLowerCase().includes(metricSearchTerm.toLowerCase())
                       )
                       
                       if (identificationMetrics.length === 0) return null
@@ -3328,9 +3472,9 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                         { key: 'ctr', label: 'CTR', icon: '📊' },
                         { key: 'cpc', label: 'CPC', icon: '💸' }
                       ].filter(metric => 
-                        !searchTerm || 
-                        metric.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        metric.key.toLowerCase().includes(searchTerm.toLowerCase())
+                        !metricSearchTerm || 
+                        metric.label.toLowerCase().includes(metricSearchTerm.toLowerCase()) ||
+                        metric.key.toLowerCase().includes(metricSearchTerm.toLowerCase())
                       )
                       
                       if (investmentMetrics.length === 0) return null
@@ -3368,12 +3512,13 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                         { key: 'leads', label: 'Leads', icon: '🎯' },
                         { key: 'transactions', label: 'Transações', icon: '🛒' },
                         { key: 'transactions_first', label: 'Trans. 1ª Compra', icon: '🆕' },
+                        { key: 'transactions_delta', label: 'Δ ROAS %', icon: '📊' },
                         { key: 'revenue', label: 'Receita', icon: '💵' },
                         { key: 'revenue_first', label: 'Receita 1ª Compra', icon: '💎' }
                       ].filter(metric => 
-                        !searchTerm || 
-                        metric.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        metric.key.toLowerCase().includes(searchTerm.toLowerCase())
+                        !metricSearchTerm || 
+                        metric.label.toLowerCase().includes(metricSearchTerm.toLowerCase()) ||
+                        metric.key.toLowerCase().includes(metricSearchTerm.toLowerCase())
                       )
                       
                       if (conversionMetrics.length === 0) return null
@@ -3411,11 +3556,12 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                         { key: 'roas', label: 'ROAS', icon: '📈' },
                         { key: 'roas_first', label: 'ROAS 1ª Compra', icon: '🚀' },
                         { key: 'cpv', label: 'CPV', icon: '💳' },
-                        { key: 'cpa', label: 'CPA', icon: '🎯' }
+                        { key: 'cpa', label: 'CPA', icon: '🎯' },
+                        { key: 'cpa_delta', label: 'Δ CPA %', icon: '📊' }
                       ].filter(metric => 
-                        !searchTerm || 
-                        metric.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        metric.key.toLowerCase().includes(searchTerm.toLowerCase())
+                        !metricSearchTerm || 
+                        metric.label.toLowerCase().includes(metricSearchTerm.toLowerCase()) ||
+                        metric.key.toLowerCase().includes(metricSearchTerm.toLowerCase())
                       )
                       
                       if (performanceMetrics.length === 0) return null
@@ -3622,6 +3768,51 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                   Trans. 1ª Compra
                 </SortableHeader>
                 )}
+                {visibleColumns.transactions_delta && (
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider relative">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleSort('transactions_delta')}
+                      className="flex items-center gap-1 hover:text-gray-700 group"
+                    >
+                      <span>Δ ROAS %</span>
+                      <div className="flex flex-col">
+                        <svg 
+                          className={`w-3 h-3 ${sortField === 'transactions_delta' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} 
+                          fill="currentColor" 
+                          viewBox="0 0 20 20"
+                        >
+                          <path d="M5 10l5-5 5 5H5z" />
+                        </svg>
+                        <svg 
+                          className={`w-3 h-3 -mt-1 ${sortField === 'transactions_delta' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} 
+                          fill="currentColor" 
+                          viewBox="0 0 20 20"
+                        >
+                          <path d="M15 10l-5 5-5-5h10z" />
+                        </svg>
+                      </div>
+                    </button>
+                    <div className="relative group">
+                      <svg className="w-4 h-4 text-gray-400 cursor-help" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                      </svg>
+                      <div className="hidden group-hover:block absolute left-1/2 -translate-x-1/2 top-full mt-2 w-80 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-xl z-[99999] pointer-events-none border border-gray-700">
+                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full w-0 h-0 border-l-[6px] border-r-[6px] border-b-[6px] border-transparent border-b-gray-900"></div>
+                        <div className="font-semibold mb-1">Delta ROAS entre modelos de atribuição</div>
+                        <div className="space-y-1">
+                          <p>Compara o ROAS entre Last Non-Direct (LND) e Origin Stack (OS):</p>
+                          <p className="text-emerald-300">💚 Verde escuro: Muito acima da média (+50%)</p>
+                          <p className="text-green-300">🟢 Verde claro: Acima da média</p>
+                          <p className="text-orange-300">🟠 Laranja: Abaixo da média</p>
+                          <p className="text-red-300">🔴 Vermelho: Muito abaixo da média (-50%)</p>
+                          <p className="text-gray-400 mt-1">Fórmula: ((ROAS_OS - ROAS_LND) / ROAS_LND) × 100</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </th>
+                )}
                 {visibleColumns.new_customers_percentage && (
                 <SortableHeader
                   field="new_customers_percentage"
@@ -3692,10 +3883,92 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                     CPA
                 </SortableHeader>
                 )}
+                {visibleColumns.cpa_delta && (
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider relative">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleSort('cpa_delta')}
+                      className="flex items-center gap-1 hover:text-gray-700 group"
+                    >
+                      <span>Δ CPA %</span>
+                      <div className="flex flex-col">
+                        <svg 
+                          className={`w-3 h-3 ${sortField === 'cpa_delta' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} 
+                          fill="currentColor" 
+                          viewBox="0 0 20 20"
+                        >
+                          <path d="M5 10l5-5 5 5H5z" />
+                        </svg>
+                        <svg 
+                          className={`w-3 h-3 -mt-1 ${sortField === 'cpa_delta' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} 
+                          fill="currentColor" 
+                          viewBox="0 0 20 20"
+                        >
+                          <path d="M15 10l-5 5-5-5h10z" />
+                        </svg>
+                      </div>
+                    </button>
+                    <div className="relative group">
+                      <svg className="w-4 h-4 text-gray-400 cursor-help" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                      </svg>
+                      <div className="hidden group-hover:block absolute left-1/2 -translate-x-1/2 top-full mt-2 w-80 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-xl z-[99999] pointer-events-none border border-gray-700">
+                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full w-0 h-0 border-l-[6px] border-r-[6px] border-b-[6px] border-transparent border-b-gray-900"></div>
+                        <div className="font-semibold mb-1">Delta CPA entre modelos de atribuição</div>
+                        <div className="space-y-1">
+                          <p>Compara o CPA entre Last Non-Direct (LND) e Origin Stack (OS):</p>
+                          <p className="text-emerald-300">💚 Verde escuro: Muito acima da média (+50%)</p>
+                          <p className="text-green-300">🟢 Verde claro: Acima da média</p>
+                          <p className="text-orange-300">🟠 Laranja: Abaixo da média</p>
+                          <p className="text-red-300">🔴 Vermelho: Muito abaixo da média (-50%)</p>
+                          <p className="text-gray-400 mt-1">Fórmula: ((CPA_LND - CPA_OS) / CPA_LND) × 100</p>
+                          <p className="text-xs text-gray-400">Nota: CPA menor é melhor, então valor positivo = OS mais eficiente</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </th>
+                )}
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {displayedRecords.map((campaign, index) => {
+              {(() => {
+                // Calcular médias dos deltas para destaque
+                const roasDeltas: number[] = []
+                const cpaDeltas: number[] = []
+                
+                displayedRecords.forEach(campaign => {
+                  // Delta ROAS
+                  const revenueLND = campaign.records && campaign.records.length > 0 
+                    ? campaign.records.reduce((sum: number, record: any) => sum + record.revenue, 0)
+                    : campaign.revenue;
+                  const revenueOS = campaign.records && campaign.records.length > 0 
+                    ? campaign.records.reduce((sum: number, record: any) => sum + (record.revenue_origin_stack || 0), 0)
+                    : campaign.revenue_origin_stack;
+                  const roasLND = campaign.cost > 0 ? revenueLND / campaign.cost : 0;
+                  const roasOS = campaign.cost > 0 ? revenueOS / campaign.cost : 0;
+                  if (roasLND > 0) {
+                    roasDeltas.push(((roasOS - roasLND) / roasLND) * 100)
+                  }
+                  
+                  // Delta CPA
+                  const transactionsLND = campaign.records && campaign.records.length > 0 
+                    ? campaign.records.reduce((sum: number, record: any) => sum + record.transactions_first, 0)
+                    : campaign.transactions_first;
+                  const transactionsOS = campaign.records && campaign.records.length > 0 
+                    ? campaign.records.reduce((sum: number, record: any) => sum + (record.transactions_first_origin_stack || 0), 0)
+                    : campaign.transactions_first_origin_stack;
+                  const cpaLND = transactionsLND > 0 ? campaign.cost / transactionsLND : 0;
+                  const cpaOS = transactionsOS > 0 ? campaign.cost / transactionsOS : 0;
+                  if (cpaLND > 0) {
+                    cpaDeltas.push(((cpaLND - cpaOS) / cpaLND) * 100)
+                  }
+                })
+                
+                const avgRoasDelta = roasDeltas.length > 0 ? roasDeltas.reduce((a, b) => a + b, 0) / roasDeltas.length : 0
+                const avgCpaDelta = cpaDeltas.length > 0 ? cpaDeltas.reduce((a, b) => a + b, 0) / cpaDeltas.length : 0
+                
+                return displayedRecords.map((campaign, index) => {
                 const ctr = campaign.impressions > 0 ? (campaign.clicks / campaign.impressions) * 100 : 0
                 const cpc = campaign.clicks > 0 ? campaign.cost / campaign.clicks : 0
                 const roas = campaign.cost > 0 ? campaign.revenue / campaign.cost : 0
@@ -3775,6 +4048,70 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                       {formatNumber(campaign.transactions_first)}
                     </td>
                     )}
+                    {visibleColumns.transactions_delta && (
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      {(() => {
+                        // ROAS Last Non-Direct: usar sempre os valores originais (não afetados pelo filtro)
+                        const revenueLND = campaign.records && campaign.records.length > 0 
+                          ? campaign.records.reduce((sum: number, record: any) => sum + record.revenue, 0)
+                          : campaign.revenue;
+                        const roasLND = campaign.cost > 0 ? revenueLND / campaign.cost : 0;
+                        
+                        // ROAS Origin Stack: usar sempre os valores originais
+                        const revenueOS = campaign.records && campaign.records.length > 0 
+                          ? campaign.records.reduce((sum: number, record: any) => sum + (record.revenue_origin_stack || 0), 0)
+                          : campaign.revenue_origin_stack;
+                        const roasOS = campaign.cost > 0 ? revenueOS / campaign.cost : 0;
+                        
+                        // Delta percentual: ((ROAS_OS - ROAS_LND) / ROAS_LND) * 100
+                        const deltaValue = roasLND > 0 ? ((roasOS - roasLND) / roasLND) * 100 : null;
+                        const deltaPercentage = deltaValue !== null ? deltaValue.toFixed(1) : '-';
+                        const isPositive = deltaValue !== null && deltaValue > 0;
+                        const isNegative = deltaValue !== null && deltaValue < 0;
+                        const isAboveAvg = deltaValue !== null && deltaValue > avgRoasDelta;
+                        const isBelowAvg = deltaValue !== null && deltaValue < avgRoasDelta;
+                        
+                        // Cores e estilos baseados em 4 níveis
+                        let bgColor = '';
+                        let textColor = '';
+                        let fontWeight = 'font-semibold';
+                        
+                        // Muito acima da média (top 25%)
+                        if (deltaValue !== null && deltaValue > avgRoasDelta * 1.5) {
+                          bgColor = 'bg-emerald-100';
+                          textColor = 'text-emerald-800';
+                          fontWeight = 'font-bold';
+                        }
+                        // Acima da média
+                        else if (isAboveAvg) {
+                          bgColor = 'bg-green-100';
+                          textColor = 'text-green-700';
+                          fontWeight = 'font-bold';
+                        } 
+                        // Muito abaixo da média
+                        else if (deltaValue !== null && deltaValue < avgRoasDelta * 0.5) {
+                          bgColor = 'bg-red-100';
+                          textColor = 'text-red-700';
+                        }
+                        // Abaixo da média
+                        else if (isBelowAvg) {
+                          bgColor = 'bg-orange-100';
+                          textColor = 'text-orange-700';
+                        } 
+                        // Na média
+                        else {
+                          textColor = isPositive ? 'text-green-600' : isNegative ? 'text-red-600' : 'text-gray-600';
+                        }
+                        
+                        const sign = isPositive ? '+' : '';
+                        return (
+                          <div className={`${bgColor} ${textColor} ${fontWeight} rounded px-2 py-1 inline-block`}>
+                            {deltaPercentage !== '-' ? `${sign}${deltaPercentage}%` : '-'}
+                          </div>
+                        );
+                      })()}
+                    </td>
+                    )}
                     {visibleColumns.new_customers_percentage && (
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">
                       {currentTransactions > 0 ? `${newCustomersPercentage.toFixed(1)}%` : '-'}
@@ -3814,9 +4151,74 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                         {formatCurrency(cpa)}
                     </td>
                     )}
+                    {visibleColumns.cpa_delta && (
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      {(() => {
+                        // CPA Last Non-Direct: usar sempre os valores originais (não afetados pelo filtro)
+                        const transactionsLND = campaign.records && campaign.records.length > 0 
+                          ? campaign.records.reduce((sum: number, record: any) => sum + record.transactions_first, 0)
+                          : campaign.transactions_first;
+                        const cpaLND = transactionsLND > 0 ? campaign.cost / transactionsLND : 0;
+                        
+                        // CPA Origin Stack: usar sempre os valores originais
+                        const transactionsOS = campaign.records && campaign.records.length > 0 
+                          ? campaign.records.reduce((sum: number, record: any) => sum + (record.transactions_first_origin_stack || 0), 0)
+                          : campaign.transactions_first_origin_stack;
+                        const cpaOS = transactionsOS > 0 ? campaign.cost / transactionsOS : 0;
+                        
+                        // Delta percentual: ((CPA_LND - CPA_OS) / CPA_LND) * 100
+                        // CPA menor é melhor, então invertemos: se OS for menor, delta é positivo (verde)
+                        const deltaValue = cpaLND > 0 ? ((cpaLND - cpaOS) / cpaLND) * 100 : null;
+                        const deltaPercentage = deltaValue !== null ? deltaValue.toFixed(1) : '-';
+                        const isPositive = deltaValue !== null && deltaValue > 0;
+                        const isNegative = deltaValue !== null && deltaValue < 0;
+                        const isAboveAvg = deltaValue !== null && deltaValue > avgCpaDelta;
+                        const isBelowAvg = deltaValue !== null && deltaValue < avgCpaDelta;
+                        
+                        // Cores e estilos baseados em 4 níveis
+                        let bgColor = '';
+                        let textColor = '';
+                        let fontWeight = 'font-semibold';
+                        
+                        // Muito acima da média (top 25%)
+                        if (deltaValue !== null && deltaValue > avgCpaDelta * 1.5) {
+                          bgColor = 'bg-emerald-100';
+                          textColor = 'text-emerald-800';
+                          fontWeight = 'font-bold';
+                        }
+                        // Acima da média
+                        else if (isAboveAvg) {
+                          bgColor = 'bg-green-100';
+                          textColor = 'text-green-700';
+                          fontWeight = 'font-bold';
+                        } 
+                        // Muito abaixo da média
+                        else if (deltaValue !== null && deltaValue < avgCpaDelta * 0.5) {
+                          bgColor = 'bg-red-100';
+                          textColor = 'text-red-700';
+                        }
+                        // Abaixo da média
+                        else if (isBelowAvg) {
+                          bgColor = 'bg-orange-100';
+                          textColor = 'text-orange-700';
+                        } 
+                        // Na média
+                        else {
+                          textColor = isPositive ? 'text-green-600' : isNegative ? 'text-red-600' : 'text-gray-600';
+                        }
+                        
+                        const sign = isPositive ? '+' : '';
+                        return (
+                          <div className={`${bgColor} ${textColor} ${fontWeight} rounded px-2 py-1 inline-block`}>
+                            {deltaPercentage !== '-' ? `${sign}${deltaPercentage}%` : '-'}
+                          </div>
+                        );
+                      })()}
+                    </td>
+                    )}
                   </tr>
                 )
-              })}
+              })})()}
             </tbody>
           </table>
         </div>
@@ -4256,11 +4658,57 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                         {creativeVisibleColumns.leads && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Leads</th>)}
                         {creativeVisibleColumns.transactions && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transações</th>)}
                         {creativeVisibleColumns.transactions_first && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transações 1ª</th>)}
+                        {creativeVisibleColumns.transactions_delta && (
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider relative">
+                            <div className="flex items-center gap-1">
+                              <span>Δ ROAS %</span>
+                              <div className="relative group">
+                                <svg className="w-3.5 h-3.5 text-gray-400 cursor-help" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                                </svg>
+                                <div className="hidden group-hover:block absolute left-1/2 -translate-x-1/2 top-full mt-2 w-72 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-xl z-[99999] pointer-events-none border border-gray-700">
+                                  <div className="absolute left-1/2 -translate-x-1/2 bottom-full w-0 h-0 border-l-[6px] border-r-[6px] border-b-[6px] border-transparent border-b-gray-900"></div>
+                                  <div className="font-semibold mb-1">Delta ROAS</div>
+                                  <div className="space-y-1">
+                                    <p>Compara ROAS entre LND e OS:</p>
+                                    <p className="text-emerald-300">💚 Muito acima (+50%)</p>
+                                    <p className="text-green-300">🟢 Acima da média</p>
+                                    <p className="text-orange-300">🟠 Abaixo da média</p>
+                                    <p className="text-red-300">🔴 Muito abaixo (-50%)</p>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </th>
+                        )}
                         {creativeVisibleColumns.new_customers_percentage && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">% Novos Clientes</th>)}
                         {creativeVisibleColumns.ctr && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CTR</th>)}
                         {creativeVisibleColumns.cpc && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CPC</th>)}
                         {creativeVisibleColumns.cpv && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CPV</th>)}
                         {creativeVisibleColumns.cpa && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CPA</th>)}
+                        {creativeVisibleColumns.cpa_delta && (
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider relative">
+                            <div className="flex items-center gap-1">
+                              <span>Δ CPA %</span>
+                              <div className="relative group">
+                                <svg className="w-3.5 h-3.5 text-gray-400 cursor-help" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                                </svg>
+                                <div className="hidden group-hover:block absolute left-1/2 -translate-x-1/2 top-full mt-2 w-72 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-xl z-[99999] pointer-events-none border border-gray-700">
+                                  <div className="absolute left-1/2 -translate-x-1/2 bottom-full w-0 h-0 border-l-[6px] border-r-[6px] border-b-[6px] border-transparent border-b-gray-900"></div>
+                                  <div className="font-semibold mb-1">Delta CPA</div>
+                                  <div className="space-y-1">
+                                    <p>Compara CPA entre LND e OS:</p>
+                                    <p className="text-emerald-300">💚 Muito acima (+50%)</p>
+                                    <p className="text-green-300">🟢 Acima da média</p>
+                                    <p className="text-orange-300">🟠 Abaixo da média</p>
+                                    <p className="text-red-300">🔴 Muito abaixo (-50%)</p>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </th>
+                        )}
                         {creativeVisibleColumns.roas && (<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ROAS</th>)}
                         {canDrilldown() && (
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -4270,7 +4718,43 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {sortedCreativeData.slice(0, 20).map((item: any, index) => {
+                      {(() => {
+                        // Calcular médias dos deltas para destaque
+                        const roasDeltas: number[] = []
+                        const cpaDeltas: number[] = []
+                        
+                        sortedCreativeData.slice(0, 20).forEach((item: any) => {
+                          // Delta ROAS
+                          const revenueLND = item.records && item.records.length > 0 
+                            ? item.records.reduce((sum: number, record: any) => sum + record.revenue, 0)
+                            : item.revenue;
+                          const revenueOS = item.records && item.records.length > 0 
+                            ? item.records.reduce((sum: number, record: any) => sum + (record.revenue_origin_stack || 0), 0)
+                            : item.revenue_origin_stack;
+                          const roasLND = item.cost > 0 ? revenueLND / item.cost : 0;
+                          const roasOS = item.cost > 0 ? revenueOS / item.cost : 0;
+                          if (roasLND > 0) {
+                            roasDeltas.push(((roasOS - roasLND) / roasLND) * 100)
+                          }
+                          
+                          // Delta CPA
+                          const transactionsLND = item.records && item.records.length > 0 
+                            ? item.records.reduce((sum: number, record: any) => sum + record.transactions_first, 0)
+                            : item.transactions_first;
+                          const transactionsOS = item.records && item.records.length > 0 
+                            ? item.records.reduce((sum: number, record: any) => sum + (record.transactions_first_origin_stack || 0), 0)
+                            : item.transactions_first_origin_stack;
+                          const cpaLND = transactionsLND > 0 ? item.cost / transactionsLND : 0;
+                          const cpaOS = transactionsOS > 0 ? item.cost / transactionsOS : 0;
+                          if (cpaLND > 0) {
+                            cpaDeltas.push(((cpaLND - cpaOS) / cpaLND) * 100)
+                          }
+                        })
+                        
+                        const avgRoasDelta = roasDeltas.length > 0 ? roasDeltas.reduce((a, b) => a + b, 0) / roasDeltas.length : 0
+                        const avgCpaDelta = cpaDeltas.length > 0 ? cpaDeltas.reduce((a, b) => a + b, 0) / cpaDeltas.length : 0
+                        
+                        return sortedCreativeData.slice(0, 20).map((item: any, index) => {
                         const currentRevenue = attributionModel === 'origin_stack' ? (item.revenue_origin_stack || item.revenue) : item.revenue
                         const roas = item.cost > 0 ? currentRevenue / item.cost : 0
                         const displayName = drilldownLevel === 'campaign' ? item.campaign_name : 
@@ -4312,6 +4796,70 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                             {creativeVisibleColumns.leads && (<td className="px-4 py-3 text-sm text-gray-900">{formatNumber(item.leads)}</td>)}
                             {creativeVisibleColumns.transactions && (<td className="px-4 py-3 text-sm text-gray-900">{formatNumber(attributionModel === 'origin_stack' ? (item.transactions_origin_stack || item.transactions) : item.transactions)}</td>)}
                             {creativeVisibleColumns.transactions_first && (<td className="px-4 py-3 text-sm text-gray-900">{formatNumber(attributionModel === 'origin_stack' ? (item.transactions_first_origin_stack || item.transactions_first) : item.transactions_first)}</td>)}
+                            {creativeVisibleColumns.transactions_delta && (
+                              <td className="px-4 py-3 text-sm">
+                                {(() => {
+                                  // ROAS Last Non-Direct: usar sempre os valores originais (não afetados pelo filtro)
+                                  const revenueLND = item.records && item.records.length > 0 
+                                    ? item.records.reduce((sum: number, record: any) => sum + record.revenue, 0)
+                                    : item.revenue;
+                                  const roasLND = item.cost > 0 ? revenueLND / item.cost : 0;
+                                  
+                                  // ROAS Origin Stack: usar sempre os valores originais
+                                  const revenueOS = item.records && item.records.length > 0 
+                                    ? item.records.reduce((sum: number, record: any) => sum + (record.revenue_origin_stack || 0), 0)
+                                    : item.revenue_origin_stack;
+                                  const roasOS = item.cost > 0 ? revenueOS / item.cost : 0;
+                                  
+                                  // Delta percentual: ((ROAS_OS - ROAS_LND) / ROAS_LND) * 100
+                                  const deltaValue = roasLND > 0 ? ((roasOS - roasLND) / roasLND) * 100 : null;
+                                  const deltaPercentage = deltaValue !== null ? deltaValue.toFixed(1) : '-';
+                                  const isPositive = deltaValue !== null && deltaValue > 0;
+                                  const isNegative = deltaValue !== null && deltaValue < 0;
+                                  const isAboveAvg = deltaValue !== null && deltaValue > avgRoasDelta;
+                                  const isBelowAvg = deltaValue !== null && deltaValue < avgRoasDelta;
+                                  
+                                  // Cores e estilos baseados em 4 níveis
+                                  let bgColor = '';
+                                  let textColor = '';
+                                  let fontWeight = 'font-semibold';
+                                  
+                                  // Muito acima da média (top 25%)
+                                  if (deltaValue !== null && deltaValue > avgRoasDelta * 1.5) {
+                                    bgColor = 'bg-emerald-100';
+                                    textColor = 'text-emerald-800';
+                                    fontWeight = 'font-bold';
+                                  }
+                                  // Acima da média
+                                  else if (isAboveAvg) {
+                                    bgColor = 'bg-green-100';
+                                    textColor = 'text-green-700';
+                                    fontWeight = 'font-bold';
+                                  } 
+                                  // Muito abaixo da média
+                                  else if (deltaValue !== null && deltaValue < avgRoasDelta * 0.5) {
+                                    bgColor = 'bg-red-100';
+                                    textColor = 'text-red-700';
+                                  }
+                                  // Abaixo da média
+                                  else if (isBelowAvg) {
+                                    bgColor = 'bg-orange-100';
+                                    textColor = 'text-orange-700';
+                                  } 
+                                  // Na média
+                                  else {
+                                    textColor = isPositive ? 'text-green-600' : isNegative ? 'text-red-600' : 'text-gray-600';
+                                  }
+                                  
+                                  const sign = isPositive ? '+' : '';
+                                  return (
+                                    <div className={`${bgColor} ${textColor} ${fontWeight} rounded px-2 py-1 inline-block`}>
+                                      {deltaPercentage !== '-' ? `${sign}${deltaPercentage}%` : '-'}
+                                    </div>
+                                  );
+                                })()}
+                              </td>
+                            )}
                             {creativeVisibleColumns.new_customers_percentage && (
                               <td className="px-4 py-3 text-sm font-medium text-indigo-600">
                                 {currentTransactions > 0 ? `${newCustomersPercentage.toFixed(1)}%` : '-'}
@@ -4321,6 +4869,71 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                             {creativeVisibleColumns.cpc && (<td className="px-4 py-3 text-sm text-gray-900">{item.clicks > 0 ? formatCurrency(item.cost / item.clicks) : '—'}</td>)}
                             {creativeVisibleColumns.cpv && (<td className="px-4 py-3 text-sm text-gray-900">{(attributionModel === 'origin_stack' ? (item.transactions_origin_stack || item.transactions) : item.transactions) > 0 ? formatCurrency(item.cost / (attributionModel === 'origin_stack' ? (item.transactions_origin_stack || item.transactions) : item.transactions)) : '—'}</td>)}
                             {creativeVisibleColumns.cpa && (<td className="px-4 py-3 text-sm text-gray-900">{(attributionModel === 'origin_stack' ? (item.transactions_first_origin_stack || item.transactions_first) : item.transactions_first) > 0 ? formatCurrency(item.cost / (attributionModel === 'origin_stack' ? (item.transactions_first_origin_stack || item.transactions_first) : item.transactions_first)) : '—'}</td>)}
+                            {creativeVisibleColumns.cpa_delta && (
+                              <td className="px-4 py-3 text-sm">
+                                {(() => {
+                                  // CPA Last Non-Direct: usar sempre os valores originais (não afetados pelo filtro)
+                                  const transactionsLND = item.records && item.records.length > 0 
+                                    ? item.records.reduce((sum: number, record: any) => sum + record.transactions_first, 0)
+                                    : item.transactions_first;
+                                  const cpaLND = transactionsLND > 0 ? item.cost / transactionsLND : 0;
+                                  
+                                  // CPA Origin Stack: usar sempre os valores originais
+                                  const transactionsOS = item.records && item.records.length > 0 
+                                    ? item.records.reduce((sum: number, record: any) => sum + (record.transactions_first_origin_stack || 0), 0)
+                                    : item.transactions_first_origin_stack;
+                                  const cpaOS = transactionsOS > 0 ? item.cost / transactionsOS : 0;
+                                  
+                                  // Delta percentual: ((CPA_LND - CPA_OS) / CPA_LND) * 100
+                                  // CPA menor é melhor, então invertemos: se OS for menor, delta é positivo (verde)
+                                  const deltaValue = cpaLND > 0 ? ((cpaLND - cpaOS) / cpaLND) * 100 : null;
+                                  const deltaPercentage = deltaValue !== null ? deltaValue.toFixed(1) : '-';
+                                  const isPositive = deltaValue !== null && deltaValue > 0;
+                                  const isNegative = deltaValue !== null && deltaValue < 0;
+                                  const isAboveAvg = deltaValue !== null && deltaValue > avgCpaDelta;
+                                  const isBelowAvg = deltaValue !== null && deltaValue < avgCpaDelta;
+                                  
+                                  // Cores e estilos baseados em 4 níveis
+                                  let bgColor = '';
+                                  let textColor = '';
+                                  let fontWeight = 'font-semibold';
+                                  
+                                  // Muito acima da média (top 25%)
+                                  if (deltaValue !== null && deltaValue > avgCpaDelta * 1.5) {
+                                    bgColor = 'bg-emerald-100';
+                                    textColor = 'text-emerald-800';
+                                    fontWeight = 'font-bold';
+                                  }
+                                  // Acima da média
+                                  else if (isAboveAvg) {
+                                    bgColor = 'bg-green-100';
+                                    textColor = 'text-green-700';
+                                    fontWeight = 'font-bold';
+                                  } 
+                                  // Muito abaixo da média
+                                  else if (deltaValue !== null && deltaValue < avgCpaDelta * 0.5) {
+                                    bgColor = 'bg-red-100';
+                                    textColor = 'text-red-700';
+                                  }
+                                  // Abaixo da média
+                                  else if (isBelowAvg) {
+                                    bgColor = 'bg-orange-100';
+                                    textColor = 'text-orange-700';
+                                  } 
+                                  // Na média
+                                  else {
+                                    textColor = isPositive ? 'text-green-600' : isNegative ? 'text-red-600' : 'text-gray-600';
+                                  }
+                                  
+                                  const sign = isPositive ? '+' : '';
+                                  return (
+                                    <div className={`${bgColor} ${textColor} ${fontWeight} rounded px-2 py-1 inline-block`}>
+                                      {deltaPercentage !== '-' ? `${sign}${deltaPercentage}%` : '-'}
+                                    </div>
+                                  );
+                                })()}
+                              </td>
+                            )}
                             {creativeVisibleColumns.roas && (
                               <td className="px-4 py-3 text-sm text-gray-900">
                                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -4367,7 +4980,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                             )}
                           </tr>
                         )
-                      })}
+                      })})()}
                     </tbody>
                   </table>
                 </div>
@@ -4517,8 +5130,10 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                                 { key: 'leads', label: 'Leads', icon: '🎯' },
                                 { key: 'transactions', label: 'Transações', icon: '🛒' },
                                 { key: 'transactions_first', label: 'Trans. 1ª Compra', icon: '🆕' },
+                                { key: 'transactions_delta', label: 'Δ ROAS %', icon: '📊' },
                                 { key: 'cpv', label: 'CPV', icon: '💳' },
-                                { key: 'cpa', label: 'CPA', icon: '🎯' }
+                                { key: 'cpa', label: 'CPA', icon: '🎯' },
+                                { key: 'cpa_delta', label: 'Δ CPA %', icon: '📊' }
                               ].map(({ key, label, icon }) => (
                                 <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
                                   <input
