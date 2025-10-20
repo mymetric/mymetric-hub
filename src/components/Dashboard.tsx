@@ -77,6 +77,17 @@ interface MetricsDataItem {
   Receita_Paga: number
   Novos_Clientes: number
   Receita_Novos_Clientes: number
+  city?: string
+  region?: string
+  country?: string
+  Pedidos_Assinatura_Anual_Inicial?: number
+  Receita_Assinatura_Anual_Inicial?: number
+  Pedidos_Assinatura_Mensal_Inicial?: number
+  Receita_Assinatura_Mensal_Inicial?: number
+  Pedidos_Assinatura_Anual_Recorrente?: number
+  Receita_Assinatura_Anual_Recorrente?: number
+  Pedidos_Assinatura_Mensal_Recorrente?: number
+  Receita_Assinatura_Mensal_Recorrente?: number
 }
 
 const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) => {
@@ -264,7 +275,75 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const [sortField, setSortField] = useState<string>('receita')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [showAllRecords, setShowAllRecords] = useState(false)
+  const [isTableFullscreen, setIsTableFullscreen] = useState(false)
   const [hideClientName, setHideClientName] = useState(false)
+  
+  // Seletor de Métricas/Colunas
+  const getInitialVisibleColumns = () => {
+    const saved = localStorage.getItem('dashboardVisibleColumns')
+    if (saved) {
+      try {
+        return JSON.parse(saved)
+      } catch {
+        return {
+          cluster: true,
+          sessoes: true,
+          taxaAdicaoCarrinho: true,
+          adicoesCarrinho: false,
+          taxaConversao: true,
+          pedidos: true,
+          pedidosPagos: true,
+          receita: true,
+          receitaPaga: true,
+          taxaReceitaPaga: false,
+          novosClientes: false,
+          receitaNovosClientes: false,
+          percentualNovosClientes: false,
+          pedidosAssinaturaAnualInicial: false,
+          receitaAssinaturaAnualInicial: false,
+          pedidosAssinaturaMensalInicial: false,
+          receitaAssinaturaMensalInicial: false,
+          pedidosAssinaturaAnualRecorrente: false,
+          receitaAssinaturaAnualRecorrente: false,
+          pedidosAssinaturaMensalRecorrente: false,
+          receitaAssinaturaMensalRecorrente: false
+        }
+      }
+    }
+    return {
+      cluster: true,
+      sessoes: true,
+      taxaAdicaoCarrinho: true,
+      adicoesCarrinho: false,
+      taxaConversao: true,
+      pedidos: true,
+      pedidosPagos: true,
+      receita: true,
+      receitaPaga: true,
+      taxaReceitaPaga: false,
+      novosClientes: false,
+      receitaNovosClientes: false,
+      percentualNovosClientes: false,
+      pedidosAssinaturaAnualInicial: false,
+      receitaAssinaturaAnualInicial: false,
+      pedidosAssinaturaMensalInicial: false,
+      receitaAssinaturaMensalInicial: false,
+      pedidosAssinaturaAnualRecorrente: false,
+      receitaAssinaturaAnualRecorrente: false,
+      pedidosAssinaturaMensalRecorrente: false,
+      receitaAssinaturaMensalRecorrente: false
+    }
+  }
+  
+  const [visibleColumns, setVisibleColumns] = useState(getInitialVisibleColumns())
+  const [showColumnSelector, setShowColumnSelector] = useState(false)
+  const [metricSearchTerm, setMetricSearchTerm] = useState('')
+  
+  // Salvar colunas visíveis no localStorage quando mudarem
+  useEffect(() => {
+    localStorage.setItem('dashboardVisibleColumns', JSON.stringify(visibleColumns))
+  }, [visibleColumns])
+  
   const [activeTab, setActiveTab] = useState<string>('visao-geral')
   const [showMobileTabMenu, setShowMobileTabMenu] = useState(false)
   const [showSubmenu, setShowSubmenu] = useState(false)
@@ -646,7 +725,15 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     pedidosPagos: acc.pedidosPagos + item.Pedidos_Pagos,
     receitaNovosClientes: acc.receitaNovosClientes + item.Receita_Novos_Clientes,
     investimento: acc.investimento + item.Investimento,
-    cliques: acc.cliques + item.Cliques
+    cliques: acc.cliques + item.Cliques,
+    pedidosAssinaturaAnualInicial: acc.pedidosAssinaturaAnualInicial + (item.Pedidos_Assinatura_Anual_Inicial || 0),
+    receitaAssinaturaAnualInicial: acc.receitaAssinaturaAnualInicial + (item.Receita_Assinatura_Anual_Inicial || 0),
+    pedidosAssinaturaMensalInicial: acc.pedidosAssinaturaMensalInicial + (item.Pedidos_Assinatura_Mensal_Inicial || 0),
+    receitaAssinaturaMensalInicial: acc.receitaAssinaturaMensalInicial + (item.Receita_Assinatura_Mensal_Inicial || 0),
+    pedidosAssinaturaAnualRecorrente: acc.pedidosAssinaturaAnualRecorrente + (item.Pedidos_Assinatura_Anual_Recorrente || 0),
+    receitaAssinaturaAnualRecorrente: acc.receitaAssinaturaAnualRecorrente + (item.Receita_Assinatura_Anual_Recorrente || 0),
+    pedidosAssinaturaMensalRecorrente: acc.pedidosAssinaturaMensalRecorrente + (item.Pedidos_Assinatura_Mensal_Recorrente || 0),
+    receitaAssinaturaMensalRecorrente: acc.receitaAssinaturaMensalRecorrente + (item.Receita_Assinatura_Mensal_Recorrente || 0)
   }), {
     receita: 0,
     pedidos: 0,
@@ -657,7 +744,15 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     pedidosPagos: 0,
     receitaNovosClientes: 0,
     investimento: 0,
-    cliques: 0
+    cliques: 0,
+    pedidosAssinaturaAnualInicial: 0,
+    receitaAssinaturaAnualInicial: 0,
+    pedidosAssinaturaMensalInicial: 0,
+    receitaAssinaturaMensalInicial: 0,
+    pedidosAssinaturaAnualRecorrente: 0,
+    receitaAssinaturaAnualRecorrente: 0,
+    pedidosAssinaturaMensalRecorrente: 0,
+    receitaAssinaturaMensalRecorrente: 0
   })
 
   // Calcular totais do período anterior
@@ -671,7 +766,15 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     pedidosPagos: acc.pedidosPagos + item.Pedidos_Pagos,
     receitaNovosClientes: acc.receitaNovosClientes + item.Receita_Novos_Clientes,
     investimento: acc.investimento + item.Investimento,
-    cliques: acc.cliques + item.Cliques
+    cliques: acc.cliques + item.Cliques,
+    pedidosAssinaturaAnualInicial: acc.pedidosAssinaturaAnualInicial + (item.Pedidos_Assinatura_Anual_Inicial || 0),
+    receitaAssinaturaAnualInicial: acc.receitaAssinaturaAnualInicial + (item.Receita_Assinatura_Anual_Inicial || 0),
+    pedidosAssinaturaMensalInicial: acc.pedidosAssinaturaMensalInicial + (item.Pedidos_Assinatura_Mensal_Inicial || 0),
+    receitaAssinaturaMensalInicial: acc.receitaAssinaturaMensalInicial + (item.Receita_Assinatura_Mensal_Inicial || 0),
+    pedidosAssinaturaAnualRecorrente: acc.pedidosAssinaturaAnualRecorrente + (item.Pedidos_Assinatura_Anual_Recorrente || 0),
+    receitaAssinaturaAnualRecorrente: acc.receitaAssinaturaAnualRecorrente + (item.Receita_Assinatura_Anual_Recorrente || 0),
+    pedidosAssinaturaMensalRecorrente: acc.pedidosAssinaturaMensalRecorrente + (item.Pedidos_Assinatura_Mensal_Recorrente || 0),
+    receitaAssinaturaMensalRecorrente: acc.receitaAssinaturaMensalRecorrente + (item.Receita_Assinatura_Mensal_Recorrente || 0)
   }), {
     receita: 0,
     pedidos: 0,
@@ -682,7 +785,15 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     pedidosPagos: 0,
     receitaNovosClientes: 0,
     investimento: 0,
-    cliques: 0
+    cliques: 0,
+    pedidosAssinaturaAnualInicial: 0,
+    receitaAssinaturaAnualInicial: 0,
+    pedidosAssinaturaMensalInicial: 0,
+    receitaAssinaturaMensalInicial: 0,
+    pedidosAssinaturaAnualRecorrente: 0,
+    receitaAssinaturaAnualRecorrente: 0,
+    pedidosAssinaturaMensalRecorrente: 0,
+    receitaAssinaturaMensalRecorrente: 0
   })
 
   const avgOrderValue = totals.pedidos > 0 ? totals.receita / totals.pedidos : 0
@@ -854,7 +965,15 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       pedidosPagos: acc.pedidosPagos + item.Pedidos_Pagos,
       receitaNovosClientes: acc.receitaNovosClientes + item.Receita_Novos_Clientes,
       investimento: acc.investimento + item.Investimento,
-      cliques: acc.cliques + item.Cliques
+      cliques: acc.cliques + item.Cliques,
+      pedidosAssinaturaAnualInicial: acc.pedidosAssinaturaAnualInicial + (item.Pedidos_Assinatura_Anual_Inicial || 0),
+      receitaAssinaturaAnualInicial: acc.receitaAssinaturaAnualInicial + (item.Receita_Assinatura_Anual_Inicial || 0),
+      pedidosAssinaturaMensalInicial: acc.pedidosAssinaturaMensalInicial + (item.Pedidos_Assinatura_Mensal_Inicial || 0),
+      receitaAssinaturaMensalInicial: acc.receitaAssinaturaMensalInicial + (item.Receita_Assinatura_Mensal_Inicial || 0),
+      pedidosAssinaturaAnualRecorrente: acc.pedidosAssinaturaAnualRecorrente + (item.Pedidos_Assinatura_Anual_Recorrente || 0),
+      receitaAssinaturaAnualRecorrente: acc.receitaAssinaturaAnualRecorrente + (item.Receita_Assinatura_Anual_Recorrente || 0),
+      pedidosAssinaturaMensalRecorrente: acc.pedidosAssinaturaMensalRecorrente + (item.Pedidos_Assinatura_Mensal_Recorrente || 0),
+      receitaAssinaturaMensalRecorrente: acc.receitaAssinaturaMensalRecorrente + (item.Receita_Assinatura_Mensal_Recorrente || 0)
     }), {
       sessoes: 0,
       adicoesCarrinho: 0,
@@ -865,7 +984,15 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       pedidosPagos: 0,
       receitaNovosClientes: 0,
       investimento: 0,
-      cliques: 0
+      cliques: 0,
+      pedidosAssinaturaAnualInicial: 0,
+      receitaAssinaturaAnualInicial: 0,
+      pedidosAssinaturaMensalInicial: 0,
+      receitaAssinaturaMensalInicial: 0,
+      pedidosAssinaturaAnualRecorrente: 0,
+      receitaAssinaturaAnualRecorrente: 0,
+      pedidosAssinaturaMensalRecorrente: 0,
+      receitaAssinaturaMensalRecorrente: 0
     })
 
     return {
@@ -941,6 +1068,42 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         case 'taxaAdicaoCarrinho':
           aValue = a.totals.sessoes > 0 ? (a.totals.adicoesCarrinho / a.totals.sessoes) * 100 : 0
           bValue = b.totals.sessoes > 0 ? (b.totals.adicoesCarrinho / b.totals.sessoes) * 100 : 0
+          break
+        case 'percentualNovosClientes':
+          aValue = a.totals.pedidos > 0 ? (a.totals.novosClientes / a.totals.pedidos) * 100 : 0
+          bValue = b.totals.pedidos > 0 ? (b.totals.novosClientes / b.totals.pedidos) * 100 : 0
+          break
+        case 'pedidosAssinaturaAnualInicial':
+          aValue = a.totals.pedidosAssinaturaAnualInicial || 0
+          bValue = b.totals.pedidosAssinaturaAnualInicial || 0
+          break
+        case 'receitaAssinaturaAnualInicial':
+          aValue = a.totals.receitaAssinaturaAnualInicial || 0
+          bValue = b.totals.receitaAssinaturaAnualInicial || 0
+          break
+        case 'pedidosAssinaturaMensalInicial':
+          aValue = a.totals.pedidosAssinaturaMensalInicial || 0
+          bValue = b.totals.pedidosAssinaturaMensalInicial || 0
+          break
+        case 'receitaAssinaturaMensalInicial':
+          aValue = a.totals.receitaAssinaturaMensalInicial || 0
+          bValue = b.totals.receitaAssinaturaMensalInicial || 0
+          break
+        case 'pedidosAssinaturaAnualRecorrente':
+          aValue = a.totals.pedidosAssinaturaAnualRecorrente || 0
+          bValue = b.totals.pedidosAssinaturaAnualRecorrente || 0
+          break
+        case 'receitaAssinaturaAnualRecorrente':
+          aValue = a.totals.receitaAssinaturaAnualRecorrente || 0
+          bValue = b.totals.receitaAssinaturaAnualRecorrente || 0
+          break
+        case 'pedidosAssinaturaMensalRecorrente':
+          aValue = a.totals.pedidosAssinaturaMensalRecorrente || 0
+          bValue = b.totals.pedidosAssinaturaMensalRecorrente || 0
+          break
+        case 'receitaAssinaturaMensalRecorrente':
+          aValue = a.totals.receitaAssinaturaMensalRecorrente || 0
+          bValue = b.totals.receitaAssinaturaMensalRecorrente || 0
           break
         default:
           aValue = a.cluster
@@ -2214,7 +2377,71 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       format: "currency" as const,
                       color: "green",
                       growth: calculateGrowth(revenuePerSession, previousRevenuePerSession)
-                    }
+                    },
+                    // Assinaturas - só mostrar se houver dados
+                    ...(totals.pedidosAssinaturaAnualInicial > 0 || totals.pedidosAssinaturaMensalInicial > 0 || 
+                        totals.pedidosAssinaturaAnualRecorrente > 0 || totals.pedidosAssinaturaMensalRecorrente > 0 ? [
+                      {
+                        title: "Ped. Assin. Anual Inicial",
+                        value: totals.pedidosAssinaturaAnualInicial,
+                        icon: ShoppingBag,
+                        growth: calculateGrowth(totals.pedidosAssinaturaAnualInicial, previousTotals.pedidosAssinaturaAnualInicial),
+                        color: "purple" as const
+                      },
+                      {
+                        title: "Rec. Assin. Anual Inicial",
+                        value: totals.receitaAssinaturaAnualInicial,
+                        icon: DollarSign,
+                        growth: calculateGrowth(totals.receitaAssinaturaAnualInicial, previousTotals.receitaAssinaturaAnualInicial),
+                        format: "currency" as const,
+                        color: "purple" as const
+                      },
+                      {
+                        title: "Ped. Assin. Mensal Inicial",
+                        value: totals.pedidosAssinaturaMensalInicial,
+                        icon: ShoppingBag,
+                        growth: calculateGrowth(totals.pedidosAssinaturaMensalInicial, previousTotals.pedidosAssinaturaMensalInicial),
+                        color: "indigo" as const
+                      },
+                      {
+                        title: "Rec. Assin. Mensal Inicial",
+                        value: totals.receitaAssinaturaMensalInicial,
+                        icon: DollarSign,
+                        growth: calculateGrowth(totals.receitaAssinaturaMensalInicial, previousTotals.receitaAssinaturaMensalInicial),
+                        format: "currency" as const,
+                        color: "indigo" as const
+                      },
+                      {
+                        title: "Ped. Assin. Anual Recorrente",
+                        value: totals.pedidosAssinaturaAnualRecorrente,
+                        icon: Coins,
+                        growth: calculateGrowth(totals.pedidosAssinaturaAnualRecorrente, previousTotals.pedidosAssinaturaAnualRecorrente),
+                        color: "cyan" as const
+                      },
+                      {
+                        title: "Rec. Assin. Anual Recorrente",
+                        value: totals.receitaAssinaturaAnualRecorrente,
+                        icon: DollarSign,
+                        growth: calculateGrowth(totals.receitaAssinaturaAnualRecorrente, previousTotals.receitaAssinaturaAnualRecorrente),
+                        format: "currency" as const,
+                        color: "cyan" as const
+                      },
+                      {
+                        title: "Ped. Assin. Mensal Recorrente",
+                        value: totals.pedidosAssinaturaMensalRecorrente,
+                        icon: Coins,
+                        growth: calculateGrowth(totals.pedidosAssinaturaMensalRecorrente, previousTotals.pedidosAssinaturaMensalRecorrente),
+                        color: "teal" as const
+                      },
+                      {
+                        title: "Rec. Assin. Mensal Recorrente",
+                        value: totals.receitaAssinaturaMensalRecorrente,
+                        icon: DollarSign,
+                        growth: calculateGrowth(totals.receitaAssinaturaMensalRecorrente, previousTotals.receitaAssinaturaMensalRecorrente),
+                        format: "currency" as const,
+                        color: "teal" as const
+                      }
+                    ] : [])
                   ]}
                 />
               </div>
@@ -2380,7 +2607,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   </div>
 
                   {/* Metrics Grid - Second Row */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                     <MetricCard
                       title="Taxa de Conversão"
                       value={conversionRate}
@@ -2414,6 +2641,87 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       growth={calculateGrowth(newCustomerRate, previousNewCustomerRate)}
                     />
                   </div>
+
+                  {/* Assinatura Row - Mostra apenas se houver dados */}
+                  {(totals.pedidosAssinaturaAnualInicial > 0 || totals.pedidosAssinaturaMensalInicial > 0 || 
+                    totals.pedidosAssinaturaAnualRecorrente > 0 || totals.pedidosAssinaturaMensalRecorrente > 0) && (
+                    <>
+                      <div className="border-t border-gray-200 my-6 pt-6">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                          <Database className="w-5 h-5 text-purple-600" />
+                          Assinaturas
+                        </h3>
+                      </div>
+                      
+                      {/* Assinatura Inicial Row */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                        <MetricCard
+                          title="Pedidos Assinatura Anual Inicial"
+                          value={totals.pedidosAssinaturaAnualInicial}
+                          icon={ShoppingBag}
+                          growth={calculateGrowth(totals.pedidosAssinaturaAnualInicial, previousTotals.pedidosAssinaturaAnualInicial)}
+                          color="purple"
+                        />
+                        <MetricCard
+                          title="Receita Assinatura Anual Inicial"
+                          value={totals.receitaAssinaturaAnualInicial}
+                          icon={DollarSign}
+                          growth={calculateGrowth(totals.receitaAssinaturaAnualInicial, previousTotals.receitaAssinaturaAnualInicial)}
+                          format="currency"
+                          color="purple"
+                        />
+                        <MetricCard
+                          title="Pedidos Assinatura Mensal Inicial"
+                          value={totals.pedidosAssinaturaMensalInicial}
+                          icon={ShoppingBag}
+                          growth={calculateGrowth(totals.pedidosAssinaturaMensalInicial, previousTotals.pedidosAssinaturaMensalInicial)}
+                          color="indigo"
+                        />
+                        <MetricCard
+                          title="Receita Assinatura Mensal Inicial"
+                          value={totals.receitaAssinaturaMensalInicial}
+                          icon={DollarSign}
+                          growth={calculateGrowth(totals.receitaAssinaturaMensalInicial, previousTotals.receitaAssinaturaMensalInicial)}
+                          format="currency"
+                          color="indigo"
+                        />
+                      </div>
+
+                      {/* Assinatura Recorrente Row */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                        <MetricCard
+                          title="Pedidos Assinatura Anual Recorrente"
+                          value={totals.pedidosAssinaturaAnualRecorrente}
+                          icon={Coins}
+                          growth={calculateGrowth(totals.pedidosAssinaturaAnualRecorrente, previousTotals.pedidosAssinaturaAnualRecorrente)}
+                          color="cyan"
+                        />
+                        <MetricCard
+                          title="Receita Assinatura Anual Recorrente"
+                          value={totals.receitaAssinaturaAnualRecorrente}
+                          icon={DollarSign}
+                          growth={calculateGrowth(totals.receitaAssinaturaAnualRecorrente, previousTotals.receitaAssinaturaAnualRecorrente)}
+                          format="currency"
+                          color="cyan"
+                        />
+                        <MetricCard
+                          title="Pedidos Assinatura Mensal Recorrente"
+                          value={totals.pedidosAssinaturaMensalRecorrente}
+                          icon={Coins}
+                          growth={calculateGrowth(totals.pedidosAssinaturaMensalRecorrente, previousTotals.pedidosAssinaturaMensalRecorrente)}
+                          color="teal"
+                        />
+                        <MetricCard
+                          title="Receita Assinatura Mensal Recorrente"
+                          value={totals.receitaAssinaturaMensalRecorrente}
+                          icon={DollarSign}
+                          growth={calculateGrowth(totals.receitaAssinaturaMensalRecorrente, previousTotals.receitaAssinaturaMensalRecorrente)}
+                          format="currency"
+                          color="teal"
+                        />
+                      </div>
+                    </>
+                  )}
 
                 </div>
 
@@ -2484,6 +2792,46 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             </select>
                           </div>
                         </div>
+                        {/* Metrics Selector Button */}
+                        <button
+                          onClick={() => setShowColumnSelector(!showColumnSelector)}
+                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
+                            showColumnSelector 
+                              ? 'bg-green-600 text-white hover:bg-green-700 shadow-sm' 
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
+                          }`}
+                          title="Selecionar métricas"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                          </svg>
+                          <span>Métricas</span>
+                          <span className={`px-2 py-0.5 text-xs rounded-full ${
+                            showColumnSelector 
+                              ? 'bg-white/20 text-white' 
+                              : 'bg-blue-100 text-blue-600'
+                          }`}>
+                            {Object.values(visibleColumns).filter(Boolean).length}
+                          </span>
+                          <svg 
+                            className={`w-4 h-4 transition-transform duration-200 ${showColumnSelector ? 'rotate-180' : ''}`} 
+                            fill="none" 
+                            stroke="currentColor" 
+                            viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        {/* Fullscreen Button */}
+                        <button
+                          onClick={() => setIsTableFullscreen(true)}
+                          className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Tela cheia"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                          </svg>
+                        </button>
                         {isTableLoading && (
                           <div className="flex items-center gap-2 text-sm text-gray-600">
                             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
@@ -2541,102 +2889,216 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                     <table className="w-full">
                       <thead className="bg-gray-50">
                         <tr>
-                          <SortableHeader
-                            field="cluster"
-                            currentSortField={sortField}
-                            currentSortDirection={sortDirection}
-                            onSort={handleSort}
-                          >
-                            Cluster
-                          </SortableHeader>
-                          <SortableHeader
-                            field="sessoes"
-                            currentSortField={sortField}
-                            currentSortDirection={sortDirection}
-                            onSort={handleSort}
-                          >
-                            Sessões
-                          </SortableHeader>
-                          <SortableHeader
-                            field="taxaAdicaoCarrinho"
-                            currentSortField={sortField}
-                            currentSortDirection={sortDirection}
-                            onSort={handleSort}
-                          >
-                            Taxa Carrinho
-                          </SortableHeader>
-                          <SortableHeader
-                            field="adicoesCarrinho"
-                            currentSortField={sortField}
-                            currentSortDirection={sortDirection}
-                            onSort={handleSort}
-                          >
-                            Carrinho
-                          </SortableHeader>
-                          <SortableHeader
-                            field="taxaConversao"
-                            currentSortField={sortField}
-                            currentSortDirection={sortDirection}
-                            onSort={handleSort}
-                          >
-                            Taxa Conv.
-                          </SortableHeader>
-                          <SortableHeader
-                            field="pedidos"
-                            currentSortField={sortField}
-                            currentSortDirection={sortDirection}
-                            onSort={handleSort}
-                          >
-                            Pedidos
-                          </SortableHeader>
-                          <SortableHeader
-                            field="pedidosPagos"
-                            currentSortField={sortField}
-                            currentSortDirection={sortDirection}
-                            onSort={handleSort}
-                          >
-                            Pedidos Pagos
-                          </SortableHeader>
-                          <SortableHeader
-                            field="receita"
-                            currentSortField={sortField}
-                            currentSortDirection={sortDirection}
-                            onSort={handleSort}
-                          >
-                            Receita
-                          </SortableHeader>
-                          <SortableHeader
-                            field="receitaPaga"
-                            currentSortField={sortField}
-                            currentSortDirection={sortDirection}
-                            onSort={handleSort}
-                          >
-                            Receita Paga
-                          </SortableHeader>
-                          <SortableHeader
-                            field="taxaReceitaPaga"
-                            currentSortField={sortField}
-                            currentSortDirection={sortDirection}
-                            onSort={handleSort}
-                          >
-                            % Receita Paga
-                          </SortableHeader>
-                          <SortableHeader
-                            field="novosClientes"
-                            currentSortField={sortField}
-                            currentSortDirection={sortDirection}
-                            onSort={handleSort}
-                          >
-                            Novos Clientes
-                          </SortableHeader>
-                          <SortableHeader
-                            field="receitaNovosClientes"
-                            currentSortField={sortField}
-                            currentSortDirection={sortDirection}
-                            onSort={handleSort}
-                          >
-                            Receita Novos
-                          </SortableHeader>
+                          {visibleColumns.cluster && (
+                            <SortableHeader
+                              field="cluster"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              Cluster
+                            </SortableHeader>
+                          )}
+                          {visibleColumns.sessoes && (
+                            <SortableHeader
+                              field="sessoes"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              Sessões
+                            </SortableHeader>
+                          )}
+                          {visibleColumns.taxaAdicaoCarrinho && (
+                            <SortableHeader
+                              field="taxaAdicaoCarrinho"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              Taxa Carrinho
+                            </SortableHeader>
+                          )}
+                          {visibleColumns.adicoesCarrinho && (
+                            <SortableHeader
+                              field="adicoesCarrinho"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              Carrinho
+                            </SortableHeader>
+                          )}
+                          {visibleColumns.taxaConversao && (
+                            <SortableHeader
+                              field="taxaConversao"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              Taxa Conv.
+                            </SortableHeader>
+                          )}
+                          {visibleColumns.pedidos && (
+                            <SortableHeader
+                              field="pedidos"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              Pedidos
+                            </SortableHeader>
+                          )}
+                          {visibleColumns.pedidosPagos && (
+                            <SortableHeader
+                              field="pedidosPagos"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              Pedidos Pagos
+                            </SortableHeader>
+                          )}
+                          {visibleColumns.receita && (
+                            <SortableHeader
+                              field="receita"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              Receita
+                            </SortableHeader>
+                          )}
+                          {visibleColumns.receitaPaga && (
+                            <SortableHeader
+                              field="receitaPaga"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              Receita Paga
+                            </SortableHeader>
+                          )}
+                          {visibleColumns.taxaReceitaPaga && (
+                            <SortableHeader
+                              field="taxaReceitaPaga"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              % Receita Paga
+                            </SortableHeader>
+                          )}
+                          {visibleColumns.novosClientes && (
+                            <SortableHeader
+                              field="novosClientes"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              Novos Clientes
+                            </SortableHeader>
+                          )}
+                          {visibleColumns.receitaNovosClientes && (
+                            <SortableHeader
+                              field="receitaNovosClientes"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              Receita Novos
+                            </SortableHeader>
+                          )}
+                          {visibleColumns.percentualNovosClientes && (
+                            <SortableHeader
+                              field="percentualNovosClientes"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              % Novos Clientes
+                            </SortableHeader>
+                          )}
+                          {visibleColumns.pedidosAssinaturaAnualInicial && (
+                            <SortableHeader
+                              field="pedidosAssinaturaAnualInicial"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              Ped. Assin. Anual Inicial
+                            </SortableHeader>
+                          )}
+                          {visibleColumns.receitaAssinaturaAnualInicial && (
+                            <SortableHeader
+                              field="receitaAssinaturaAnualInicial"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              Rec. Assin. Anual Inicial
+                            </SortableHeader>
+                          )}
+                          {visibleColumns.pedidosAssinaturaMensalInicial && (
+                            <SortableHeader
+                              field="pedidosAssinaturaMensalInicial"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              Ped. Assin. Mensal Inicial
+                            </SortableHeader>
+                          )}
+                          {visibleColumns.receitaAssinaturaMensalInicial && (
+                            <SortableHeader
+                              field="receitaAssinaturaMensalInicial"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              Rec. Assin. Mensal Inicial
+                            </SortableHeader>
+                          )}
+                          {visibleColumns.pedidosAssinaturaAnualRecorrente && (
+                            <SortableHeader
+                              field="pedidosAssinaturaAnualRecorrente"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              Ped. Assin. Anual Recorrente
+                            </SortableHeader>
+                          )}
+                          {visibleColumns.receitaAssinaturaAnualRecorrente && (
+                            <SortableHeader
+                              field="receitaAssinaturaAnualRecorrente"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              Rec. Assin. Anual Recorrente
+                            </SortableHeader>
+                          )}
+                          {visibleColumns.pedidosAssinaturaMensalRecorrente && (
+                            <SortableHeader
+                              field="pedidosAssinaturaMensalRecorrente"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              Ped. Assin. Mensal Recorrente
+                            </SortableHeader>
+                          )}
+                          {visibleColumns.receitaAssinaturaMensalRecorrente && (
+                            <SortableHeader
+                              field="receitaAssinaturaMensalRecorrente"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              Rec. Assin. Mensal Recorrente
+                            </SortableHeader>
+                          )}
 
                         </tr>
                       </thead>
@@ -2660,35 +3122,46 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               }}
                               title={selectedCluster === cluster ? "Clique para remover filtro" : "Clique para filtrar por este cluster"}
                             >
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="flex items-center gap-2">
-                                  <span className={`text-lg transition-colors ${
-                                    selectedCluster === cluster ? 'text-blue-600 font-semibold' : 'group-hover:text-blue-600'
-                                  }`}>
-                                    {cluster}
-                                  </span>
-                                  <Filter className={`w-3 h-3 transition-opacity ${
-                                    selectedCluster === cluster 
-                                      ? 'text-blue-600 opacity-100' 
-                                      : 'text-gray-400 opacity-0 group-hover:opacity-100'
-                                  }`} />
-                                  {selectedCluster === cluster && (
-                                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">
-                                      Filtrado
+                              {visibleColumns.cluster && (
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  <div className="flex items-center gap-2">
+                                    <span className={`text-lg transition-colors ${
+                                      selectedCluster === cluster ? 'text-blue-600 font-semibold' : 'group-hover:text-blue-600'
+                                    }`}>
+                                      {cluster}
                                     </span>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{formatNumber(totals.sessoes)}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">
-                                {totals.sessoes > 0 ? ((totals.adicoesCarrinho / totals.sessoes) * 100).toFixed(1) : '0.0'}%
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{formatNumber(totals.adicoesCarrinho)}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-orange-600">{conversionRate.toFixed(2)}%</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                <div className="flex items-center gap-2">
-                                  <span>{formatNumber(totals.pedidos)}</span>
-                                  {totals.pedidos > 0 && (() => {
+                                    <Filter className={`w-3 h-3 transition-opacity ${
+                                      selectedCluster === cluster 
+                                        ? 'text-blue-600 opacity-100' 
+                                        : 'text-gray-400 opacity-0 group-hover:opacity-100'
+                                    }`} />
+                                    {selectedCluster === cluster && (
+                                      <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">
+                                        Filtrado
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              )}
+                              {visibleColumns.sessoes && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{formatNumber(totals.sessoes)}</td>
+                              )}
+                              {visibleColumns.taxaAdicaoCarrinho && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">
+                                  {totals.sessoes > 0 ? ((totals.adicoesCarrinho / totals.sessoes) * 100).toFixed(1) : '0.0'}%
+                                </td>
+                              )}
+                              {visibleColumns.adicoesCarrinho && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{formatNumber(totals.adicoesCarrinho)}</td>
+                              )}
+                              {visibleColumns.taxaConversao && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-orange-600">{conversionRate.toFixed(2)}%</td>
+                              )}
+                              {visibleColumns.pedidos && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                  <div className="flex items-center gap-2">
+                                    <span>{formatNumber(totals.pedidos)}</span>
+                                    {totals.pedidos > 0 && (() => {
                                     const cacheKey = `${selectedTable}-${cluster}-${startDate}-${endDate}-${attributionModel}`
                                     const isDownloading = downloadingOrders.has(cacheKey)
                                     const isDownloaded = downloadedOrders.has(cacheKey)
@@ -2733,16 +3206,58 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                                       </div>
                                     )
                                   })()}
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-teal-600">{formatNumber(totals.pedidosPagos)}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">{formatCurrency(totals.receita)}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">{formatCurrency(totals.receitaPaga)}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-cyan-600">
-                                {totals.receita > 0 ? ((totals.receitaPaga / totals.receita) * 100).toFixed(1) : '0.0'}%
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">{formatNumber(totals.novosClientes)}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{formatCurrency(totals.receitaNovosClientes)}</td>
+                                  </div>
+                                </td>
+                              )}
+                              {visibleColumns.pedidosPagos && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-teal-600">{formatNumber(totals.pedidosPagos)}</td>
+                              )}
+                              {visibleColumns.receita && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">{formatCurrency(totals.receita)}</td>
+                              )}
+                              {visibleColumns.receitaPaga && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">{formatCurrency(totals.receitaPaga)}</td>
+                              )}
+                              {visibleColumns.taxaReceitaPaga && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-cyan-600">
+                                  {totals.receita > 0 ? ((totals.receitaPaga / totals.receita) * 100).toFixed(1) : '0.0'}%
+                                </td>
+                              )}
+                              {visibleColumns.novosClientes && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">{formatNumber(totals.novosClientes)}</td>
+                              )}
+                              {visibleColumns.receitaNovosClientes && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{formatCurrency(totals.receitaNovosClientes)}</td>
+                              )}
+                              {visibleColumns.percentualNovosClientes && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">
+                                  {totals.pedidos > 0 ? ((totals.novosClientes / totals.pedidos) * 100).toFixed(1) : '0.0'}%
+                                </td>
+                              )}
+                              {visibleColumns.pedidosAssinaturaAnualInicial && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">{formatNumber(totals.pedidosAssinaturaAnualInicial || 0)}</td>
+                              )}
+                              {visibleColumns.receitaAssinaturaAnualInicial && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">{formatCurrency(totals.receitaAssinaturaAnualInicial || 0)}</td>
+                              )}
+                              {visibleColumns.pedidosAssinaturaMensalInicial && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{formatNumber(totals.pedidosAssinaturaMensalInicial || 0)}</td>
+                              )}
+                              {visibleColumns.receitaAssinaturaMensalInicial && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{formatCurrency(totals.receitaAssinaturaMensalInicial || 0)}</td>
+                              )}
+                              {visibleColumns.pedidosAssinaturaAnualRecorrente && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-cyan-600">{formatNumber(totals.pedidosAssinaturaAnualRecorrente || 0)}</td>
+                              )}
+                              {visibleColumns.receitaAssinaturaAnualRecorrente && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-cyan-600">{formatCurrency(totals.receitaAssinaturaAnualRecorrente || 0)}</td>
+                              )}
+                              {visibleColumns.pedidosAssinaturaMensalRecorrente && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-teal-600">{formatNumber(totals.pedidosAssinaturaMensalRecorrente || 0)}</td>
+                              )}
+                              {visibleColumns.receitaAssinaturaMensalRecorrente && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-teal-600">{formatCurrency(totals.receitaAssinaturaMensalRecorrente || 0)}</td>
+                              )}
                             </tr>
                           )
                         })}
@@ -2777,6 +3292,227 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   )}
                 </div>
 
+                {/* Dropdown de Métricas - Overlay Elegante */}
+                {showColumnSelector && (
+                  <div className="fixed inset-0 z-50 overflow-hidden">
+                    {/* Backdrop */}
+                    <div 
+                      className="absolute inset-0 bg-black/20 backdrop-blur-sm"
+                      onClick={() => setShowColumnSelector(false)}
+                    />
+                    
+                    {/* Dropdown Content */}
+                    <div className="absolute top-20 right-6 w-96 max-w-[calc(100vw-3rem)]">
+                      <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden animate-in slide-in-from-top-2 duration-300">
+                        {/* Header */}
+                        <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
+                                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                                </svg>
+                              </div>
+                              <div>
+                                <h3 className="text-lg font-semibold text-white">Selecionar Métricas</h3>
+                                <p className="text-blue-100 text-sm">Escolha quais colunas exibir na tabela</p>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => setShowColumnSelector(false)}
+                              className="w-8 h-8 bg-white/20 hover:bg-white/30 rounded-lg flex items-center justify-center transition-colors"
+                            >
+                              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Search Bar */}
+                        <div className="px-6 py-4 border-b border-gray-200">
+                          <div className="relative">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                              <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                              </svg>
+                            </div>
+                            <input
+                              type="text"
+                              placeholder="Buscar métricas..."
+                              value={metricSearchTerm}
+                              onChange={(e) => setMetricSearchTerm(e.target.value)}
+                              className="block w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            />
+                            {metricSearchTerm && (
+                              <button
+                                onClick={() => setMetricSearchTerm('')}
+                                className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                              >
+                                <svg className="h-4 w-4 text-gray-400 hover:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6 max-h-96 overflow-y-auto">
+                          <div className="grid grid-cols-1 gap-6">
+                            {/* Categoria: Identificação */}
+                            <div>
+                              <div className="flex items-center gap-2 mb-3">
+                                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                <h4 className="text-sm font-semibold text-gray-900">Identificação</h4>
+                              </div>
+                              <div className="space-y-2">
+                                <label className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={visibleColumns.cluster}
+                                    onChange={(e) => setVisibleColumns(prev => ({ ...prev, cluster: e.target.checked }))}
+                                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+                                  />
+                                  <span className="text-lg">📊</span>
+                                  <span className="text-sm font-medium text-gray-700">Cluster</span>
+                                </label>
+                              </div>
+                            </div>
+
+                            {/* Categoria: Comportamento */}
+                            <div>
+                              <div className="flex items-center gap-2 mb-3">
+                                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                <h4 className="text-sm font-semibold text-gray-900">Comportamento</h4>
+                              </div>
+                              <div className="space-y-2">
+                                {[
+                                  { key: 'sessoes', label: 'Sessões', icon: '👥' },
+                                  { key: 'adicoesCarrinho', label: 'Adições ao Carrinho', icon: '🛒' },
+                                  { key: 'taxaAdicaoCarrinho', label: 'Taxa de Adição ao Carrinho', icon: '📊' }
+                                ].map(({ key, label, icon }) => (
+                                  <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={visibleColumns[key as keyof typeof visibleColumns]}
+                                      onChange={(e) => setVisibleColumns(prev => ({ ...prev, [key]: e.target.checked }))}
+                                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+                                    />
+                                    <span className="text-lg">{icon}</span>
+                                    <span className="text-sm font-medium text-gray-700">{label}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Categoria: Conversão */}
+                            <div>
+                              <div className="flex items-center gap-2 mb-3">
+                                <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                                <h4 className="text-sm font-semibold text-gray-900">Conversão</h4>
+                              </div>
+                              <div className="space-y-2">
+                                {[
+                                  { key: 'taxaConversao', label: 'Taxa de Conversão', icon: '📈' },
+                                  { key: 'pedidos', label: 'Pedidos', icon: '📦' },
+                                  { key: 'pedidosPagos', label: 'Pedidos Pagos', icon: '✅' }
+                                ].map(({ key, label, icon }) => (
+                                  <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={visibleColumns[key as keyof typeof visibleColumns]}
+                                      onChange={(e) => setVisibleColumns(prev => ({ ...prev, [key]: e.target.checked }))}
+                                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+                                    />
+                                    <span className="text-lg">{icon}</span>
+                                    <span className="text-sm font-medium text-gray-700">{label}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Categoria: Receita */}
+                            <div>
+                              <div className="flex items-center gap-2 mb-3">
+                                <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                                <h4 className="text-sm font-semibold text-gray-900">Receita</h4>
+                              </div>
+                              <div className="space-y-2">
+                                {[
+                                  { key: 'receita', label: 'Receita Total', icon: '💰' },
+                                  { key: 'receitaPaga', label: 'Receita Paga', icon: '💵' },
+                                  { key: 'taxaReceitaPaga', label: '% Receita Paga', icon: '📊' },
+                                  { key: 'novosClientes', label: 'Novos Clientes', icon: '🆕' },
+                                  { key: 'receitaNovosClientes', label: 'Receita Novos Clientes', icon: '💎' },
+                                  { key: 'percentualNovosClientes', label: '% Novos Clientes', icon: '📈' }
+                                ].map(({ key, label, icon }) => (
+                                  <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={visibleColumns[key as keyof typeof visibleColumns]}
+                                      onChange={(e) => setVisibleColumns(prev => ({ ...prev, [key]: e.target.checked }))}
+                                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+                                    />
+                                    <span className="text-lg">{icon}</span>
+                                    <span className="text-sm font-medium text-gray-700">{label}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Categoria: Assinaturas */}
+                            <div>
+                              <div className="flex items-center gap-2 mb-3">
+                                <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>
+                                <h4 className="text-sm font-semibold text-gray-900">Assinaturas</h4>
+                              </div>
+                              <div className="space-y-2">
+                                {[
+                                  { key: 'pedidosAssinaturaAnualInicial', label: 'Ped. Assin. Anual Inicial', icon: '📅' },
+                                  { key: 'receitaAssinaturaAnualInicial', label: 'Rec. Assin. Anual Inicial', icon: '💰' },
+                                  { key: 'pedidosAssinaturaMensalInicial', label: 'Ped. Assin. Mensal Inicial', icon: '📆' },
+                                  { key: 'receitaAssinaturaMensalInicial', label: 'Rec. Assin. Mensal Inicial', icon: '💵' },
+                                  { key: 'pedidosAssinaturaAnualRecorrente', label: 'Ped. Assin. Anual Recorrente', icon: '🔄' },
+                                  { key: 'receitaAssinaturaAnualRecorrente', label: 'Rec. Assin. Anual Recorrente', icon: '💎' },
+                                  { key: 'pedidosAssinaturaMensalRecorrente', label: 'Ped. Assin. Mensal Recorrente', icon: '🔁' },
+                                  { key: 'receitaAssinaturaMensalRecorrente', label: 'Rec. Assin. Mensal Recorrente', icon: '💸' }
+                                ].map(({ key, label, icon }) => (
+                                  <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={visibleColumns[key as keyof typeof visibleColumns]}
+                                      onChange={(e) => setVisibleColumns(prev => ({ ...prev, [key]: e.target.checked }))}
+                                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+                                    />
+                                    <span className="text-lg">{icon}</span>
+                                    <span className="text-sm font-medium text-gray-700">{label}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-600">
+                              {Object.values(visibleColumns).filter(Boolean).length} métricas selecionadas
+                            </span>
+                            <button
+                              onClick={() => setVisibleColumns(getInitialVisibleColumns())}
+                              className="px-3 py-1.5 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg font-medium transition-colors"
+                            >
+                              Restaurar padrão
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Orders by Location */}
                 <div className="mt-6">
                   <OrdersByLocation
@@ -2788,6 +3524,383 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
               </>
             )}
           </>
+        )}
+
+        {/* Modal Tela Cheia - Tabela Principal */}
+        {isTableFullscreen && (
+          <div className="fixed inset-0 z-50 bg-white overflow-auto">
+            <div className="p-6">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6 border-b border-gray-200 pb-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">Dados Agrupados por Cluster (Tela Cheia)</h2>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Métricas consolidadas por cluster
+                    {totalRecords > 0 && (
+                      <span className="ml-2 text-xs text-gray-400">
+                        • {totalRecords.toLocaleString()} registros
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsTableFullscreen(false)}
+                  className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  title="Sair da tela cheia"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Filtros e Modelo de Atribuição */}
+              <div className="mb-4 flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium text-gray-700">
+                    Modelo de Atribuição:
+                  </label>
+                  <div className="relative">
+                    <Target className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <select
+                      value={attributionModel}
+                      onChange={(e) => setAttributionModel(e.target.value)}
+                      className="pl-10 pr-8 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white min-w-[200px]"
+                    >
+                      <option value="Último Clique Não Direto">Último Clique Não Direto</option>
+                      <option value="Primeiro Clique">Primeiro Clique</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium text-gray-700">
+                    Plataforma:
+                  </label>
+                  <select
+                    value={selectedPlataforma}
+                    onChange={(e) => setSelectedPlataforma(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                  >
+                    <option value="">Todas</option>
+                    {Array.from(new Set(metrics.filter(item => item.Plataforma).map(item => item.Plataforma))).map(plataforma => (
+                      <option key={plataforma} value={plataforma}>
+                        {plataforma}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Tabela */}
+              <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        {visibleColumns.cluster && (
+                          <SortableHeader
+                            field="cluster"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            Cluster
+                          </SortableHeader>
+                        )}
+                        {visibleColumns.sessoes && (
+                          <SortableHeader
+                            field="sessoes"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            Sessões
+                          </SortableHeader>
+                        )}
+                        {visibleColumns.taxaAdicaoCarrinho && (
+                          <SortableHeader
+                            field="taxaAdicaoCarrinho"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            Taxa Carrinho
+                          </SortableHeader>
+                        )}
+                        {visibleColumns.adicoesCarrinho && (
+                          <SortableHeader
+                            field="adicoesCarrinho"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            Carrinho
+                          </SortableHeader>
+                        )}
+                        {visibleColumns.taxaConversao && (
+                          <SortableHeader
+                            field="taxaConversao"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            Taxa Conv.
+                          </SortableHeader>
+                        )}
+                        {visibleColumns.pedidos && (
+                          <SortableHeader
+                            field="pedidos"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            Pedidos
+                          </SortableHeader>
+                        )}
+                        {visibleColumns.pedidosPagos && (
+                          <SortableHeader
+                            field="pedidosPagos"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            Pedidos Pagos
+                          </SortableHeader>
+                        )}
+                        {visibleColumns.receita && (
+                          <SortableHeader
+                            field="receita"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            Receita
+                          </SortableHeader>
+                        )}
+                        {visibleColumns.receitaPaga && (
+                          <SortableHeader
+                            field="receitaPaga"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            Receita Paga
+                          </SortableHeader>
+                        )}
+                        {visibleColumns.taxaReceitaPaga && (
+                          <SortableHeader
+                            field="taxaReceitaPaga"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            % Receita Paga
+                          </SortableHeader>
+                        )}
+                        {visibleColumns.novosClientes && (
+                          <SortableHeader
+                            field="novosClientes"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            Novos Clientes
+                          </SortableHeader>
+                        )}
+                        {visibleColumns.receitaNovosClientes && (
+                          <SortableHeader
+                            field="receitaNovosClientes"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            Receita Novos
+                          </SortableHeader>
+                        )}
+                        {visibleColumns.percentualNovosClientes && (
+                          <SortableHeader
+                            field="percentualNovosClientes"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            % Novos Clientes
+                          </SortableHeader>
+                        )}
+                        {visibleColumns.pedidosAssinaturaAnualInicial && (
+                          <SortableHeader
+                            field="pedidosAssinaturaAnualInicial"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            Ped. Assin. Anual Inicial
+                          </SortableHeader>
+                        )}
+                        {visibleColumns.receitaAssinaturaAnualInicial && (
+                          <SortableHeader
+                            field="receitaAssinaturaAnualInicial"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            Rec. Assin. Anual Inicial
+                          </SortableHeader>
+                        )}
+                        {visibleColumns.pedidosAssinaturaMensalInicial && (
+                          <SortableHeader
+                            field="pedidosAssinaturaMensalInicial"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            Ped. Assin. Mensal Inicial
+                          </SortableHeader>
+                        )}
+                        {visibleColumns.receitaAssinaturaMensalInicial && (
+                          <SortableHeader
+                            field="receitaAssinaturaMensalInicial"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            Rec. Assin. Mensal Inicial
+                          </SortableHeader>
+                        )}
+                        {visibleColumns.pedidosAssinaturaAnualRecorrente && (
+                          <SortableHeader
+                            field="pedidosAssinaturaAnualRecorrente"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            Ped. Assin. Anual Recorrente
+                          </SortableHeader>
+                        )}
+                        {visibleColumns.receitaAssinaturaAnualRecorrente && (
+                          <SortableHeader
+                            field="receitaAssinaturaAnualRecorrente"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            Rec. Assin. Anual Recorrente
+                          </SortableHeader>
+                        )}
+                        {visibleColumns.pedidosAssinaturaMensalRecorrente && (
+                          <SortableHeader
+                            field="pedidosAssinaturaMensalRecorrente"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            Ped. Assin. Mensal Recorrente
+                          </SortableHeader>
+                        )}
+                        {visibleColumns.receitaAssinaturaMensalRecorrente && (
+                          <SortableHeader
+                            field="receitaAssinaturaMensalRecorrente"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            Rec. Assin. Mensal Recorrente
+                          </SortableHeader>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {sortedClusterTotals.map((clusterData, index) => {
+                        const { cluster, totals } = clusterData
+                        const conversionRate = totals.sessoes > 0 ? (totals.pedidos / totals.sessoes) * 100 : 0
+                        
+                        return (
+                          <tr 
+                            key={index} 
+                            className={`hover:bg-gray-50 transition-all duration-200 ${
+                              selectedCluster === cluster ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
+                            }`}
+                          >
+                            {visibleColumns.cluster && (
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="text-sm font-medium text-gray-900">{cluster}</span>
+                              </td>
+                            )}
+                            {visibleColumns.sessoes && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{formatNumber(totals.sessoes)}</td>
+                            )}
+                            {visibleColumns.taxaAdicaoCarrinho && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">
+                                {totals.sessoes > 0 ? ((totals.adicoesCarrinho / totals.sessoes) * 100).toFixed(1) : '0.0'}%
+                              </td>
+                            )}
+                            {visibleColumns.adicoesCarrinho && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{formatNumber(totals.adicoesCarrinho)}</td>
+                            )}
+                            {visibleColumns.taxaConversao && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-orange-600">{conversionRate.toFixed(2)}%</td>
+                            )}
+                            {visibleColumns.pedidos && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{formatNumber(totals.pedidos)}</td>
+                            )}
+                            {visibleColumns.pedidosPagos && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-teal-600">{formatNumber(totals.pedidosPagos)}</td>
+                            )}
+                            {visibleColumns.receita && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">{formatCurrency(totals.receita)}</td>
+                            )}
+                            {visibleColumns.receitaPaga && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">{formatCurrency(totals.receitaPaga)}</td>
+                            )}
+                            {visibleColumns.taxaReceitaPaga && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-cyan-600">
+                                {totals.receita > 0 ? ((totals.receitaPaga / totals.receita) * 100).toFixed(1) : '0.0'}%
+                              </td>
+                            )}
+                            {visibleColumns.novosClientes && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">{formatNumber(totals.novosClientes)}</td>
+                            )}
+                            {visibleColumns.receitaNovosClientes && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{formatCurrency(totals.receitaNovosClientes)}</td>
+                            )}
+                            {visibleColumns.percentualNovosClientes && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">
+                                {totals.pedidos > 0 ? ((totals.novosClientes / totals.pedidos) * 100).toFixed(1) : '0.0'}%
+                              </td>
+                            )}
+                            {visibleColumns.pedidosAssinaturaAnualInicial && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">{formatNumber(totals.pedidosAssinaturaAnualInicial || 0)}</td>
+                            )}
+                            {visibleColumns.receitaAssinaturaAnualInicial && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">{formatCurrency(totals.receitaAssinaturaAnualInicial || 0)}</td>
+                            )}
+                            {visibleColumns.pedidosAssinaturaMensalInicial && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{formatNumber(totals.pedidosAssinaturaMensalInicial || 0)}</td>
+                            )}
+                            {visibleColumns.receitaAssinaturaMensalInicial && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{formatCurrency(totals.receitaAssinaturaMensalInicial || 0)}</td>
+                            )}
+                            {visibleColumns.pedidosAssinaturaAnualRecorrente && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-cyan-600">{formatNumber(totals.pedidosAssinaturaAnualRecorrente || 0)}</td>
+                            )}
+                            {visibleColumns.receitaAssinaturaAnualRecorrente && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-cyan-600">{formatCurrency(totals.receitaAssinaturaAnualRecorrente || 0)}</td>
+                            )}
+                            {visibleColumns.pedidosAssinaturaMensalRecorrente && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-teal-600">{formatNumber(totals.pedidosAssinaturaMensalRecorrente || 0)}</td>
+                            )}
+                            {visibleColumns.receitaAssinaturaMensalRecorrente && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-teal-600">{formatCurrency(totals.receitaAssinaturaMensalRecorrente || 0)}</td>
+                            )}
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Funil de Conversão Tab */}
