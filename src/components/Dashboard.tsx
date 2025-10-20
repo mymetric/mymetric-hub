@@ -293,6 +293,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
           taxaConversao: true,
           pedidos: true,
           pedidosPagos: true,
+          taxaPagamento: false,
           receita: true,
           receitaPaga: true,
           taxaReceitaPaga: false,
@@ -318,6 +319,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       taxaConversao: true,
       pedidos: true,
       pedidosPagos: true,
+      taxaPagamento: false,
       receita: true,
       receitaPaga: true,
       taxaReceitaPaga: false,
@@ -1060,6 +1062,10 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         case 'pedidosPagos':
           aValue = a.totals.pedidosPagos
           bValue = b.totals.pedidosPagos
+          break
+        case 'taxaPagamento':
+          aValue = a.totals.pedidos > 0 ? (a.totals.pedidosPagos / a.totals.pedidos) * 100 : 0
+          bValue = b.totals.pedidos > 0 ? (b.totals.pedidosPagos / b.totals.pedidos) * 100 : 0
           break
         case 'taxaConversao':
           aValue = a.totals.sessoes > 0 ? (a.totals.pedidos / a.totals.sessoes) * 100 : 0
@@ -2959,6 +2965,16 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               Pedidos Pagos
                             </SortableHeader>
                           )}
+                          {visibleColumns.taxaPagamento && (
+                            <SortableHeader
+                              field="taxaPagamento"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              % Pagamento
+                            </SortableHeader>
+                          )}
                           {visibleColumns.receita && (
                             <SortableHeader
                               field="receita"
@@ -3212,6 +3228,11 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               {visibleColumns.pedidosPagos && (
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-teal-600">{formatNumber(totals.pedidosPagos)}</td>
                               )}
+                              {visibleColumns.taxaPagamento && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">
+                                  {totals.pedidos > 0 ? ((totals.pedidosPagos / totals.pedidos) * 100).toFixed(1) : '0.0'}%
+                                </td>
+                              )}
                               {visibleColumns.receita && (
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">{formatCurrency(totals.receita)}</td>
                               )}
@@ -3416,7 +3437,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                                 {[
                                   { key: 'taxaConversao', label: 'Taxa de Conversão', icon: '📈' },
                                   { key: 'pedidos', label: 'Pedidos', icon: '📦' },
-                                  { key: 'pedidosPagos', label: 'Pedidos Pagos', icon: '✅' }
+                                  { key: 'pedidosPagos', label: 'Pedidos Pagos', icon: '✅' },
+                                  { key: 'taxaPagamento', label: 'Taxa de Pagamento', icon: '💳' }
                                 ].map(({ key, label, icon }) => (
                                   <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
                                     <input
@@ -3667,6 +3689,16 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             Pedidos Pagos
                           </SortableHeader>
                         )}
+                        {visibleColumns.taxaPagamento && (
+                          <SortableHeader
+                            field="taxaPagamento"
+                            currentSortField={sortField}
+                            currentSortDirection={sortDirection}
+                            onSort={handleSort}
+                          >
+                            % Pagamento
+                          </SortableHeader>
+                        )}
                         {visibleColumns.receita && (
                           <SortableHeader
                             field="receita"
@@ -3845,6 +3877,11 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             )}
                             {visibleColumns.pedidosPagos && (
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-teal-600">{formatNumber(totals.pedidosPagos)}</td>
+                            )}
+                            {visibleColumns.taxaPagamento && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">
+                                {totals.pedidos > 0 ? ((totals.pedidosPagos / totals.pedidos) * 100).toFixed(1) : '0.0'}%
+                              </td>
                             )}
                             {visibleColumns.receita && (
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">{formatCurrency(totals.receita)}</td>
