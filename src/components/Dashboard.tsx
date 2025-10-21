@@ -3381,138 +3381,248 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                         {/* Content */}
                         <div className="p-6 max-h-96 overflow-y-auto">
                           <div className="grid grid-cols-1 gap-6">
+                            {/* Mensagem quando não há resultados */}
+                            {metricSearchTerm && (() => {
+                              const allMetrics = [
+                                { key: 'cluster', label: 'Cluster' },
+                                { key: 'sessoes', label: 'Sessões' },
+                                { key: 'adicoesCarrinho', label: 'Adições ao Carrinho' },
+                                { key: 'taxaAdicaoCarrinho', label: 'Taxa de Adição ao Carrinho' },
+                                { key: 'taxaConversao', label: 'Taxa de Conversão' },
+                                { key: 'pedidos', label: 'Pedidos' },
+                                { key: 'pedidosPagos', label: 'Pedidos Pagos' },
+                                { key: 'taxaPagamento', label: 'Taxa de Pagamento' },
+                                { key: 'receita', label: 'Receita Total' },
+                                { key: 'receitaPaga', label: 'Receita Paga' },
+                                { key: 'taxaReceitaPaga', label: '% Receita Paga' },
+                                { key: 'novosClientes', label: 'Novos Clientes' },
+                                { key: 'receitaNovosClientes', label: 'Receita Novos Clientes' },
+                                { key: 'percentualNovosClientes', label: '% Novos Clientes' }
+                              ]
+                              
+                              const hasResults = allMetrics.some(metric => 
+                                metric.label.toLowerCase().includes(metricSearchTerm.toLowerCase()) ||
+                                metric.key.toLowerCase().includes(metricSearchTerm.toLowerCase())
+                              )
+                              
+                              if (!hasResults) {
+                                return (
+                                  <div className="text-center py-8">
+                                    <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+                                      <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                      </svg>
+                                    </div>
+                                    <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhuma métrica encontrada</h3>
+                                    <p className="text-sm text-gray-500 mb-4">Tente buscar por termos como "receita", "pedidos", "taxa", etc.</p>
+                                    <button
+                                      onClick={() => setMetricSearchTerm('')}
+                                      className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                                    >
+                                      Limpar busca
+                                    </button>
+                                  </div>
+                                )
+                              }
+                              return null
+                            })()}
+                            
                             {/* Categoria: Identificação */}
-                            <div>
-                              <div className="flex items-center gap-2 mb-3">
-                                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                                <h4 className="text-sm font-semibold text-gray-900">Identificação</h4>
-                              </div>
-                              <div className="space-y-2">
-                                <label className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={visibleColumns.cluster}
-                                    onChange={(e) => setVisibleColumns(prev => ({ ...prev, cluster: e.target.checked }))}
-                                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
-                                  />
-                                  <span className="text-lg">📊</span>
-                                  <span className="text-sm font-medium text-gray-700">Cluster</span>
-                                </label>
-                              </div>
-                            </div>
+                            {(() => {
+                              const identificationMetrics = [
+                                { key: 'cluster', label: 'Cluster', icon: '📊' }
+                              ].filter(metric => 
+                                !metricSearchTerm || 
+                                metric.label.toLowerCase().includes(metricSearchTerm.toLowerCase()) ||
+                                metric.key.toLowerCase().includes(metricSearchTerm.toLowerCase())
+                              )
+                              
+                              if (identificationMetrics.length === 0) return null
+                              
+                              return (
+                                <div>
+                                  <div className="flex items-center gap-2 mb-3">
+                                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                    <h4 className="text-sm font-semibold text-gray-900">Identificação</h4>
+                                  </div>
+                                  <div className="space-y-2">
+                                    {identificationMetrics.map(({ key, label, icon }) => (
+                                      <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={visibleColumns[key as keyof typeof visibleColumns]}
+                                          onChange={(e) => setVisibleColumns(prev => ({ ...prev, [key]: e.target.checked }))}
+                                          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+                                        />
+                                        <span className="text-lg">{icon}</span>
+                                        <span className="text-sm font-medium text-gray-700">{label}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                              )
+                            })()}
 
                             {/* Categoria: Comportamento */}
-                            <div>
-                              <div className="flex items-center gap-2 mb-3">
-                                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                                <h4 className="text-sm font-semibold text-gray-900">Comportamento</h4>
-                              </div>
-                              <div className="space-y-2">
-                                {[
-                                  { key: 'sessoes', label: 'Sessões', icon: '👥' },
-                                  { key: 'adicoesCarrinho', label: 'Adições ao Carrinho', icon: '🛒' },
-                                  { key: 'taxaAdicaoCarrinho', label: 'Taxa de Adição ao Carrinho', icon: '📊' }
-                                ].map(({ key, label, icon }) => (
-                                  <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={visibleColumns[key as keyof typeof visibleColumns]}
-                                      onChange={(e) => setVisibleColumns(prev => ({ ...prev, [key]: e.target.checked }))}
-                                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
-                                    />
-                                    <span className="text-lg">{icon}</span>
-                                    <span className="text-sm font-medium text-gray-700">{label}</span>
-                                  </label>
-                                ))}
-                              </div>
-                            </div>
+                            {(() => {
+                              const behaviorMetrics = [
+                                { key: 'sessoes', label: 'Sessões', icon: '👥' },
+                                { key: 'adicoesCarrinho', label: 'Adições ao Carrinho', icon: '🛒' },
+                                { key: 'taxaAdicaoCarrinho', label: 'Taxa de Adição ao Carrinho', icon: '📊' }
+                              ].filter(metric => 
+                                !metricSearchTerm || 
+                                metric.label.toLowerCase().includes(metricSearchTerm.toLowerCase()) ||
+                                metric.key.toLowerCase().includes(metricSearchTerm.toLowerCase())
+                              )
+                              
+                              if (behaviorMetrics.length === 0) return null
+                              
+                              return (
+                                <div>
+                                  <div className="flex items-center gap-2 mb-3">
+                                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                    <h4 className="text-sm font-semibold text-gray-900">Comportamento</h4>
+                                  </div>
+                                  <div className="space-y-2">
+                                    {behaviorMetrics.map(({ key, label, icon }) => (
+                                      <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={visibleColumns[key as keyof typeof visibleColumns]}
+                                          onChange={(e) => setVisibleColumns(prev => ({ ...prev, [key]: e.target.checked }))}
+                                          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+                                        />
+                                        <span className="text-lg">{icon}</span>
+                                        <span className="text-sm font-medium text-gray-700">{label}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                              )
+                            })()}
 
                             {/* Categoria: Conversão */}
-                            <div>
-                              <div className="flex items-center gap-2 mb-3">
-                                <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                                <h4 className="text-sm font-semibold text-gray-900">Conversão</h4>
-                              </div>
-                              <div className="space-y-2">
-                                {[
-                                  { key: 'taxaConversao', label: 'Taxa de Conversão', icon: '📈' },
-                                  { key: 'pedidos', label: 'Pedidos', icon: '📦' },
-                                  { key: 'pedidosPagos', label: 'Pedidos Pagos', icon: '✅' },
-                                  { key: 'taxaPagamento', label: 'Taxa de Pagamento', icon: '💳' }
-                                ].map(({ key, label, icon }) => (
-                                  <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={visibleColumns[key as keyof typeof visibleColumns]}
-                                      onChange={(e) => setVisibleColumns(prev => ({ ...prev, [key]: e.target.checked }))}
-                                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
-                                    />
-                                    <span className="text-lg">{icon}</span>
-                                    <span className="text-sm font-medium text-gray-700">{label}</span>
-                                  </label>
-                                ))}
-                              </div>
-                            </div>
+                            {(() => {
+                              const conversionMetrics = [
+                                { key: 'taxaConversao', label: 'Taxa de Conversão', icon: '📈' },
+                                { key: 'pedidos', label: 'Pedidos', icon: '📦' },
+                                { key: 'pedidosPagos', label: 'Pedidos Pagos', icon: '✅' },
+                                { key: 'taxaPagamento', label: 'Taxa de Pagamento', icon: '💳' }
+                              ].filter(metric => 
+                                !metricSearchTerm || 
+                                metric.label.toLowerCase().includes(metricSearchTerm.toLowerCase()) ||
+                                metric.key.toLowerCase().includes(metricSearchTerm.toLowerCase())
+                              )
+                              
+                              if (conversionMetrics.length === 0) return null
+                              
+                              return (
+                                <div>
+                                  <div className="flex items-center gap-2 mb-3">
+                                    <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                                    <h4 className="text-sm font-semibold text-gray-900">Conversão</h4>
+                                  </div>
+                                  <div className="space-y-2">
+                                    {conversionMetrics.map(({ key, label, icon }) => (
+                                      <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={visibleColumns[key as keyof typeof visibleColumns]}
+                                          onChange={(e) => setVisibleColumns(prev => ({ ...prev, [key]: e.target.checked }))}
+                                          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+                                        />
+                                        <span className="text-lg">{icon}</span>
+                                        <span className="text-sm font-medium text-gray-700">{label}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                              )
+                            })()}
 
                             {/* Categoria: Receita */}
-                            <div>
-                              <div className="flex items-center gap-2 mb-3">
-                                <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-                                <h4 className="text-sm font-semibold text-gray-900">Receita</h4>
-                              </div>
-                              <div className="space-y-2">
-                                {[
-                                  { key: 'receita', label: 'Receita Total', icon: '💰' },
-                                  { key: 'receitaPaga', label: 'Receita Paga', icon: '💵' },
-                                  { key: 'taxaReceitaPaga', label: '% Receita Paga', icon: '📊' },
-                                  { key: 'novosClientes', label: 'Novos Clientes', icon: '🆕' },
-                                  { key: 'receitaNovosClientes', label: 'Receita Novos Clientes', icon: '💎' },
-                                  { key: 'percentualNovosClientes', label: '% Novos Clientes', icon: '📈' }
-                                ].map(({ key, label, icon }) => (
-                                  <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={visibleColumns[key as keyof typeof visibleColumns]}
-                                      onChange={(e) => setVisibleColumns(prev => ({ ...prev, [key]: e.target.checked }))}
-                                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
-                                    />
-                                    <span className="text-lg">{icon}</span>
-                                    <span className="text-sm font-medium text-gray-700">{label}</span>
-                                  </label>
-                                ))}
-                              </div>
-                            </div>
+                            {(() => {
+                              const revenueMetrics = [
+                                { key: 'receita', label: 'Receita Total', icon: '💰' },
+                                { key: 'receitaPaga', label: 'Receita Paga', icon: '💵' },
+                                { key: 'taxaReceitaPaga', label: '% Receita Paga', icon: '📊' },
+                                { key: 'novosClientes', label: 'Novos Clientes', icon: '🆕' },
+                                { key: 'receitaNovosClientes', label: 'Receita Novos Clientes', icon: '💎' },
+                                { key: 'percentualNovosClientes', label: '% Novos Clientes', icon: '📈' }
+                              ].filter(metric => 
+                                !metricSearchTerm || 
+                                metric.label.toLowerCase().includes(metricSearchTerm.toLowerCase()) ||
+                                metric.key.toLowerCase().includes(metricSearchTerm.toLowerCase())
+                              )
+                              
+                              if (revenueMetrics.length === 0) return null
+                              
+                              return (
+                                <div>
+                                  <div className="flex items-center gap-2 mb-3">
+                                    <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                                    <h4 className="text-sm font-semibold text-gray-900">Receita</h4>
+                                  </div>
+                                  <div className="space-y-2">
+                                    {revenueMetrics.map(({ key, label, icon }) => (
+                                      <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={visibleColumns[key as keyof typeof visibleColumns]}
+                                          onChange={(e) => setVisibleColumns(prev => ({ ...prev, [key]: e.target.checked }))}
+                                          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+                                        />
+                                        <span className="text-lg">{icon}</span>
+                                        <span className="text-sm font-medium text-gray-700">{label}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                              )
+                            })()}
 
                             {/* Categoria: Assinaturas */}
-                            <div>
-                              <div className="flex items-center gap-2 mb-3">
-                                <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>
-                                <h4 className="text-sm font-semibold text-gray-900">Assinaturas</h4>
-                              </div>
-                              <div className="space-y-2">
-                                {[
-                                  { key: 'pedidosAssinaturaAnualInicial', label: 'Ped. Assin. Anual Inicial', icon: '📅' },
-                                  { key: 'receitaAssinaturaAnualInicial', label: 'Rec. Assin. Anual Inicial', icon: '💰' },
-                                  { key: 'pedidosAssinaturaMensalInicial', label: 'Ped. Assin. Mensal Inicial', icon: '📆' },
-                                  { key: 'receitaAssinaturaMensalInicial', label: 'Rec. Assin. Mensal Inicial', icon: '💵' },
-                                  { key: 'pedidosAssinaturaAnualRecorrente', label: 'Ped. Assin. Anual Recorrente', icon: '🔄' },
-                                  { key: 'receitaAssinaturaAnualRecorrente', label: 'Rec. Assin. Anual Recorrente', icon: '💎' },
-                                  { key: 'pedidosAssinaturaMensalRecorrente', label: 'Ped. Assin. Mensal Recorrente', icon: '🔁' },
-                                  { key: 'receitaAssinaturaMensalRecorrente', label: 'Rec. Assin. Mensal Recorrente', icon: '💸' }
-                                ].map(({ key, label, icon }) => (
-                                  <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={visibleColumns[key as keyof typeof visibleColumns]}
-                                      onChange={(e) => setVisibleColumns(prev => ({ ...prev, [key]: e.target.checked }))}
-                                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
-                                    />
-                                    <span className="text-lg">{icon}</span>
-                                    <span className="text-sm font-medium text-gray-700">{label}</span>
-                                  </label>
-                                ))}
-                              </div>
-                            </div>
+                            {(() => {
+                              const subscriptionMetrics = [
+                                { key: 'pedidosAssinaturaAnualInicial', label: 'Ped. Assin. Anual Inicial', icon: '📅' },
+                                { key: 'receitaAssinaturaAnualInicial', label: 'Rec. Assin. Anual Inicial', icon: '💰' },
+                                { key: 'pedidosAssinaturaMensalInicial', label: 'Ped. Assin. Mensal Inicial', icon: '📆' },
+                                { key: 'receitaAssinaturaMensalInicial', label: 'Rec. Assin. Mensal Inicial', icon: '💵' },
+                                { key: 'pedidosAssinaturaAnualRecorrente', label: 'Ped. Assin. Anual Recorrente', icon: '🔄' },
+                                { key: 'receitaAssinaturaAnualRecorrente', label: 'Rec. Assin. Anual Recorrente', icon: '💎' },
+                                { key: 'pedidosAssinaturaMensalRecorrente', label: 'Ped. Assin. Mensal Recorrente', icon: '🔁' },
+                                { key: 'receitaAssinaturaMensalRecorrente', label: 'Rec. Assin. Mensal Recorrente', icon: '💸' }
+                              ].filter(metric => 
+                                !metricSearchTerm || 
+                                metric.label.toLowerCase().includes(metricSearchTerm.toLowerCase()) ||
+                                metric.key.toLowerCase().includes(metricSearchTerm.toLowerCase())
+                              )
+                              
+                              if (subscriptionMetrics.length === 0) return null
+                              
+                              return (
+                                <div>
+                                  <div className="flex items-center gap-2 mb-3">
+                                    <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>
+                                    <h4 className="text-sm font-semibold text-gray-900">Assinaturas</h4>
+                                  </div>
+                                  <div className="space-y-2">
+                                    {subscriptionMetrics.map(({ key, label, icon }) => (
+                                      <label key={key} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={visibleColumns[key as keyof typeof visibleColumns]}
+                                          onChange={(e) => setVisibleColumns(prev => ({ ...prev, [key]: e.target.checked }))}
+                                          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2"
+                                        />
+                                        <span className="text-lg">{icon}</span>
+                                        <span className="text-sm font-medium text-gray-700">{label}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                              )
+                            })()}
                           </div>
                         </div>
 

@@ -47,6 +47,17 @@ interface DetailedDataItem {
   Novos_Clientes?: number
   Receita_Novos_Clientes?: number
   Investimento?: number
+  city?: string
+  region?: string
+  country?: string
+  Pedidos_Assinatura_Anual_Inicial?: number
+  Receita_Assinatura_Anual_Inicial?: number
+  Pedidos_Assinatura_Mensal_Inicial?: number
+  Receita_Assinatura_Mensal_Inicial?: number
+  Pedidos_Assinatura_Anual_Recorrente?: number
+  Receita_Assinatura_Anual_Recorrente?: number
+  Pedidos_Assinatura_Mensal_Recorrente?: number
+  Receita_Assinatura_Mensal_Recorrente?: number
 }
 
 interface GroupedData {
