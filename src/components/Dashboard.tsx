@@ -3035,7 +3035,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               % Novos Clientes
                             </SortableHeader>
                           )}
-                          {visibleColumns.pedidosAssinaturaAnualInicial && (
+                          {visibleColumns.pedidosAssinaturaAnualInicial && totals.pedidosAssinaturaAnualInicial > 0 && (
                             <SortableHeader
                               field="pedidosAssinaturaAnualInicial"
                               currentSortField={sortField}
@@ -3045,7 +3045,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               Ped. Assin. Anual Inicial
                             </SortableHeader>
                           )}
-                          {visibleColumns.receitaAssinaturaAnualInicial && (
+                          {visibleColumns.receitaAssinaturaAnualInicial && totals.receitaAssinaturaAnualInicial > 0 && (
                             <SortableHeader
                               field="receitaAssinaturaAnualInicial"
                               currentSortField={sortField}
@@ -3055,7 +3055,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               Rec. Assin. Anual Inicial
                             </SortableHeader>
                           )}
-                          {visibleColumns.pedidosAssinaturaMensalInicial && (
+                          {visibleColumns.pedidosAssinaturaMensalInicial && totals.pedidosAssinaturaMensalInicial > 0 && (
                             <SortableHeader
                               field="pedidosAssinaturaMensalInicial"
                               currentSortField={sortField}
@@ -3065,7 +3065,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               Ped. Assin. Mensal Inicial
                             </SortableHeader>
                           )}
-                          {visibleColumns.receitaAssinaturaMensalInicial && (
+                          {visibleColumns.receitaAssinaturaMensalInicial && totals.receitaAssinaturaMensalInicial > 0 && (
                             <SortableHeader
                               field="receitaAssinaturaMensalInicial"
                               currentSortField={sortField}
@@ -3075,7 +3075,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               Rec. Assin. Mensal Inicial
                             </SortableHeader>
                           )}
-                          {visibleColumns.pedidosAssinaturaAnualRecorrente && (
+                          {visibleColumns.pedidosAssinaturaAnualRecorrente && totals.pedidosAssinaturaAnualRecorrente > 0 && (
                             <SortableHeader
                               field="pedidosAssinaturaAnualRecorrente"
                               currentSortField={sortField}
@@ -3085,7 +3085,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               Ped. Assin. Anual Recorrente
                             </SortableHeader>
                           )}
-                          {visibleColumns.receitaAssinaturaAnualRecorrente && (
+                          {visibleColumns.receitaAssinaturaAnualRecorrente && totals.receitaAssinaturaAnualRecorrente > 0 && (
                             <SortableHeader
                               field="receitaAssinaturaAnualRecorrente"
                               currentSortField={sortField}
@@ -3095,7 +3095,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               Rec. Assin. Anual Recorrente
                             </SortableHeader>
                           )}
-                          {visibleColumns.pedidosAssinaturaMensalRecorrente && (
+                          {visibleColumns.pedidosAssinaturaMensalRecorrente && totals.pedidosAssinaturaMensalRecorrente > 0 && (
                             <SortableHeader
                               field="pedidosAssinaturaMensalRecorrente"
                               currentSortField={sortField}
@@ -3105,7 +3105,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               Ped. Assin. Mensal Recorrente
                             </SortableHeader>
                           )}
-                          {visibleColumns.receitaAssinaturaMensalRecorrente && (
+                          {visibleColumns.receitaAssinaturaMensalRecorrente && totals.receitaAssinaturaMensalRecorrente > 0 && (
                             <SortableHeader
                               field="receitaAssinaturaMensalRecorrente"
                               currentSortField={sortField}
@@ -3255,29 +3255,29 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                                   {totals.pedidos > 0 ? ((totals.novosClientes / totals.pedidos) * 100).toFixed(1) : '0.0'}%
                                 </td>
                               )}
-                              {visibleColumns.pedidosAssinaturaAnualInicial && (
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">{formatNumber(totals.pedidosAssinaturaAnualInicial || 0)}</td>
+                              {visibleColumns.pedidosAssinaturaAnualInicial && totals.pedidosAssinaturaAnualInicial > 0 && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">{formatNumber(totals.pedidosAssinaturaAnualInicial)}</td>
                               )}
-                              {visibleColumns.receitaAssinaturaAnualInicial && (
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">{formatCurrency(totals.receitaAssinaturaAnualInicial || 0)}</td>
+                              {visibleColumns.receitaAssinaturaAnualInicial && totals.receitaAssinaturaAnualInicial > 0 && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">{formatCurrency(totals.receitaAssinaturaAnualInicial)}</td>
                               )}
-                              {visibleColumns.pedidosAssinaturaMensalInicial && (
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{formatNumber(totals.pedidosAssinaturaMensalInicial || 0)}</td>
+                              {visibleColumns.pedidosAssinaturaMensalInicial && totals.pedidosAssinaturaMensalInicial > 0 && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{formatNumber(totals.pedidosAssinaturaMensalInicial)}</td>
                               )}
-                              {visibleColumns.receitaAssinaturaMensalInicial && (
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{formatCurrency(totals.receitaAssinaturaMensalInicial || 0)}</td>
+                              {visibleColumns.receitaAssinaturaMensalInicial && totals.receitaAssinaturaMensalInicial > 0 && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{formatCurrency(totals.receitaAssinaturaMensalInicial)}</td>
                               )}
-                              {visibleColumns.pedidosAssinaturaAnualRecorrente && (
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-cyan-600">{formatNumber(totals.pedidosAssinaturaAnualRecorrente || 0)}</td>
+                              {visibleColumns.pedidosAssinaturaAnualRecorrente && totals.pedidosAssinaturaAnualRecorrente > 0 && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-cyan-600">{formatNumber(totals.pedidosAssinaturaAnualRecorrente)}</td>
                               )}
-                              {visibleColumns.receitaAssinaturaAnualRecorrente && (
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-cyan-600">{formatCurrency(totals.receitaAssinaturaAnualRecorrente || 0)}</td>
+                              {visibleColumns.receitaAssinaturaAnualRecorrente && totals.receitaAssinaturaAnualRecorrente > 0 && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-cyan-600">{formatCurrency(totals.receitaAssinaturaAnualRecorrente)}</td>
                               )}
-                              {visibleColumns.pedidosAssinaturaMensalRecorrente && (
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-teal-600">{formatNumber(totals.pedidosAssinaturaMensalRecorrente || 0)}</td>
+                              {visibleColumns.pedidosAssinaturaMensalRecorrente && totals.pedidosAssinaturaMensalRecorrente > 0 && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-teal-600">{formatNumber(totals.pedidosAssinaturaMensalRecorrente)}</td>
                               )}
-                              {visibleColumns.receitaAssinaturaMensalRecorrente && (
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-teal-600">{formatCurrency(totals.receitaAssinaturaMensalRecorrente || 0)}</td>
+                              {visibleColumns.receitaAssinaturaMensalRecorrente && totals.receitaAssinaturaMensalRecorrente > 0 && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-teal-600">{formatCurrency(totals.receitaAssinaturaMensalRecorrente)}</td>
                               )}
                             </tr>
                           )
@@ -3869,7 +3869,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             % Novos Clientes
                           </SortableHeader>
                         )}
-                        {visibleColumns.pedidosAssinaturaAnualInicial && (
+                        {visibleColumns.pedidosAssinaturaAnualInicial && totals.pedidosAssinaturaAnualInicial > 0 && (
                           <SortableHeader
                             field="pedidosAssinaturaAnualInicial"
                             currentSortField={sortField}
@@ -3879,7 +3879,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             Ped. Assin. Anual Inicial
                           </SortableHeader>
                         )}
-                        {visibleColumns.receitaAssinaturaAnualInicial && (
+                        {visibleColumns.receitaAssinaturaAnualInicial && totals.receitaAssinaturaAnualInicial > 0 && (
                           <SortableHeader
                             field="receitaAssinaturaAnualInicial"
                             currentSortField={sortField}
@@ -3889,7 +3889,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             Rec. Assin. Anual Inicial
                           </SortableHeader>
                         )}
-                        {visibleColumns.pedidosAssinaturaMensalInicial && (
+                        {visibleColumns.pedidosAssinaturaMensalInicial && totals.pedidosAssinaturaMensalInicial > 0 && (
                           <SortableHeader
                             field="pedidosAssinaturaMensalInicial"
                             currentSortField={sortField}
@@ -3899,7 +3899,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             Ped. Assin. Mensal Inicial
                           </SortableHeader>
                         )}
-                        {visibleColumns.receitaAssinaturaMensalInicial && (
+                        {visibleColumns.receitaAssinaturaMensalInicial && totals.receitaAssinaturaMensalInicial > 0 && (
                           <SortableHeader
                             field="receitaAssinaturaMensalInicial"
                             currentSortField={sortField}
@@ -3909,7 +3909,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             Rec. Assin. Mensal Inicial
                           </SortableHeader>
                         )}
-                        {visibleColumns.pedidosAssinaturaAnualRecorrente && (
+                        {visibleColumns.pedidosAssinaturaAnualRecorrente && totals.pedidosAssinaturaAnualRecorrente > 0 && (
                           <SortableHeader
                             field="pedidosAssinaturaAnualRecorrente"
                             currentSortField={sortField}
@@ -3919,7 +3919,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             Ped. Assin. Anual Recorrente
                           </SortableHeader>
                         )}
-                        {visibleColumns.receitaAssinaturaAnualRecorrente && (
+                        {visibleColumns.receitaAssinaturaAnualRecorrente && totals.receitaAssinaturaAnualRecorrente > 0 && (
                           <SortableHeader
                             field="receitaAssinaturaAnualRecorrente"
                             currentSortField={sortField}
@@ -3929,7 +3929,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             Rec. Assin. Anual Recorrente
                           </SortableHeader>
                         )}
-                        {visibleColumns.pedidosAssinaturaMensalRecorrente && (
+                        {visibleColumns.pedidosAssinaturaMensalRecorrente && totals.pedidosAssinaturaMensalRecorrente > 0 && (
                           <SortableHeader
                             field="pedidosAssinaturaMensalRecorrente"
                             currentSortField={sortField}
@@ -3939,7 +3939,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             Ped. Assin. Mensal Recorrente
                           </SortableHeader>
                         )}
-                        {visibleColumns.receitaAssinaturaMensalRecorrente && (
+                        {visibleColumns.receitaAssinaturaMensalRecorrente && totals.receitaAssinaturaMensalRecorrente > 0 && (
                           <SortableHeader
                             field="receitaAssinaturaMensalRecorrente"
                             currentSortField={sortField}
@@ -4015,29 +4015,29 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                                 {totals.pedidos > 0 ? ((totals.novosClientes / totals.pedidos) * 100).toFixed(1) : '0.0'}%
                               </td>
                             )}
-                            {visibleColumns.pedidosAssinaturaAnualInicial && (
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">{formatNumber(totals.pedidosAssinaturaAnualInicial || 0)}</td>
+                            {visibleColumns.pedidosAssinaturaAnualInicial && totals.pedidosAssinaturaAnualInicial > 0 && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">{formatNumber(totals.pedidosAssinaturaAnualInicial)}</td>
                             )}
-                            {visibleColumns.receitaAssinaturaAnualInicial && (
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">{formatCurrency(totals.receitaAssinaturaAnualInicial || 0)}</td>
+                            {visibleColumns.receitaAssinaturaAnualInicial && totals.receitaAssinaturaAnualInicial > 0 && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">{formatCurrency(totals.receitaAssinaturaAnualInicial)}</td>
                             )}
-                            {visibleColumns.pedidosAssinaturaMensalInicial && (
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{formatNumber(totals.pedidosAssinaturaMensalInicial || 0)}</td>
+                            {visibleColumns.pedidosAssinaturaMensalInicial && totals.pedidosAssinaturaMensalInicial > 0 && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{formatNumber(totals.pedidosAssinaturaMensalInicial)}</td>
                             )}
-                            {visibleColumns.receitaAssinaturaMensalInicial && (
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{formatCurrency(totals.receitaAssinaturaMensalInicial || 0)}</td>
+                            {visibleColumns.receitaAssinaturaMensalInicial && totals.receitaAssinaturaMensalInicial > 0 && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{formatCurrency(totals.receitaAssinaturaMensalInicial)}</td>
                             )}
-                            {visibleColumns.pedidosAssinaturaAnualRecorrente && (
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-cyan-600">{formatNumber(totals.pedidosAssinaturaAnualRecorrente || 0)}</td>
+                            {visibleColumns.pedidosAssinaturaAnualRecorrente && totals.pedidosAssinaturaAnualRecorrente > 0 && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-cyan-600">{formatNumber(totals.pedidosAssinaturaAnualRecorrente)}</td>
                             )}
-                            {visibleColumns.receitaAssinaturaAnualRecorrente && (
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-cyan-600">{formatCurrency(totals.receitaAssinaturaAnualRecorrente || 0)}</td>
+                            {visibleColumns.receitaAssinaturaAnualRecorrente && totals.receitaAssinaturaAnualRecorrente > 0 && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-cyan-600">{formatCurrency(totals.receitaAssinaturaAnualRecorrente)}</td>
                             )}
-                            {visibleColumns.pedidosAssinaturaMensalRecorrente && (
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-teal-600">{formatNumber(totals.pedidosAssinaturaMensalRecorrente || 0)}</td>
+                            {visibleColumns.pedidosAssinaturaMensalRecorrente && totals.pedidosAssinaturaMensalRecorrente > 0 && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-teal-600">{formatNumber(totals.pedidosAssinaturaMensalRecorrente)}</td>
                             )}
-                            {visibleColumns.receitaAssinaturaMensalRecorrente && (
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-teal-600">{formatCurrency(totals.receitaAssinaturaMensalRecorrente || 0)}</td>
+                            {visibleColumns.receitaAssinaturaMensalRecorrente && totals.receitaAssinaturaMensalRecorrente > 0 && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-teal-600">{formatCurrency(totals.receitaAssinaturaMensalRecorrente)}</td>
                             )}
                           </tr>
                         )

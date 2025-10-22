@@ -667,8 +667,17 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel }: D
       const aTotals = calculateGroupTotals(a[1])
       const bTotals = calculateGroupTotals(b[1])
       
-      const aValue = aTotals[sortField as keyof typeof aTotals]
-      const bValue = bTotals[sortField as keyof typeof bTotals]
+      let aValue: number
+      let bValue: number
+      
+      // Campos calculados
+      if (sortField === 'Taxa_Receita_Paga') {
+        aValue = aTotals.Receita > 0 ? (aTotals.Receita_Paga / aTotals.Receita) * 100 : 0
+        bValue = bTotals.Receita > 0 ? (bTotals.Receita_Paga / bTotals.Receita) * 100 : 0
+      } else {
+        aValue = aTotals[sortField as keyof typeof aTotals] as number
+        bValue = bTotals[sortField as keyof typeof bTotals] as number
+      }
       
       if (typeof aValue === 'number' && typeof bValue === 'number') {
         return sortDirection === 'asc' ? aValue - bValue : bValue - aValue
@@ -710,30 +719,52 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel }: D
                   <SortableHeader field="Receita_Paga">
                     Receita Paga
                   </SortableHeader>
-                  <SortableHeader field="Pedidos_Assinatura_Anual_Inicial">
-                    Ped. Assin. Anual Inicial
+                  <SortableHeader field="Taxa_Receita_Paga">
+                    % Receita Paga
                   </SortableHeader>
-                  <SortableHeader field="Receita_Assinatura_Anual_Inicial">
-                    Rec. Assin. Anual Inicial
-                  </SortableHeader>
-                  <SortableHeader field="Pedidos_Assinatura_Mensal_Inicial">
-                    Ped. Assin. Mensal Inicial
-                  </SortableHeader>
-                  <SortableHeader field="Receita_Assinatura_Mensal_Inicial">
-                    Rec. Assin. Mensal Inicial
-                  </SortableHeader>
-                  <SortableHeader field="Pedidos_Assinatura_Anual_Recorrente">
-                    Ped. Assin. Anual Recorrente
-                  </SortableHeader>
-                  <SortableHeader field="Receita_Assinatura_Anual_Recorrente">
-                    Rec. Assin. Anual Recorrente
-                  </SortableHeader>
-                  <SortableHeader field="Pedidos_Assinatura_Mensal_Recorrente">
-                    Ped. Assin. Mensal Recorrente
-                  </SortableHeader>
-                  <SortableHeader field="Receita_Assinatura_Mensal_Recorrente">
-                    Rec. Assin. Mensal Recorrente
-                  </SortableHeader>
+                  {(() => {
+                    const hasSubscriptionData = data.some(item => 
+                      (item.Pedidos_Assinatura_Anual_Inicial && item.Pedidos_Assinatura_Anual_Inicial > 0) ||
+                      (item.Receita_Assinatura_Anual_Inicial && item.Receita_Assinatura_Anual_Inicial > 0) ||
+                      (item.Pedidos_Assinatura_Mensal_Inicial && item.Pedidos_Assinatura_Mensal_Inicial > 0) ||
+                      (item.Receita_Assinatura_Mensal_Inicial && item.Receita_Assinatura_Mensal_Inicial > 0) ||
+                      (item.Pedidos_Assinatura_Anual_Recorrente && item.Pedidos_Assinatura_Anual_Recorrente > 0) ||
+                      (item.Receita_Assinatura_Anual_Recorrente && item.Receita_Assinatura_Anual_Recorrente > 0) ||
+                      (item.Pedidos_Assinatura_Mensal_Recorrente && item.Pedidos_Assinatura_Mensal_Recorrente > 0) ||
+                      (item.Receita_Assinatura_Mensal_Recorrente && item.Receita_Assinatura_Mensal_Recorrente > 0)
+                    )
+                    
+                    if (!hasSubscriptionData) return null
+                    
+                    return (
+                      <>
+                        <SortableHeader field="Pedidos_Assinatura_Anual_Inicial">
+                          Ped. Assin. Anual Inicial
+                        </SortableHeader>
+                        <SortableHeader field="Receita_Assinatura_Anual_Inicial">
+                          Rec. Assin. Anual Inicial
+                        </SortableHeader>
+                        <SortableHeader field="Pedidos_Assinatura_Mensal_Inicial">
+                          Ped. Assin. Mensal Inicial
+                        </SortableHeader>
+                        <SortableHeader field="Receita_Assinatura_Mensal_Inicial">
+                          Rec. Assin. Mensal Inicial
+                        </SortableHeader>
+                        <SortableHeader field="Pedidos_Assinatura_Anual_Recorrente">
+                          Ped. Assin. Anual Recorrente
+                        </SortableHeader>
+                        <SortableHeader field="Receita_Assinatura_Anual_Recorrente">
+                          Rec. Assin. Anual Recorrente
+                        </SortableHeader>
+                        <SortableHeader field="Pedidos_Assinatura_Mensal_Recorrente">
+                          Ped. Assin. Mensal Recorrente
+                        </SortableHeader>
+                        <SortableHeader field="Receita_Assinatura_Mensal_Recorrente">
+                          Rec. Assin. Mensal Recorrente
+                        </SortableHeader>
+                      </>
+                    )
+                  })()}
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -770,30 +801,52 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel }: D
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {formatCurrency(totals.Receita_Paga)}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-purple-600">
-                        {formatNumber(totals.Pedidos_Assinatura_Anual_Inicial || 0)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-purple-600">
-                        {formatCurrency(totals.Receita_Assinatura_Anual_Inicial || 0)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-indigo-600">
-                        {formatNumber(totals.Pedidos_Assinatura_Mensal_Inicial || 0)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-indigo-600">
-                        {formatCurrency(totals.Receita_Assinatura_Mensal_Inicial || 0)}
-                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-cyan-600">
-                        {formatNumber(totals.Pedidos_Assinatura_Anual_Recorrente || 0)}
+                        {totals.Receita > 0 ? ((totals.Receita_Paga / totals.Receita) * 100).toFixed(1) : '0.0'}%
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-cyan-600">
-                        {formatCurrency(totals.Receita_Assinatura_Anual_Recorrente || 0)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-teal-600">
-                        {formatNumber(totals.Pedidos_Assinatura_Mensal_Recorrente || 0)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-teal-600">
-                        {formatCurrency(totals.Receita_Assinatura_Mensal_Recorrente || 0)}
-                      </td>
+                      {(() => {
+                        const hasSubscriptionData = data.some(item => 
+                          (item.Pedidos_Assinatura_Anual_Inicial && item.Pedidos_Assinatura_Anual_Inicial > 0) ||
+                          (item.Receita_Assinatura_Anual_Inicial && item.Receita_Assinatura_Anual_Inicial > 0) ||
+                          (item.Pedidos_Assinatura_Mensal_Inicial && item.Pedidos_Assinatura_Mensal_Inicial > 0) ||
+                          (item.Receita_Assinatura_Mensal_Inicial && item.Receita_Assinatura_Mensal_Inicial > 0) ||
+                          (item.Pedidos_Assinatura_Anual_Recorrente && item.Pedidos_Assinatura_Anual_Recorrente > 0) ||
+                          (item.Receita_Assinatura_Anual_Recorrente && item.Receita_Assinatura_Anual_Recorrente > 0) ||
+                          (item.Pedidos_Assinatura_Mensal_Recorrente && item.Pedidos_Assinatura_Mensal_Recorrente > 0) ||
+                          (item.Receita_Assinatura_Mensal_Recorrente && item.Receita_Assinatura_Mensal_Recorrente > 0)
+                        )
+                        
+                        if (!hasSubscriptionData) return null
+                        
+                        return (
+                          <>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-purple-600">
+                              {formatNumber(totals.Pedidos_Assinatura_Anual_Inicial || 0)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-purple-600">
+                              {formatCurrency(totals.Receita_Assinatura_Anual_Inicial || 0)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-indigo-600">
+                              {formatNumber(totals.Pedidos_Assinatura_Mensal_Inicial || 0)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-indigo-600">
+                              {formatCurrency(totals.Receita_Assinatura_Mensal_Inicial || 0)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-cyan-600">
+                              {formatNumber(totals.Pedidos_Assinatura_Anual_Recorrente || 0)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-cyan-600">
+                              {formatCurrency(totals.Receita_Assinatura_Anual_Recorrente || 0)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-teal-600">
+                              {formatNumber(totals.Pedidos_Assinatura_Mensal_Recorrente || 0)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-teal-600">
+                              {formatCurrency(totals.Receita_Assinatura_Mensal_Recorrente || 0)}
+                            </td>
+                          </>
+                        )
+                      })()}
                     </tr>
                   )
                 })}
