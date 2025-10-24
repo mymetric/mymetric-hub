@@ -2388,14 +2388,14 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                     ...(totals.pedidosAssinaturaAnualInicial > 0 || totals.pedidosAssinaturaMensalInicial > 0 || 
                         totals.pedidosAssinaturaAnualRecorrente > 0 || totals.pedidosAssinaturaMensalRecorrente > 0 ? [
                       {
-                        title: "Ped. Assin. Anual Inicial",
+                        title: "Novas Assinaturas Anuais",
                         value: totals.pedidosAssinaturaAnualInicial,
                         icon: ShoppingBag,
                         growth: calculateGrowth(totals.pedidosAssinaturaAnualInicial, previousTotals.pedidosAssinaturaAnualInicial),
                         color: "purple" as const
                       },
                       {
-                        title: "Rec. Assin. Anual Inicial",
+                        title: "Receita Novas Anuais",
                         value: totals.receitaAssinaturaAnualInicial,
                         icon: DollarSign,
                         growth: calculateGrowth(totals.receitaAssinaturaAnualInicial, previousTotals.receitaAssinaturaAnualInicial),
@@ -2403,14 +2403,14 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                         color: "purple" as const
                       },
                       {
-                        title: "Ped. Assin. Mensal Inicial",
+                        title: "Novas Assinaturas Mensais",
                         value: totals.pedidosAssinaturaMensalInicial,
                         icon: ShoppingBag,
                         growth: calculateGrowth(totals.pedidosAssinaturaMensalInicial, previousTotals.pedidosAssinaturaMensalInicial),
                         color: "indigo" as const
                       },
                       {
-                        title: "Rec. Assin. Mensal Inicial",
+                        title: "Receita Novas Mensais",
                         value: totals.receitaAssinaturaMensalInicial,
                         icon: DollarSign,
                         growth: calculateGrowth(totals.receitaAssinaturaMensalInicial, previousTotals.receitaAssinaturaMensalInicial),
@@ -2418,14 +2418,14 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                         color: "indigo" as const
                       },
                       {
-                        title: "Ped. Assin. Anual Recorrente",
+                        title: "Renovações Anuais",
                         value: totals.pedidosAssinaturaAnualRecorrente,
                         icon: Coins,
                         growth: calculateGrowth(totals.pedidosAssinaturaAnualRecorrente, previousTotals.pedidosAssinaturaAnualRecorrente),
                         color: "cyan" as const
                       },
                       {
-                        title: "Rec. Assin. Anual Recorrente",
+                        title: "Receita Renovações Anuais",
                         value: totals.receitaAssinaturaAnualRecorrente,
                         icon: DollarSign,
                         growth: calculateGrowth(totals.receitaAssinaturaAnualRecorrente, previousTotals.receitaAssinaturaAnualRecorrente),
@@ -2433,14 +2433,14 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                         color: "cyan" as const
                       },
                       {
-                        title: "Ped. Assin. Mensal Recorrente",
+                        title: "Renovações Mensais",
                         value: totals.pedidosAssinaturaMensalRecorrente,
                         icon: Coins,
                         growth: calculateGrowth(totals.pedidosAssinaturaMensalRecorrente, previousTotals.pedidosAssinaturaMensalRecorrente),
                         color: "teal" as const
                       },
                       {
-                        title: "Rec. Assin. Mensal Recorrente",
+                        title: "Receita Renovações Mensais",
                         value: totals.receitaAssinaturaMensalRecorrente,
                         icon: DollarSign,
                         growth: calculateGrowth(totals.receitaAssinaturaMensalRecorrente, previousTotals.receitaAssinaturaMensalRecorrente),
@@ -2662,14 +2662,14 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       {/* Assinatura Inicial Row */}
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                         <MetricCard
-                          title="Pedidos Assinatura Anual Inicial"
+                          title="Novas Assinaturas Anuais"
                           value={totals.pedidosAssinaturaAnualInicial}
                           icon={ShoppingBag}
                           growth={calculateGrowth(totals.pedidosAssinaturaAnualInicial, previousTotals.pedidosAssinaturaAnualInicial)}
                           color="purple"
                         />
                         <MetricCard
-                          title="Receita Assinatura Anual Inicial"
+                          title="Receita Novas Anuais"
                           value={totals.receitaAssinaturaAnualInicial}
                           icon={DollarSign}
                           growth={calculateGrowth(totals.receitaAssinaturaAnualInicial, previousTotals.receitaAssinaturaAnualInicial)}
@@ -2677,14 +2677,14 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                           color="purple"
                         />
                         <MetricCard
-                          title="Pedidos Assinatura Mensal Inicial"
+                          title="Novas Assinaturas Mensais"
                           value={totals.pedidosAssinaturaMensalInicial}
                           icon={ShoppingBag}
                           growth={calculateGrowth(totals.pedidosAssinaturaMensalInicial, previousTotals.pedidosAssinaturaMensalInicial)}
                           color="indigo"
                         />
                         <MetricCard
-                          title="Receita Assinatura Mensal Inicial"
+                          title="Receita Novas Mensais"
                           value={totals.receitaAssinaturaMensalInicial}
                           icon={DollarSign}
                           growth={calculateGrowth(totals.receitaAssinaturaMensalInicial, previousTotals.receitaAssinaturaMensalInicial)}
@@ -2696,14 +2696,14 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       {/* Assinatura Recorrente Row */}
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                         <MetricCard
-                          title="Pedidos Assinatura Anual Recorrente"
+                          title="Renovações Anuais"
                           value={totals.pedidosAssinaturaAnualRecorrente}
                           icon={Coins}
                           growth={calculateGrowth(totals.pedidosAssinaturaAnualRecorrente, previousTotals.pedidosAssinaturaAnualRecorrente)}
                           color="cyan"
                         />
                         <MetricCard
-                          title="Receita Assinatura Anual Recorrente"
+                          title="Receita Renovações Anuais"
                           value={totals.receitaAssinaturaAnualRecorrente}
                           icon={DollarSign}
                           growth={calculateGrowth(totals.receitaAssinaturaAnualRecorrente, previousTotals.receitaAssinaturaAnualRecorrente)}
@@ -2711,14 +2711,14 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                           color="cyan"
                         />
                         <MetricCard
-                          title="Pedidos Assinatura Mensal Recorrente"
+                          title="Renovações Mensais"
                           value={totals.pedidosAssinaturaMensalRecorrente}
                           icon={Coins}
                           growth={calculateGrowth(totals.pedidosAssinaturaMensalRecorrente, previousTotals.pedidosAssinaturaMensalRecorrente)}
                           color="teal"
                         />
                         <MetricCard
-                          title="Receita Assinatura Mensal Recorrente"
+                          title="Receita Renovações Mensais"
                           value={totals.receitaAssinaturaMensalRecorrente}
                           icon={DollarSign}
                           growth={calculateGrowth(totals.receitaAssinaturaMensalRecorrente, previousTotals.receitaAssinaturaMensalRecorrente)}
@@ -3042,7 +3042,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               currentSortDirection={sortDirection}
                               onSort={handleSort}
                             >
-                              Ped. Assin. Anual Inicial
+                              Novas Assinaturas Anuais
                             </SortableHeader>
                           )}
                           {visibleColumns.receitaAssinaturaAnualInicial && totals.receitaAssinaturaAnualInicial > 0 && (
@@ -3052,7 +3052,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               currentSortDirection={sortDirection}
                               onSort={handleSort}
                             >
-                              Rec. Assin. Anual Inicial
+                              Receita Novas Anuais
                             </SortableHeader>
                           )}
                           {visibleColumns.pedidosAssinaturaMensalInicial && totals.pedidosAssinaturaMensalInicial > 0 && (
@@ -3062,7 +3062,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               currentSortDirection={sortDirection}
                               onSort={handleSort}
                             >
-                              Ped. Assin. Mensal Inicial
+                              Novas Assinaturas Mensais
                             </SortableHeader>
                           )}
                           {visibleColumns.receitaAssinaturaMensalInicial && totals.receitaAssinaturaMensalInicial > 0 && (
@@ -3072,7 +3072,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               currentSortDirection={sortDirection}
                               onSort={handleSort}
                             >
-                              Rec. Assin. Mensal Inicial
+                              Receita Novas Mensais
                             </SortableHeader>
                           )}
                           {visibleColumns.pedidosAssinaturaAnualRecorrente && totals.pedidosAssinaturaAnualRecorrente > 0 && (
@@ -3082,7 +3082,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               currentSortDirection={sortDirection}
                               onSort={handleSort}
                             >
-                              Ped. Assin. Anual Recorrente
+                              Renovações Anuais
                             </SortableHeader>
                           )}
                           {visibleColumns.receitaAssinaturaAnualRecorrente && totals.receitaAssinaturaAnualRecorrente > 0 && (
@@ -3092,7 +3092,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               currentSortDirection={sortDirection}
                               onSort={handleSort}
                             >
-                              Rec. Assin. Anual Recorrente
+                              Receita Renovações Anuais
                             </SortableHeader>
                           )}
                           {visibleColumns.pedidosAssinaturaMensalRecorrente && totals.pedidosAssinaturaMensalRecorrente > 0 && (
@@ -3102,7 +3102,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               currentSortDirection={sortDirection}
                               onSort={handleSort}
                             >
-                              Ped. Assin. Mensal Recorrente
+                              Renovações Mensais
                             </SortableHeader>
                           )}
                           {visibleColumns.receitaAssinaturaMensalRecorrente && totals.receitaAssinaturaMensalRecorrente > 0 && (
@@ -3112,7 +3112,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               currentSortDirection={sortDirection}
                               onSort={handleSort}
                             >
-                              Rec. Assin. Mensal Recorrente
+                              Receita Renovações Mensais
                             </SortableHeader>
                           )}
 
@@ -3584,14 +3584,14 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             {/* Categoria: Assinaturas */}
                             {(() => {
                               const subscriptionMetrics = [
-                                { key: 'pedidosAssinaturaAnualInicial', label: 'Ped. Assin. Anual Inicial', icon: '📅' },
-                                { key: 'receitaAssinaturaAnualInicial', label: 'Rec. Assin. Anual Inicial', icon: '💰' },
-                                { key: 'pedidosAssinaturaMensalInicial', label: 'Ped. Assin. Mensal Inicial', icon: '📆' },
-                                { key: 'receitaAssinaturaMensalInicial', label: 'Rec. Assin. Mensal Inicial', icon: '💵' },
-                                { key: 'pedidosAssinaturaAnualRecorrente', label: 'Ped. Assin. Anual Recorrente', icon: '🔄' },
-                                { key: 'receitaAssinaturaAnualRecorrente', label: 'Rec. Assin. Anual Recorrente', icon: '💎' },
-                                { key: 'pedidosAssinaturaMensalRecorrente', label: 'Ped. Assin. Mensal Recorrente', icon: '🔁' },
-                                { key: 'receitaAssinaturaMensalRecorrente', label: 'Rec. Assin. Mensal Recorrente', icon: '💸' }
+                                { key: 'pedidosAssinaturaAnualInicial', label: 'Novas Assinaturas Anuais', icon: '📅' },
+                                { key: 'receitaAssinaturaAnualInicial', label: 'Receita Novas Anuais', icon: '💰' },
+                                { key: 'pedidosAssinaturaMensalInicial', label: 'Novas Assinaturas Mensais', icon: '📆' },
+                                { key: 'receitaAssinaturaMensalInicial', label: 'Receita Novas Mensais', icon: '💵' },
+                                { key: 'pedidosAssinaturaAnualRecorrente', label: 'Renovações Anuais', icon: '🔄' },
+                                { key: 'receitaAssinaturaAnualRecorrente', label: 'Receita Renovações Anuais', icon: '💎' },
+                                { key: 'pedidosAssinaturaMensalRecorrente', label: 'Renovações Mensais', icon: '🔁' },
+                                { key: 'receitaAssinaturaMensalRecorrente', label: 'Receita Renovações Mensais', icon: '💸' }
                               ].filter(metric => 
                                 !metricSearchTerm || 
                                 metric.label.toLowerCase().includes(metricSearchTerm.toLowerCase()) ||
@@ -3876,7 +3876,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             currentSortDirection={sortDirection}
                             onSort={handleSort}
                           >
-                            Ped. Assin. Anual Inicial
+                            Novas Assinaturas Anuais
                           </SortableHeader>
                         )}
                         {visibleColumns.receitaAssinaturaAnualInicial && totals.receitaAssinaturaAnualInicial > 0 && (
@@ -3886,7 +3886,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             currentSortDirection={sortDirection}
                             onSort={handleSort}
                           >
-                            Rec. Assin. Anual Inicial
+                            Receita Novas Anuais
                           </SortableHeader>
                         )}
                         {visibleColumns.pedidosAssinaturaMensalInicial && totals.pedidosAssinaturaMensalInicial > 0 && (
@@ -3896,7 +3896,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             currentSortDirection={sortDirection}
                             onSort={handleSort}
                           >
-                            Ped. Assin. Mensal Inicial
+                            Novas Assinaturas Mensais
                           </SortableHeader>
                         )}
                         {visibleColumns.receitaAssinaturaMensalInicial && totals.receitaAssinaturaMensalInicial > 0 && (
@@ -3906,7 +3906,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             currentSortDirection={sortDirection}
                             onSort={handleSort}
                           >
-                            Rec. Assin. Mensal Inicial
+                            Receita Novas Mensais
                           </SortableHeader>
                         )}
                         {visibleColumns.pedidosAssinaturaAnualRecorrente && totals.pedidosAssinaturaAnualRecorrente > 0 && (
@@ -3916,7 +3916,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             currentSortDirection={sortDirection}
                             onSort={handleSort}
                           >
-                            Ped. Assin. Anual Recorrente
+                            Renovações Anuais
                           </SortableHeader>
                         )}
                         {visibleColumns.receitaAssinaturaAnualRecorrente && totals.receitaAssinaturaAnualRecorrente > 0 && (
@@ -3926,7 +3926,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             currentSortDirection={sortDirection}
                             onSort={handleSort}
                           >
-                            Rec. Assin. Anual Recorrente
+                            Receita Renovações Anuais
                           </SortableHeader>
                         )}
                         {visibleColumns.pedidosAssinaturaMensalRecorrente && totals.pedidosAssinaturaMensalRecorrente > 0 && (
@@ -3936,7 +3936,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             currentSortDirection={sortDirection}
                             onSort={handleSort}
                           >
-                            Ped. Assin. Mensal Recorrente
+                            Renovações Mensais
                           </SortableHeader>
                         )}
                         {visibleColumns.receitaAssinaturaMensalRecorrente && totals.receitaAssinaturaMensalRecorrente > 0 && (
@@ -3946,7 +3946,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                             currentSortDirection={sortDirection}
                             onSort={handleSort}
                           >
-                            Rec. Assin. Mensal Recorrente
+                            Receita Renovações Mensais
                           </SortableHeader>
                         )}
                       </tr>

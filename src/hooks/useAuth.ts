@@ -124,42 +124,48 @@ export const useAuth = () => {
               }
             }
             
-            // Validar token com a API
-            try {
-              const profile = await api.getProfile(currentAccessToken)
-              
-              const validAuthData: AuthData = {
-                isAuthenticated: true,
-                user: {
-                  email: profile.email,
-                  admin: profile.admin,
-                  access_control: profile.access_control,
-                  tablename: profile.tablename,
-                  username: profile.email || parsed.authData.user?.username || '',
-                  lastLogin: parsed.authData.user?.lastLogin || new Date().toISOString()
+            // Usar dados armazenados em vez de validar com API para melhor performance
+            if (parsed.authData && parsed.authData.isAuthenticated) {
+              setAuthData(parsed.authData)
+              console.log('✅ Auth restored from storage (cached)')
+            } else {
+              // Fallback: validar token com a API apenas se necessário
+              try {
+                const profile = await api.getProfile(currentAccessToken)
+                
+                const validAuthData: AuthData = {
+                  isAuthenticated: true,
+                  user: {
+                    email: profile.email,
+                    admin: profile.admin,
+                    access_control: profile.access_control,
+                    tablename: profile.tablename,
+                    username: profile.email || parsed.authData.user?.username || '',
+                    lastLogin: parsed.authData.user?.lastLogin || new Date().toISOString()
+                  }
                 }
+                
+                setAuthData(validAuthData)
+                
+                // Atualizar dados armazenados
+                const updatedStoredData: StoredAuthData = {
+                  authData: validAuthData,
+                  accessToken: currentAccessToken,
+                  refreshToken: currentRefreshToken,
+                  rememberMe: parsed.rememberMe,
+                  expiresAt: parsed.expiresAt,
+                  refreshExpiresAt: parsed.refreshExpiresAt
+                }
+                
+                localStorage.setItem('mymetric-auth-complete', JSON.stringify(updatedStoredData))
+                localStorage.setItem('mymetric-auth', JSON.stringify(validAuthData))
+                
+                console.log('✅ Auth restored from storage successfully')
+              } catch (error) {
+                console.error('❌ Token validation failed:', error)
+                // Token inválido, limpar storage
+                clearStoredAuth()
               }
-              
-              setAuthData(validAuthData)
-              
-              // Atualizar dados armazenados
-              const updatedStoredData: StoredAuthData = {
-                authData: validAuthData,
-                accessToken: currentAccessToken,
-                refreshToken: currentRefreshToken,
-                rememberMe: parsed.rememberMe,
-                expiresAt: parsed.expiresAt,
-                refreshExpiresAt: parsed.refreshExpiresAt
-              }
-              
-              localStorage.setItem('mymetric-auth-complete', JSON.stringify(updatedStoredData))
-              localStorage.setItem('mymetric-auth', JSON.stringify(validAuthData))
-              
-              console.log('✅ Auth restored from storage successfully')
-            } catch (error) {
-              console.error('❌ Token validation failed:', error)
-              // Token inválido, limpar storage
-              clearStoredAuth()
             }
           } else {
             console.log('❌ No valid tokens found')

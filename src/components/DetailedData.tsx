@@ -739,28 +739,28 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel }: D
                     return (
                       <>
                         <SortableHeader field="Pedidos_Assinatura_Anual_Inicial">
-                          Ped. Assin. Anual Inicial
+                          Novas Assinaturas Anuais
                         </SortableHeader>
                         <SortableHeader field="Receita_Assinatura_Anual_Inicial">
-                          Rec. Assin. Anual Inicial
+                          Receita Novas Anuais
                         </SortableHeader>
                         <SortableHeader field="Pedidos_Assinatura_Mensal_Inicial">
-                          Ped. Assin. Mensal Inicial
+                          Novas Assinaturas Mensais
                         </SortableHeader>
                         <SortableHeader field="Receita_Assinatura_Mensal_Inicial">
-                          Rec. Assin. Mensal Inicial
+                          Receita Novas Mensais
                         </SortableHeader>
                         <SortableHeader field="Pedidos_Assinatura_Anual_Recorrente">
-                          Ped. Assin. Anual Recorrente
+                          Renovações Anuais
                         </SortableHeader>
                         <SortableHeader field="Receita_Assinatura_Anual_Recorrente">
-                          Rec. Assin. Anual Recorrente
+                          Receita Renovações Anuais
                         </SortableHeader>
                         <SortableHeader field="Pedidos_Assinatura_Mensal_Recorrente">
-                          Ped. Assin. Mensal Recorrente
+                          Renovações Mensais
                         </SortableHeader>
                         <SortableHeader field="Receita_Assinatura_Mensal_Recorrente">
-                          Rec. Assin. Mensal Recorrente
+                          Receita Renovações Mensais
                         </SortableHeader>
                       </>
                     )
