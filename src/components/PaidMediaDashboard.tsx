@@ -460,15 +460,18 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         console.log('🔄 useCache mode:', useCache)
         console.log('🔄 startDate:', startDate, 'endDate:', endDate)
         
-        // Sempre faz request direto com as datas específicas para garantir dados corretos
-        console.log('🔄 Fazendo request direto com datas específicas...')
+        // Usar cache quando disponível para evitar 504 errors
+        console.log('🔄 Fazendo request com cache ativado...')
         console.log('🔄 startDate:', startDate, 'endDate:', endDate)
         console.log('🔄 selectedTable:', selectedTable)
+        console.log('🔄 useCache:', useCache)
         
           const response = await api.getAdsCampaigns(token, {
             start_date: startDate,
             end_date: endDate,
-            table_name: selectedTable
+            table_name: selectedTable,
+            last_cache: useCache,
+            force_refresh: false
           })
 
         console.log('✅ Response com datas específicas:', response)
