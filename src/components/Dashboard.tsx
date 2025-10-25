@@ -506,6 +506,16 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     const end = new Date(endDate)
     const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
     
+    // Para períodos de 1 dia, usar o dia anterior
+    if (daysDiff === 0) {
+      const previousDay = new Date(start)
+      previousDay.setDate(previousDay.getDate() - 1)
+      return {
+        start: previousDay.toISOString().split('T')[0],
+        end: previousDay.toISOString().split('T')[0]
+      }
+    }
+    
     const previousEnd = new Date(start)
     previousEnd.setDate(previousEnd.getDate() - 1)
     const previousStart = new Date(previousEnd)
