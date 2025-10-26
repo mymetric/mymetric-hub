@@ -7,7 +7,7 @@ import {
   Tooltip, 
   ResponsiveContainer
 } from 'recharts'
-import { TrendingUp, DollarSign, Users, ShoppingCart, Package, Target } from 'lucide-react'
+import { TrendingUp, DollarSign, Users, ShoppingCart, Package, Target, Search, X, Filter } from 'lucide-react'
 import React, { useState } from 'react'
 
 interface TimelineData {
@@ -22,6 +22,7 @@ interface TimelineData {
   paidRevenue: number
   newCustomerRevenue: number
   investment: number
+  leads: number
   averageTicket: number
   sessionsMA?: number
   revenueMA?: number
@@ -33,6 +34,7 @@ interface TimelineData {
   paidRevenueMA?: number
   newCustomerRevenueMA?: number
   investmentMA?: number
+  leadsMA?: number
   averageTicketMA?: number
 }
 
@@ -44,36 +46,70 @@ interface TimelineChartProps {
 
 // Definição das métricas disponíveis
 const availableMetrics = [
-  { key: 'sessions', label: 'Sessões', color: '#3b82f6', icon: Users, yAxisId: 'left' },
-  { key: 'revenue', label: 'Receita', color: '#10b981', icon: DollarSign, yAxisId: 'right' },
-  { key: 'clicks', label: 'Cliques', color: '#8b5cf6', icon: Target, yAxisId: 'left' },
-  { key: 'addToCart', label: 'Carrinho', color: '#f59e0b', icon: ShoppingCart, yAxisId: 'left' },
-  { key: 'orders', label: 'Pedidos', color: '#ef4444', icon: Package, yAxisId: 'left' },
-  { key: 'newCustomers', label: 'Novos Clientes', color: '#06b6d4', icon: Users, yAxisId: 'left' },
-  { key: 'paidOrders', label: 'Pedidos Pagos', color: '#84cc16', icon: Package, yAxisId: 'left' },
-  { key: 'paidRevenue', label: 'Receita Paga', color: '#059669', icon: DollarSign, yAxisId: 'right' },
-  { key: 'newCustomerRevenue', label: 'Receita Novos', color: '#7c3aed', icon: DollarSign, yAxisId: 'right' },
-  { key: 'investment', label: 'Investimento', color: '#dc2626', icon: DollarSign, yAxisId: 'right' },
-  { key: 'averageTicket', label: 'Ticket Médio', color: '#f97316', icon: DollarSign, yAxisId: 'right' },
+  { key: 'sessions', label: 'Sessões', color: '#3b82f6', icon: Users, yAxisId: 'left', category: 'Comportamento' },
+  { key: 'clicks', label: 'Cliques', color: '#8b5cf6', icon: Target, yAxisId: 'left', category: 'Comportamento' },
+  { key: 'addToCart', label: 'Carrinho', color: '#f59e0b', icon: ShoppingCart, yAxisId: 'left', category: 'Comportamento' },
+  { key: 'leads', label: 'Leads', color: '#ec4899', icon: Target, yAxisId: 'left', category: 'Comportamento' },
+  { key: 'orders', label: 'Pedidos', color: '#ef4444', icon: Package, yAxisId: 'left', category: 'Conversão' },
+  { key: 'paidOrders', label: 'Pedidos Pagos', color: '#84cc16', icon: Package, yAxisId: 'left', category: 'Conversão' },
+  { key: 'newCustomers', label: 'Novos Clientes', color: '#06b6d4', icon: Users, yAxisId: 'left', category: 'Conversão' },
+  { key: 'revenue', label: 'Receita', color: '#10b981', icon: DollarSign, yAxisId: 'right', category: 'Receita' },
+  { key: 'paidRevenue', label: 'Receita Paga', color: '#059669', icon: DollarSign, yAxisId: 'right', category: 'Receita' },
+  { key: 'newCustomerRevenue', label: 'Receita Novos', color: '#7c3aed', icon: DollarSign, yAxisId: 'right', category: 'Receita' },
+  { key: 'investment', label: 'Investimento', color: '#dc2626', icon: DollarSign, yAxisId: 'right', category: 'Investimento' },
+  { key: 'averageTicket', label: 'Ticket Médio', color: '#f97316', icon: DollarSign, yAxisId: 'right', category: 'Receita' },
   // Métricas de média móvel
-  { key: 'sessionsMA', label: 'Sessões (MM)', color: '#1d4ed8', icon: Users, yAxisId: 'left', isMovingAverage: true },
-  { key: 'revenueMA', label: 'Receita (MM)', color: '#047857', icon: DollarSign, yAxisId: 'right', isMovingAverage: true },
-  { key: 'clicksMA', label: 'Cliques (MM)', color: '#6b21a8', icon: Target, yAxisId: 'left', isMovingAverage: true },
-  { key: 'addToCartMA', label: 'Carrinho (MM)', color: '#d97706', icon: ShoppingCart, yAxisId: 'left', isMovingAverage: true },
-  { key: 'ordersMA', label: 'Pedidos (MM)', color: '#dc2626', icon: Package, yAxisId: 'left', isMovingAverage: true },
-  { key: 'newCustomersMA', label: 'Novos Clientes (MM)', color: '#0891b2', icon: Users, yAxisId: 'left', isMovingAverage: true },
-  { key: 'paidOrdersMA', label: 'Pedidos Pagos (MM)', color: '#65a30d', icon: Package, yAxisId: 'left', isMovingAverage: true },
-  { key: 'paidRevenueMA', label: 'Receita Paga (MM)', color: '#065f46', icon: DollarSign, yAxisId: 'right', isMovingAverage: true },
-  { key: 'newCustomerRevenueMA', label: 'Receita Novos (MM)', color: '#7c2d12', icon: DollarSign, yAxisId: 'right', isMovingAverage: true },
-  { key: 'investmentMA', label: 'Investimento (MM)', color: '#991b1b', icon: DollarSign, yAxisId: 'right', isMovingAverage: true },
-  { key: 'averageTicketMA', label: 'Ticket Médio (MM)', color: '#ea580c', icon: DollarSign, yAxisId: 'right', isMovingAverage: true }
+  { key: 'sessionsMA', label: 'Sessões (MM)', color: '#1d4ed8', icon: Users, yAxisId: 'left', isMovingAverage: true, category: 'Comportamento' },
+  { key: 'revenueMA', label: 'Receita (MM)', color: '#047857', icon: DollarSign, yAxisId: 'right', isMovingAverage: true, category: 'Receita' },
+  { key: 'clicksMA', label: 'Cliques (MM)', color: '#6b21a8', icon: Target, yAxisId: 'left', isMovingAverage: true, category: 'Comportamento' },
+  { key: 'addToCartMA', label: 'Carrinho (MM)', color: '#d97706', icon: ShoppingCart, yAxisId: 'left', isMovingAverage: true, category: 'Comportamento' },
+  { key: 'ordersMA', label: 'Pedidos (MM)', color: '#dc2626', icon: Package, yAxisId: 'left', isMovingAverage: true, category: 'Conversão' },
+  { key: 'newCustomersMA', label: 'Novos Clientes (MM)', color: '#0891b2', icon: Users, yAxisId: 'left', isMovingAverage: true, category: 'Conversão' },
+  { key: 'paidOrdersMA', label: 'Pedidos Pagos (MM)', color: '#65a30d', icon: Package, yAxisId: 'left', isMovingAverage: true, category: 'Conversão' },
+  { key: 'paidRevenueMA', label: 'Receita Paga (MM)', color: '#065f46', icon: DollarSign, yAxisId: 'right', isMovingAverage: true, category: 'Receita' },
+  { key: 'newCustomerRevenueMA', label: 'Receita Novos (MM)', color: '#7c2d12', icon: DollarSign, yAxisId: 'right', isMovingAverage: true, category: 'Receita' },
+  { key: 'investmentMA', label: 'Investimento (MM)', color: '#991b1b', icon: DollarSign, yAxisId: 'right', isMovingAverage: true, category: 'Investimento' },
+  { key: 'leadsMA', label: 'Leads (MM)', color: '#be185d', icon: Target, yAxisId: 'left', isMovingAverage: true, category: 'Comportamento' },
+  { key: 'averageTicketMA', label: 'Ticket Médio (MM)', color: '#ea580c', icon: DollarSign, yAxisId: 'right', isMovingAverage: true, category: 'Receita' }
 ]
 
 const TimelineChart = ({ data, title, showMovingAverage = false }: TimelineChartProps) => {
-  const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['sessions', 'revenue'])
+  const [primaryMetric, setPrimaryMetric] = useState<string>('sessions')
+  const [secondaryMetric, setSecondaryMetric] = useState<string>('')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [secondarySearchTerm, setSecondarySearchTerm] = useState('')
+  const [showMetricSelector, setShowMetricSelector] = useState(true)
+  const [showDropdown, setShowDropdown] = useState(false)
+  const [showSecondaryDropdown, setShowSecondaryDropdown] = useState(false)
 
   // Não alterar as métricas selecionadas automaticamente
   // O usuário mantém suas seleções e elas são automaticamente mapeadas para média móvel
+
+  // Filtrar métricas principais por busca
+  const filteredPrimaryMetrics = availableMetrics.filter(metric => {
+    if (metric.isMovingAverage) return false
+    if (metric.key === primaryMetric) return false // Não mostrar já selecionada
+    if (metric.key === secondaryMetric) return false // Não mostrar métrica secundária
+    
+    return !searchTerm || 
+      metric.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      metric.key.toLowerCase().includes(searchTerm.toLowerCase())
+  })
+
+  // Filtrar métricas secundárias por busca
+  const filteredSecondaryMetrics = availableMetrics.filter(metric => {
+    if (metric.isMovingAverage) return false
+    if (metric.key === secondaryMetric) return false // Não mostrar já selecionada
+    if (metric.key === primaryMetric) return false // Não mostrar métrica primária
+    
+    return !secondarySearchTerm || 
+      metric.label.toLowerCase().includes(secondarySearchTerm.toLowerCase()) ||
+      metric.key.toLowerCase().includes(secondarySearchTerm.toLowerCase())
+  })
+
+  // Métricas disponíveis para dropdown (todas exceto médias móveis)
+  const availablePrimaryMetrics = availableMetrics.filter(m => !m.isMovingAverage && m.key !== secondaryMetric)
+  const availableSecondaryMetrics = availableMetrics.filter(m => !m.isMovingAverage && m.key !== primaryMetric)
 
   if (!data || data.length === 0) {
     return (
@@ -127,6 +163,7 @@ const TimelineChart = ({ data, title, showMovingAverage = false }: TimelineChart
       currency: 'BRL',
       minimumFractionDigits: 0
     }).format(item.investment),
+    leadsFormatted: new Intl.NumberFormat('pt-BR').format(item.leads || 0),
     averageTicketFormatted: new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL',
@@ -150,6 +187,7 @@ const TimelineChart = ({ data, title, showMovingAverage = false }: TimelineChart
         paidRevenue: acc.paidRevenue + (item.paidRevenueMA || 0),
         newCustomerRevenue: acc.newCustomerRevenue + (item.newCustomerRevenueMA || 0),
         investment: acc.investment + (item.investmentMA || 0),
+        leads: acc.leads + (item.leadsMA || 0),
         averageTicket: acc.averageTicket + (item.averageTicketMA || 0)
       }
     } else {
@@ -165,6 +203,7 @@ const TimelineChart = ({ data, title, showMovingAverage = false }: TimelineChart
         paidRevenue: acc.paidRevenue + (item.paidRevenue || 0),
         newCustomerRevenue: acc.newCustomerRevenue + (item.newCustomerRevenue || 0),
         investment: acc.investment + (item.investment || 0),
+        leads: acc.leads + (item.leads || 0),
         averageTicket: acc.averageTicket + (item.averageTicket || 0)
       }
     }
@@ -179,24 +218,46 @@ const TimelineChart = ({ data, title, showMovingAverage = false }: TimelineChart
     paidRevenue: 0,
     newCustomerRevenue: 0,
     investment: 0,
+    leads: 0,
     averageTicket: 0
   })
 
-  // Função para alternar métrica selecionada (apenas métricas normais)
-  const toggleMetric = (metricKey: string) => {
-    // Não permitir selecionar métricas de média móvel diretamente
+  // Função para selecionar métrica primária
+  const selectPrimaryMetric = (metricKey: string) => {
     const metric = availableMetrics.find(m => m.key === metricKey)
     if (metric?.isMovingAverage) return
-    
+    setPrimaryMetric(metricKey)
+    setSearchTerm('')
+    setShowDropdown(false)
+  }
+
+  // Função para selecionar métrica secundária
+  const selectSecondaryMetric = (metricKey: string) => {
+    const metric = availableMetrics.find(m => m.key === metricKey)
+    if (metric?.isMovingAverage) return
+    setSecondaryMetric(metricKey)
+    setSecondarySearchTerm('')
+    setShowSecondaryDropdown(false)
+  }
+
+  // Selecionar todas as métricas da categoria atual (função mantida para compatibilidade)
+  const selectAllFiltered = () => {
+    const filteredKeys = filteredPrimaryMetrics.map(m => m.key)
     setSelectedMetrics(prev => {
-      if (prev.includes(metricKey)) {
-        // Se já está selecionada, remove (mas mantém pelo menos uma)
-        return prev.length > 1 ? prev.filter(m => m !== metricKey) : prev
-      } else {
-        // Se não está selecionada, adiciona (mas limita a 2)
-        return prev.length < 2 ? [...prev, metricKey] : [prev[1], metricKey]
-      }
+      const newMetrics = [...prev]
+      filteredKeys.forEach(key => {
+        if (!newMetrics.includes(key)) {
+          newMetrics.push(key)
+        }
+      })
+      return newMetrics
     })
+  }
+
+  // Desselecionar todas as métricas da categoria atual (função mantida para compatibilidade)
+  const deselectAllFiltered = () => {
+    const filteredKeys = filteredPrimaryMetrics.map(m => m.key)
+    setSelectedMetrics(prev => prev.filter(key => !filteredKeys.includes(key)))
   }
 
   // Custom tooltip
@@ -246,7 +307,7 @@ const TimelineChart = ({ data, title, showMovingAverage = false }: TimelineChart
 
   // Obter métricas selecionadas, substituindo por média móvel se ativada
   const selectedMetricsData = availableMetrics.filter(metric => {
-    const isSelected = selectedMetrics.includes(metric.key)
+    const isSelected = metric.key === primaryMetric || metric.key === secondaryMetric
     const isMovingAverageMetric = metric.isMovingAverage === true
     const isNormalMetric = !metric.isMovingAverage
     
@@ -265,60 +326,200 @@ const TimelineChart = ({ data, title, showMovingAverage = false }: TimelineChart
     }
   }).map(metric => {
     // Se média móvel ativada, substituir pela versão de média móvel
+    let finalMetric = metric
     if (showMovingAverage && !metric.isMovingAverage) {
       const movingAverageKey = metric.key + 'MA'
       const movingAverageMetric = availableMetrics.find(m => m.key === movingAverageKey)
-      return movingAverageMetric || metric
+      finalMetric = movingAverageMetric || metric
     }
-    return metric
+    
+    // Forçar atribuição correta dos eixos: primária = left, secundária = right
+    const originalKey = showMovingAverage && finalMetric.key.endsWith('MA') 
+      ? finalMetric.key.replace('MA', '') 
+      : finalMetric.key
+    
+    const isSecondary = originalKey === secondaryMetric
+    
+    return {
+      ...finalMetric,
+      yAxisId: isSecondary ? 'right' : 'left'
+    }
   })
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
-          <TrendingUp className="w-5 h-5 text-gray-600" />
-          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-        </div>
-      </div>
-
       {/* Métricas Selector */}
-      <div className="mb-6">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="text-sm font-medium text-gray-700">Comparar métricas:</span>
-          <span className="text-xs text-gray-500">(Selecione 1 ou 2)</span>
+      <div className={`mb-6 bg-white border border-gray-200 rounded-lg ${showMetricSelector ? 'p-3' : 'p-2'}`}>
+        <div 
+          className="flex items-center justify-between cursor-pointer"
+          onClick={() => setShowMetricSelector(!showMetricSelector)}
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-gray-700">Selecionar Métricas</span>
+            <span className="text-xs text-gray-500">
+              ({[primaryMetric, secondaryMetric].filter(Boolean).length})
+            </span>
+          </div>
+          <div className="text-xs font-medium text-gray-600">
+            {showMetricSelector ? '▲' : '▼'}
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {availableMetrics.filter(metric => !metric.isMovingAverage).map((metric) => {
-            const isSelected = selectedMetrics.includes(metric.key)
-            const Icon = metric.icon
-            
-            return (
-              <button
-                key={metric.key}
-                onClick={() => toggleMetric(metric.key)}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                  isSelected
-                    ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
-                    : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                <span>{metric.label}</span>
-                {isSelected && (
-                  <div 
-                    className="w-2 h-2 rounded-full" 
-                    style={{ backgroundColor: metric.color }}
-                  ></div>
+
+        {showMetricSelector && (
+          <div className="space-y-2 pt-2 border-t border-gray-200">
+            {/* Duas caixas de busca lado a lado */}
+            <div className="flex gap-2">
+              {/* Caixa 1: Métricas principais */}
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Buscar métricas..."
+                  value={searchTerm}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value)
+                    setShowDropdown(true)
+                  }}
+                  onFocus={() => setShowDropdown(true)}
+                  className="w-full pl-9 pr-9 py-1.5 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => {
+                      setSearchTerm('')
+                      setShowDropdown(false)
+                    }}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2"
+                  >
+                    <X className="w-4 h-4 text-gray-400 hover:text-gray-600" />
+                  </button>
                 )}
-              </button>
-            )
-          })}
-        </div>
+                {/* Dropdown de métricas principais */}
+                {showDropdown && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {(searchTerm ? filteredPrimaryMetrics : availablePrimaryMetrics).map((metric) => {
+                      const Icon = metric.icon
+                      const isSelected = metric.key === primaryMetric
+                      return (
+                        <button
+                          key={metric.key}
+                          onClick={() => selectPrimaryMetric(metric.key)}
+                          className={`w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left ${
+                            isSelected ? 'bg-blue-50' : ''
+                          }`}
+                        >
+                          <Icon className="w-4 h-4 text-gray-600" />
+                          <span className="text-sm text-gray-700">{metric.label}</span>
+                          {isSelected && <span className="ml-auto text-xs text-blue-600">✓</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+              {/* Caixa 2: Métricas secundárias */}
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Métricas secundárias..."
+                  value={secondarySearchTerm}
+                  onChange={(e) => {
+                    setSecondarySearchTerm(e.target.value)
+                    setShowSecondaryDropdown(true)
+                  }}
+                  onFocus={() => setShowSecondaryDropdown(true)}
+                  className="w-full pl-9 pr-9 py-1.5 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                {secondarySearchTerm && (
+                  <button
+                    onClick={() => {
+                      setSecondarySearchTerm('')
+                      setShowSecondaryDropdown(false)
+                    }}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2"
+                  >
+                    <X className="w-4 h-4 text-gray-400 hover:text-gray-600" />
+                  </button>
+                )}
+                {/* Dropdown de métricas secundárias */}
+                {showSecondaryDropdown && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {(secondarySearchTerm ? filteredSecondaryMetrics : availableSecondaryMetrics).map((metric) => {
+                      const Icon = metric.icon
+                      const isSelected = metric.key === secondaryMetric
+                      return (
+                        <button
+                          key={metric.key}
+                          onClick={() => selectSecondaryMetric(metric.key)}
+                          className={`w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left ${
+                            isSelected ? 'bg-purple-50' : ''
+                          }`}
+                        >
+                          <Icon className="w-4 h-4 text-gray-600" />
+                          <span className="text-sm text-gray-700">{metric.label}</span>
+                          {isSelected && <span className="ml-auto text-xs text-purple-600">✓</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Métricas Selecionadas - Compacto */}
+            {(primaryMetric || secondaryMetric) && (
+              <div className="flex flex-wrap gap-1.5">
+                {primaryMetric && (() => {
+                  const metric = availableMetrics.find(m => m.key === primaryMetric && !m.isMovingAverage)
+                  if (!metric) return null
+                  const Icon = metric.icon
+                  return (
+                    <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs bg-blue-50 border border-blue-200">
+                      <Icon className="w-2.5 h-2.5 text-blue-600" />
+                      <span className="text-blue-700 font-medium">{metric.label}</span>
+                      <div 
+                        className="w-1 h-1 rounded-full ml-0.5" 
+                        style={{ backgroundColor: metric.color }}
+                      ></div>
+                      <button
+                        onClick={() => setPrimaryMetric('')}
+                        className="ml-0.5 text-blue-600 hover:text-blue-800"
+                      >
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                    </div>
+                  )
+                })()}
+                {secondaryMetric && (() => {
+                  const metric = availableMetrics.find(m => m.key === secondaryMetric && !m.isMovingAverage)
+                  if (!metric) return null
+                  const Icon = metric.icon
+                  return (
+                    <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs bg-purple-50 border border-purple-200">
+                      <Icon className="w-2.5 h-2.5 text-purple-600" />
+                      <span className="text-purple-700 font-medium">{metric.label}</span>
+                      <div 
+                        className="w-1 h-1 rounded-full ml-0.5" 
+                        style={{ backgroundColor: metric.color }}
+                      ></div>
+                      <button
+                        onClick={() => setSecondaryMetric('')}
+                        className="ml-0.5 text-purple-600 hover:text-purple-800"
+                      >
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                    </div>
+                  )
+                })()}
+              </div>
+            )}
+          </div>
+        )}
       </div>
       
       {/* Chart */}
-      <div className="h-64 mb-6">
+      <div className="h-80 mb-6">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />

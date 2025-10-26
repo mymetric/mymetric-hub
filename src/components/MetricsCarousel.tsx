@@ -10,6 +10,8 @@ interface MetricCardProps {
   growth?: number
   format?: 'number' | 'currency' | 'percentage'
   color?: string
+  onToggle?: () => void
+  toggleLabel?: string
 }
 
 interface MetricsCarouselProps {
@@ -31,7 +33,9 @@ const MetricsCarousel = ({ metrics }: MetricsCarouselProps) => {
     icon: Icon, 
     growth, 
     format = 'number',
-    color = 'blue' 
+    color = 'blue',
+    onToggle,
+    toggleLabel
   }: MetricCardProps) => {
     const formatValue = () => {
       switch (format) {
@@ -49,7 +53,10 @@ const MetricsCarousel = ({ metrics }: MetricsCarouselProps) => {
     }
 
     return (
-      <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-shadow">
+      <div 
+        className={`bg-white rounded-xl shadow-lg p-6 border border-gray-100 transition-shadow ${onToggle ? 'cursor-pointer hover:shadow-xl' : 'hover:shadow-xl'}`}
+        onClick={onToggle}
+      >
         <div className="flex items-center justify-between mb-3">
           <div className={`p-2.5 rounded-lg ${colorClasses[color as keyof typeof colorClasses]} text-gray-700`}>
             <Icon className="w-5 h-5" />
@@ -73,6 +80,12 @@ const MetricsCarousel = ({ metrics }: MetricsCarouselProps) => {
         </div>
         <h3 className="text-gray-600 text-sm font-medium mb-1">{title}</h3>
         <p className="text-2xl font-bold text-gray-900">{formatValue()}</p>
+        {onToggle && (
+          <div className="flex items-center gap-1 mt-2">
+            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+            <span className="text-xs text-gray-500">Clique para alternar</span>
+          </div>
+        )}
       </div>
     )
   }

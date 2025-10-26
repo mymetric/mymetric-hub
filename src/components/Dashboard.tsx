@@ -77,6 +77,7 @@ interface MetricsDataItem {
   Receita_Paga: number
   Novos_Clientes: number
   Receita_Novos_Clientes: number
+  Leads?: number
   city?: string
   region?: string
   country?: string
@@ -280,38 +281,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   
   // Seletor de Métricas/Colunas
   const getInitialVisibleColumns = () => {
-    const saved = localStorage.getItem('dashboardVisibleColumns')
-    if (saved) {
-      try {
-        return JSON.parse(saved)
-      } catch {
-        return {
-          cluster: true,
-          sessoes: true,
-          taxaAdicaoCarrinho: true,
-          adicoesCarrinho: false,
-          taxaConversao: true,
-          pedidos: true,
-          pedidosPagos: true,
-          taxaPagamento: false,
-          receita: true,
-          receitaPaga: true,
-          taxaReceitaPaga: false,
-          novosClientes: false,
-          receitaNovosClientes: false,
-          percentualNovosClientes: false,
-          pedidosAssinaturaAnualInicial: false,
-          receitaAssinaturaAnualInicial: false,
-          pedidosAssinaturaMensalInicial: false,
-          receitaAssinaturaMensalInicial: false,
-          pedidosAssinaturaAnualRecorrente: false,
-          receitaAssinaturaAnualRecorrente: false,
-          pedidosAssinaturaMensalRecorrente: false,
-          receitaAssinaturaMensalRecorrente: false
-        }
-      }
-    }
-    return {
+    const defaultColumns = {
       cluster: true,
       sessoes: true,
       taxaAdicaoCarrinho: true,
@@ -326,6 +296,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       novosClientes: false,
       receitaNovosClientes: false,
       percentualNovosClientes: false,
+      leads: false,
       pedidosAssinaturaAnualInicial: false,
       receitaAssinaturaAnualInicial: false,
       pedidosAssinaturaMensalInicial: false,
@@ -335,6 +306,18 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       pedidosAssinaturaMensalRecorrente: false,
       receitaAssinaturaMensalRecorrente: false
     }
+    
+    const saved = localStorage.getItem('dashboardVisibleColumns')
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved)
+        // Garantir que todas as colunas estão presentes
+        return { ...defaultColumns, ...parsed }
+      } catch {
+        return defaultColumns
+      }
+    }
+    return defaultColumns
   }
   
   const [visibleColumns, setVisibleColumns] = useState(getInitialVisibleColumns())
@@ -354,6 +337,12 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   
   // Estado para alternar entre TACoS e ROAS
   const [showROAS, setShowROAS] = useState(false)
+  
+  // Estado para alternar entre Receita por Sessão e Taxa de Conversão
+  const [showRevenuePerSession, setShowRevenuePerSession] = useState(true)
+  
+  // Estado para alternar entre Taxa de Conversão por Leads e Número Absoluto de Leads
+  const [showLeadsConversionRate, setShowLeadsConversionRate] = useState(true)
   
   // Estado para filtro de cluster
   const [selectedCluster, setSelectedCluster] = useState<string>('')
@@ -738,6 +727,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     receitaNovosClientes: acc.receitaNovosClientes + item.Receita_Novos_Clientes,
     investimento: acc.investimento + item.Investimento,
     cliques: acc.cliques + item.Cliques,
+    leads: acc.leads + (item.Leads || 0),
     pedidosAssinaturaAnualInicial: acc.pedidosAssinaturaAnualInicial + (item.Pedidos_Assinatura_Anual_Inicial || 0),
     receitaAssinaturaAnualInicial: acc.receitaAssinaturaAnualInicial + (item.Receita_Assinatura_Anual_Inicial || 0),
     pedidosAssinaturaMensalInicial: acc.pedidosAssinaturaMensalInicial + (item.Pedidos_Assinatura_Mensal_Inicial || 0),
@@ -757,6 +747,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     receitaNovosClientes: 0,
     investimento: 0,
     cliques: 0,
+    leads: 0,
     pedidosAssinaturaAnualInicial: 0,
     receitaAssinaturaAnualInicial: 0,
     pedidosAssinaturaMensalInicial: 0,
@@ -779,6 +770,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     receitaNovosClientes: acc.receitaNovosClientes + item.Receita_Novos_Clientes,
     investimento: acc.investimento + item.Investimento,
     cliques: acc.cliques + item.Cliques,
+    leads: acc.leads + (item.Leads || 0),
     pedidosAssinaturaAnualInicial: acc.pedidosAssinaturaAnualInicial + (item.Pedidos_Assinatura_Anual_Inicial || 0),
     receitaAssinaturaAnualInicial: acc.receitaAssinaturaAnualInicial + (item.Receita_Assinatura_Anual_Inicial || 0),
     pedidosAssinaturaMensalInicial: acc.pedidosAssinaturaMensalInicial + (item.Pedidos_Assinatura_Mensal_Inicial || 0),
@@ -798,6 +790,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     receitaNovosClientes: 0,
     investimento: 0,
     cliques: 0,
+    leads: 0,
     pedidosAssinaturaAnualInicial: 0,
     receitaAssinaturaAnualInicial: 0,
     pedidosAssinaturaMensalInicial: 0,
@@ -815,6 +808,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const newCustomerRate = totals.pedidos > 0 ? (totals.novosClientes / totals.pedidos) * 100 : 0
   // Taxa de adição ao carrinho - limitando a um máximo de 100% por sessão
   const addToCartRate = totals.sessoes > 0 ? Math.min((totals.adicoesCarrinho / totals.sessoes) * 100, 100) : 0
+  // Taxa de conversão por leads (baseada em sessões)
+  const leadsConversionRate = totals.sessoes > 0 ? (totals.pedidos / totals.sessoes) * 100 : 0
 
   // Calcular ROAS usando receita paga geral e investimento total
   const roas = totals.investimento > 0 ? totals.receitaPaga / totals.investimento : 0
@@ -832,6 +827,11 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const previousRevenuePerSession = previousTotals.sessoes > 0 ? previousTotals.receita / previousTotals.sessoes : 0
   const previousNewCustomerRate = previousTotals.pedidos > 0 ? (previousTotals.novosClientes / previousTotals.pedidos) * 100 : 0
   const previousAddToCartRate = previousTotals.sessoes > 0 ? Math.min((previousTotals.adicoesCarrinho / previousTotals.sessoes) * 100, 100) : 0
+  const previousLeadsConversionRate = previousTotals.sessoes > 0 ? (previousTotals.pedidos / previousTotals.sessoes) * 100 : 0
+  
+  // Calcular ROAS e TACoS do período anterior
+  const previousROAS = previousTotals.investimento > 0 ? previousTotals.receitaPaga / previousTotals.investimento : 0
+  const previousTACoS = previousTotals.receitaPaga > 0 ? (previousTotals.investimento / previousTotals.receitaPaga) * 100 : 0
 
   // Calcular run rate da meta do mês
   const runRateData = calculateRunRate()
@@ -864,6 +864,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         existingDate.paidRevenue += item.Receita_Paga
         existingDate.newCustomerRevenue += item.Receita_Novos_Clientes
         existingDate.investment += item.Investimento
+        existingDate.leads += (item.Leads || 0)
         existingDate.averageTicket = existingDate.orders > 0 ? existingDate.revenue / existingDate.orders : 0
       } else {
         const orders = item.Pedidos
@@ -880,6 +881,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
           paidRevenue: item.Receita_Paga,
           newCustomerRevenue: item.Receita_Novos_Clientes,
           investment: item.Investimento,
+          leads: item.Leads || 0,
           averageTicket: orders > 0 ? revenue / orders : 0
         })
       }
@@ -896,6 +898,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       paidRevenue: number;
       newCustomerRevenue: number;
       investment: number;
+      leads: number;
       averageTicket: number;
     }[])
     .sort((a, b) => {
@@ -923,6 +926,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     const paidRevenue = timelineData.map(d => d.paidRevenue)
     const newCustomerRevenue = timelineData.map(d => d.newCustomerRevenue)
     const investment = timelineData.map(d => d.investment)
+    const leads = timelineData.map(d => d.leads)
     const averageTicket = timelineData.map(d => d.averageTicket)
     
     // Calcular média móvel para todas as métricas
@@ -936,6 +940,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     const paidRevenueMA = calculateMovingAverage(paidRevenue)
     const newCustomerRevenueMA = calculateMovingAverage(newCustomerRevenue)
     const investmentMA = calculateMovingAverage(investment)
+    const leadsMA = calculateMovingAverage(leads)
     const averageTicketMA = calculateMovingAverage(averageTicket)
     
     // Retornar apenas os dados a partir do 7º dia (índice 6)
@@ -951,6 +956,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       paidRevenueMA: paidRevenueMA[index],
       newCustomerRevenueMA: newCustomerRevenueMA[index],
       investmentMA: investmentMA[index],
+      leadsMA: leadsMA[index],
       averageTicketMA: averageTicketMA[index]
     }))
   })() : timelineData
@@ -1166,6 +1172,55 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       return previous > 0 ? -100 : 0 // Se havia dados antes e agora não há, queda de 100%
     }
     return ((current - previous) / previous) * 100
+  }
+
+  // Calcular crescimento de ROAS e TACoS
+  const tacos = totals.receitaPaga > 0 ? (totals.investimento / totals.receitaPaga) * 100 : 0
+  const roasGrowth = calculateGrowth(roas, previousROAS)
+  const tacosGrowth = calculateGrowth(tacos, previousTACoS)
+
+  // Função para alternar entre Receita por Sessão e Taxa de Conversão
+  const toggleRevenuePerSession = () => {
+    const newValue = !showRevenuePerSession
+    setShowRevenuePerSession(newValue)
+    
+    // Evento de tracking
+    console.log('📊 Métrica alternada:', {
+      from: showRevenuePerSession ? 'Receita por Sessão' : 'Taxa de Conversão',
+      to: newValue ? 'Receita por Sessão' : 'Taxa de Conversão',
+      timestamp: new Date().toISOString()
+    })
+    
+    // Se tiver Google Analytics ou outro serviço de tracking configurado
+    if (typeof window !== 'undefined' && (window as any).gtag) {
+      (window as any).gtag('event', 'metric_toggle', {
+        metric_name: newValue ? 'revenue_per_session' : 'conversion_rate',
+        previous_metric: showRevenuePerSession ? 'revenue_per_session' : 'conversion_rate',
+        page_location: window.location.href
+      })
+    }
+  }
+
+  // Função para alternar entre Taxa de Conversão por Leads e Número Absoluto de Leads
+  const toggleLeadsConversionRate = () => {
+    const newValue = !showLeadsConversionRate
+    setShowLeadsConversionRate(newValue)
+    
+    // Evento de tracking
+    console.log('📊 Métrica alternada:', {
+      from: showLeadsConversionRate ? 'Taxa de Conversão por Leads' : 'Número Absoluto de Leads',
+      to: newValue ? 'Taxa de Conversão por Leads' : 'Número Absoluto de Leads',
+      timestamp: new Date().toISOString()
+    })
+    
+    // Se tiver Google Analytics ou outro serviço de tracking configurado
+    if (typeof window !== 'undefined' && (window as any).gtag) {
+      (window as any).gtag('event', 'metric_toggle', {
+        metric_name: newValue ? 'leads_conversion_rate' : 'leads_absolute',
+        previous_metric: showLeadsConversionRate ? 'leads_conversion_rate' : 'leads_absolute',
+        page_location: window.location.href
+      })
+    }
   }
 
   // Função para lidar com ordenação
@@ -2345,12 +2400,9 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                     },
                     {
                       title: showROAS ? "ROAS (Receita/Invest)" : "TACoS (Invest/Receita)",
-                      value: showROAS ? roas : (totals.receitaPaga > 0 ? (totals.investimento / totals.receitaPaga) * 100 : 0),
+                      value: showROAS ? roas : tacos,
                       icon: TrendingUp,
-                      growth: showROAS ? 0 : calculateGrowth(
-                        totals.receitaPaga > 0 ? (totals.investimento / totals.receitaPaga) * 100 : 0,
-                        previousTotals.receitaPaga > 0 ? (previousTotals.investimento / previousTotals.receitaPaga) * 100 : 0
-                      ),
+                      growth: showROAS ? roasGrowth : tacosGrowth,
                       format: showROAS ? "number" : "percentage",
                       color: "green"
                     },
@@ -2363,20 +2415,24 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       growth: calculateGrowth(avgOrderValue, previousAvgOrderValue)
                     },
                     {
+                      title: showRevenuePerSession ? "Receita por Sessão" : "Taxa de Conversão",
+                      value: showRevenuePerSession ? revenuePerSession : conversionRate,
+                      icon: showRevenuePerSession ? ArrowUpCircle : Sparkles,
+                      format: showRevenuePerSession ? "currency" as const : "percentage" as const,
+                      color: showRevenuePerSession ? "blue" : "red",
+                      growth: showRevenuePerSession 
+                        ? calculateGrowth(revenuePerSession, previousRevenuePerSession)
+                        : calculateGrowth(conversionRate, previousConversionRate),
+                      onToggle: toggleRevenuePerSession,
+                      toggleLabel: showRevenuePerSession ? "Taxa de Conversão" : "Receita por Sessão"
+                    },
+                    {
                       title: "Novos Clientes",
                       value: newCustomerRate,
                       icon: Users2,
                       format: "percentage",
                       color: "indigo",
                       growth: calculateGrowth(newCustomerRate, previousNewCustomerRate)
-                    },
-                    {
-                      title: "Taxa de Conversão",
-                      value: conversionRate,
-                      icon: Sparkles,
-                      format: "percentage" as const,
-                      color: "red",
-                      growth: calculateGrowth(conversionRate, previousConversionRate)
                     },
                     {
                       title: "Taxa de Adição ao Carrinho",
@@ -2387,12 +2443,16 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       growth: calculateGrowth(addToCartRate, previousAddToCartRate)
                     },
                     {
-                      title: "Receita por Sessão",
-                      value: revenuePerSession,
-                      icon: ArrowUpCircle,
-                      format: "currency" as const,
-                      color: "green",
-                      growth: calculateGrowth(revenuePerSession, previousRevenuePerSession)
+                      title: showLeadsConversionRate ? "Taxa de Conversão por Leads" : "Leads",
+                      value: showLeadsConversionRate ? leadsConversionRate : totals.leads,
+                      icon: showLeadsConversionRate ? Target : Users,
+                      format: showLeadsConversionRate ? "percentage" as const : "number" as const,
+                      color: "gray",
+                      growth: showLeadsConversionRate 
+                        ? calculateGrowth(leadsConversionRate, previousLeadsConversionRate)
+                        : calculateGrowth(totals.leads, previousTotals.leads),
+                      onToggle: toggleLeadsConversionRate,
+                      toggleLabel: showLeadsConversionRate ? "Leads" : "Taxa de Conversão por Leads"
                     },
                     // Assinaturas - só mostrar se houver dados
                     ...(totals.pedidosAssinaturaAnualInicial > 0 || totals.pedidosAssinaturaMensalInicial > 0 || 
@@ -2589,27 +2649,32 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                         <div className="p-2.5 rounded-lg bg-gray-300 text-gray-700">
                           <TrendingUp className="w-5 h-5" />
                         </div>
-                        <div className="flex items-center gap-1">
-                          <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                          <span className="text-xs text-gray-500">Clique para alternar</span>
-                        </div>
+                        {!isLoadingPrevious && (showROAS ? roasGrowth : tacosGrowth) !== 0 && (
+                          <div className="flex items-center gap-1">
+                            {(showROAS ? roasGrowth : tacosGrowth) > 0 ? (
+                              <ArrowUpRight className="w-4 h-4 text-green-600" />
+                            ) : (showROAS ? roasGrowth : tacosGrowth) < 0 ? (
+                              <ArrowDownRight className="w-4 h-4 text-red-600" />
+                            ) : null}
+                            <span className={`text-sm font-medium ${(showROAS ? roasGrowth : tacosGrowth) > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {(showROAS ? roasGrowth : tacosGrowth) > 0 ? '+' : ''}
+                              {(showROAS ? roasGrowth : tacosGrowth).toFixed(1)}%
+                            </span>
+                          </div>
+                        )}
                       </div>
-                      <div className="mb-2">
-                        <h3 className="text-sm font-medium text-gray-600">
-                          {showROAS ? 'ROAS (Receita/Invest)' : 'TACoS (Invest/Receita)'}
-                        </h3>
-                      </div>
-                      <div className="text-2xl font-bold text-green-600">
+                      <h3 className="text-sm font-medium text-gray-600 mb-1">
+                        {showROAS ? 'ROAS (Receita/Invest)' : 'TACoS (Invest/Receita)'}
+                      </h3>
+                      <div className="text-2xl font-bold text-gray-900">
                         {showROAS 
                           ? `${roas.toFixed(2)}x`
-                          : `${(totals.receitaPaga > 0 ? (totals.investimento / totals.receitaPaga) * 100 : 0).toFixed(1)}%`
+                          : `${tacos.toFixed(1)}%`
                         }
                       </div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        {showROAS 
-                          ? `R$ ${formatNumber(totals.receitaPaga)} / R$ ${formatNumber(totals.investimento)}`
-                          : `R$ ${formatNumber(totals.investimento)} / R$ ${formatNumber(totals.receitaPaga)}`
-                        }
+                      <div className="flex items-center gap-1 mt-2">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                        <span className="text-xs text-gray-500">Clique para alternar</span>
                       </div>
                     </div>
                     <MetricCard
@@ -2624,13 +2689,71 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
                   {/* Metrics Grid - Second Row */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                    <div 
+                      className="bg-white rounded-xl shadow-lg p-4 border border-gray-100 hover:shadow-xl transition-all duration-200 cursor-pointer"
+                      onClick={toggleRevenuePerSession}
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="p-2.5 rounded-lg bg-gray-300 text-gray-700">
+                          {showRevenuePerSession ? (
+                            <ArrowUpCircle className="w-5 h-5" />
+                          ) : (
+                            <Sparkles className="w-5 h-5" />
+                          )}
+                        </div>
+                        {!isLoadingPrevious && (showRevenuePerSession 
+                          ? calculateGrowth(revenuePerSession, previousRevenuePerSession)
+                          : calculateGrowth(conversionRate, previousConversionRate)
+                        ) !== 0 && (
+                          <div className="flex items-center gap-1">
+                            {(showRevenuePerSession 
+                              ? calculateGrowth(revenuePerSession, previousRevenuePerSession)
+                              : calculateGrowth(conversionRate, previousConversionRate)
+                            ) > 0 ? (
+                              <ArrowUpRight className="w-4 h-4 text-green-600" />
+                            ) : (showRevenuePerSession 
+                              ? calculateGrowth(revenuePerSession, previousRevenuePerSession)
+                              : calculateGrowth(conversionRate, previousConversionRate)
+                            ) < 0 ? (
+                              <ArrowDownRight className="w-4 h-4 text-red-600" />
+                            ) : null}
+                            <span className={`text-sm font-medium ${(showRevenuePerSession 
+                              ? calculateGrowth(revenuePerSession, previousRevenuePerSession)
+                              : calculateGrowth(conversionRate, previousConversionRate)
+                            ) > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {(showRevenuePerSession 
+                                ? calculateGrowth(revenuePerSession, previousRevenuePerSession)
+                                : calculateGrowth(conversionRate, previousConversionRate)
+                              ) > 0 ? '+' : ''}
+                              {(showRevenuePerSession 
+                                ? calculateGrowth(revenuePerSession, previousRevenuePerSession)
+                                : calculateGrowth(conversionRate, previousConversionRate)
+                              ).toFixed(1)}%
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <h3 className="text-sm font-medium text-gray-600 mb-1">
+                        {showRevenuePerSession ? 'Receita por Sessão' : 'Taxa de Conversão'}
+                      </h3>
+                      <div className="text-2xl font-bold text-gray-900">
+                        {showRevenuePerSession 
+                          ? formatCurrency(revenuePerSession)
+                          : `${conversionRate.toFixed(2)}%`
+                        }
+                      </div>
+                      <div className="flex items-center gap-1 mt-2">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                        <span className="text-xs text-gray-500">Clique para alternar</span>
+                      </div>
+                    </div>
                     <MetricCard
-                      title="Taxa de Conversão"
-                      value={conversionRate}
-                      icon={Sparkles}
+                      title="Novos Clientes"
+                      value={newCustomerRate}
+                      icon={Users2}
                       format="percentage"
-                      color="red"
-                      growth={calculateGrowth(conversionRate, previousConversionRate)}
+                      color="indigo"
+                      growth={calculateGrowth(newCustomerRate, previousNewCustomerRate)}
                     />
                     <MetricCard
                       title="Taxa de Adição ao Carrinho"
@@ -2640,22 +2763,64 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       color="blue"
                       growth={calculateGrowth(addToCartRate, previousAddToCartRate)}
                     />
-                    <MetricCard
-                      title="Receita por Sessão"
-                      value={revenuePerSession}
-                      icon={ArrowUpCircle}
-                      format="currency"
-                      color="green"
-                      growth={calculateGrowth(revenuePerSession, previousRevenuePerSession)}
-                    />
-                    <MetricCard
-                      title="Novos Clientes"
-                      value={newCustomerRate}
-                      icon={Users2}
-                      format="percentage"
-                      color="indigo"
-                      growth={calculateGrowth(newCustomerRate, previousNewCustomerRate)}
-                    />
+                    <div 
+                      className="bg-white rounded-xl shadow-lg p-4 border border-gray-100 hover:shadow-xl transition-all duration-200 cursor-pointer"
+                      onClick={toggleLeadsConversionRate}
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="p-2.5 rounded-lg bg-gray-300 text-gray-700">
+                          {showLeadsConversionRate ? (
+                            <Target className="w-5 h-5" />
+                          ) : (
+                            <Users className="w-5 h-5" />
+                          )}
+                        </div>
+                        {!isLoadingPrevious && (showLeadsConversionRate 
+                          ? calculateGrowth(leadsConversionRate, previousLeadsConversionRate)
+                          : calculateGrowth(totals.leads, previousTotals.leads)
+                        ) !== 0 && (
+                          <div className="flex items-center gap-1">
+                            {(showLeadsConversionRate 
+                              ? calculateGrowth(leadsConversionRate, previousLeadsConversionRate)
+                              : calculateGrowth(totals.leads, previousTotals.leads)
+                            ) > 0 ? (
+                              <ArrowUpRight className="w-4 h-4 text-green-600" />
+                            ) : (showLeadsConversionRate 
+                              ? calculateGrowth(leadsConversionRate, previousLeadsConversionRate)
+                              : calculateGrowth(totals.leads, previousTotals.leads)
+                            ) < 0 ? (
+                              <ArrowDownRight className="w-4 h-4 text-red-600" />
+                            ) : null}
+                            <span className={`text-sm font-medium ${(showLeadsConversionRate 
+                              ? calculateGrowth(leadsConversionRate, previousLeadsConversionRate)
+                              : calculateGrowth(totals.leads, previousTotals.leads)
+                            ) > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {(showLeadsConversionRate 
+                                ? calculateGrowth(leadsConversionRate, previousLeadsConversionRate)
+                                : calculateGrowth(totals.leads, previousTotals.leads)
+                              ) > 0 ? '+' : ''}
+                              {(showLeadsConversionRate 
+                                ? calculateGrowth(leadsConversionRate, previousLeadsConversionRate)
+                                : calculateGrowth(totals.leads, previousTotals.leads)
+                              ).toFixed(1)}%
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <h3 className="text-sm font-medium text-gray-600 mb-1">
+                        {showLeadsConversionRate ? 'Taxa de Conversão por Leads' : 'Leads'}
+                      </h3>
+                      <div className="text-2xl font-bold text-gray-900">
+                        {showLeadsConversionRate 
+                          ? `${leadsConversionRate.toFixed(2)}%`
+                          : formatNumber(totals.leads)
+                        }
+                      </div>
+                      <div className="flex items-center gap-1 mt-2">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                        <span className="text-xs text-gray-500">Clique para alternar</span>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Assinatura Row - Mostra apenas se houver dados */}
@@ -2749,7 +2914,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 <div className="mb-6">
                   <div className="bg-white rounded-xl shadow-lg p-4 border border-gray-200">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-semibold text-gray-900">Evolução de Sessões e Receita</h3>
+                      <h3 className="text-base font-semibold text-gray-900">Timeline de Métricas</h3>
                       <div className="flex items-center gap-2">
                         <label htmlFor="moving-average-toggle" className="text-sm text-gray-600">
                           Média Móvel (7 dias):
@@ -3045,6 +3210,16 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               % Novos Clientes
                             </SortableHeader>
                           )}
+                          {visibleColumns.leads && (
+                            <SortableHeader
+                              field="leads"
+                              currentSortField={sortField}
+                              currentSortDirection={sortDirection}
+                              onSort={handleSort}
+                            >
+                              Leads
+                            </SortableHeader>
+                          )}
                           {visibleColumns.pedidosAssinaturaAnualInicial && totals.pedidosAssinaturaAnualInicial > 0 && (
                             <SortableHeader
                               field="pedidosAssinaturaAnualInicial"
@@ -3265,6 +3440,9 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                                   {totals.pedidos > 0 ? ((totals.novosClientes / totals.pedidos) * 100).toFixed(1) : '0.0'}%
                                 </td>
                               )}
+                              {visibleColumns.leads && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-cyan-600">{formatNumber(totals.leads)}</td>
+                              )}
                               {visibleColumns.pedidosAssinaturaAnualInicial && totals.pedidosAssinaturaAnualInicial > 0 && (
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">{formatNumber(totals.pedidosAssinaturaAnualInicial)}</td>
                               )}
@@ -3325,7 +3503,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
                 {/* Dropdown de Métricas - Overlay Elegante */}
                 {showColumnSelector && (
-                  <div className="fixed inset-0 z-50 overflow-hidden">
+                  <div className={`fixed inset-0 ${isTableFullscreen ? 'z-[9999]' : 'z-50'} overflow-hidden`}>
                     {/* Backdrop */}
                     <div 
                       className="absolute inset-0 bg-black/20 backdrop-blur-sm"
@@ -3333,7 +3511,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                     />
                     
                     {/* Dropdown Content */}
-                    <div className="absolute top-20 right-6 w-96 max-w-[calc(100vw-3rem)]">
+                    <div className={`absolute ${isTableFullscreen ? 'top-24' : 'top-20'} right-6 w-96 max-w-[calc(100vw-3rem)]`}>
                       <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden animate-in slide-in-from-top-2 duration-300">
                         {/* Header */}
                         <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4">
@@ -3362,7 +3540,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
                         {/* Search Bar */}
                         <div className="px-6 py-4 border-b border-gray-200">
-                          <div className="relative">
+                          <div className="relative mb-3">
                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                               <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -3386,6 +3564,33 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               </button>
                             )}
                           </div>
+                          {/* Botões de Selecionar Todas / Desselecionar Todas */}
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                const allColumns = Object.keys(visibleColumns).reduce((acc, key) => {
+                                  acc[key] = true
+                                  return acc
+                                }, {} as typeof visibleColumns)
+                                setVisibleColumns(allColumns)
+                              }}
+                              className="flex-1 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                            >
+                              Selecionar Todas
+                            </button>
+                            <button
+                              onClick={() => {
+                                const noColumns = Object.keys(visibleColumns).reduce((acc, key) => {
+                                  acc[key] = false
+                                  return acc
+                                }, {} as typeof visibleColumns)
+                                setVisibleColumns(noColumns)
+                              }}
+                              className="flex-1 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
+                            >
+                              Desselecionar Todas
+                            </button>
+                          </div>
                         </div>
 
                         {/* Content */}
@@ -3407,7 +3612,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                                 { key: 'taxaReceitaPaga', label: '% Receita Paga' },
                                 { key: 'novosClientes', label: 'Novos Clientes' },
                                 { key: 'receitaNovosClientes', label: 'Receita Novos Clientes' },
-                                { key: 'percentualNovosClientes', label: '% Novos Clientes' }
+                                { key: 'percentualNovosClientes', label: '% Novos Clientes' },
+                                { key: 'leads', label: 'Leads' }
                               ]
                               
                               const hasResults = allMetrics.some(metric => 
@@ -3478,7 +3684,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                               const behaviorMetrics = [
                                 { key: 'sessoes', label: 'Sessões', icon: '👥' },
                                 { key: 'adicoesCarrinho', label: 'Adições ao Carrinho', icon: '🛒' },
-                                { key: 'taxaAdicaoCarrinho', label: 'Taxa de Adição ao Carrinho', icon: '📊' }
+                                { key: 'taxaAdicaoCarrinho', label: 'Taxa de Adição ao Carrinho', icon: '📊' },
+                                { key: 'leads', label: 'Leads', icon: '🎯' }
                               ].filter(metric => 
                                 !metricSearchTerm || 
                                 metric.label.toLowerCase().includes(metricSearchTerm.toLowerCase()) ||
@@ -3685,15 +3892,48 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                     )}
                   </p>
                 </div>
-                <button
-                  onClick={() => setIsTableFullscreen(false)}
-                  className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                  title="Sair da tela cheia"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+                <div className="flex items-center gap-2">
+                  {/* Metrics Selector Button */}
+                  <button
+                    onClick={() => setShowColumnSelector(!showColumnSelector)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
+                      showColumnSelector 
+                        ? 'bg-green-600 text-white hover:bg-green-700 shadow-sm' 
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
+                    }`}
+                    title="Selecionar métricas"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                    </svg>
+                    <span>Métricas</span>
+                    <span className={`px-2 py-0.5 text-xs rounded-full ${
+                      showColumnSelector 
+                        ? 'bg-white/20 text-white' 
+                        : 'bg-blue-100 text-blue-600'
+                    }`}>
+                      {Object.values(visibleColumns).filter(Boolean).length}
+                    </span>
+                    <svg 
+                      className={`w-4 h-4 transition-transform duration-200 ${showColumnSelector ? 'rotate-180' : ''}`} 
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {/* Close Button */}
+                  <button
+                    onClick={() => setIsTableFullscreen(false)}
+                    className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    title="Sair da tela cheia"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
               </div>
 
               {/* Filtros e Modelo de Atribuição */}

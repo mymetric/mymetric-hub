@@ -239,7 +239,7 @@ const OrdersByLocation = ({ selectedTable, startDate, endDate }: OrdersByLocatio
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
           <div className="flex items-center gap-2 mb-1">
             <Package className="w-4 h-4 text-blue-600" />
@@ -266,14 +266,6 @@ const OrdersByLocation = ({ selectedTable, startDate, endDate }: OrdersByLocatio
             </span>
           </div>
           <p className="text-2xl font-bold text-purple-900">{formatNumber(locationData.length)}</p>
-        </div>
-
-        <div className="bg-orange-50 rounded-lg p-4 border border-orange-100">
-          <div className="flex items-center gap-2 mb-1">
-            <Package className="w-4 h-4 text-orange-600" />
-            <span className="text-xs text-orange-600 font-medium">Cobertura de Dados</span>
-          </div>
-          <p className="text-2xl font-bold text-orange-900">{locationCoverage.toFixed(1)}%</p>
         </div>
       </div>
 
