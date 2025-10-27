@@ -24,7 +24,8 @@ import {
   Activity,
   Users,
   ChevronDown,
-  Truck
+  Truck,
+  ArrowRight
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
 import Logo from './Logo'
@@ -53,6 +54,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useUrlParams } from '../hooks/useUrlParams'
 import { getDefaultPeriodForTab, getDatePresets, formatDateToString } from '../utils/dateUtils'
 import OrdersTab from './OrdersTab'
+import LeadsTab from './LeadsTab'
 
 interface User {
   email: string
@@ -1630,15 +1632,16 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     'visao-geral',
     'midia-paga',
     'funil-conversao',
-    'dados-detalhados',
     'produtos',
     'tempo-real',
-    'pedidos'
+    'pedidos',
+    'leads'
   ]
 
   // Abas que ficam no submenu
   const submenuTabs = [
     ...(selectedTable === 'havaianas' ? ['havaianas'] : []),
+    'dados-detalhados',
     'frete',
     'ab-testing',
     ...(user?.admin ? ['configuracao'] : [])
@@ -1744,7 +1747,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 'frete': { label: 'Frete', icon: Truck },
                 'produtos': { label: 'Produtos', icon: ShoppingCart },
                 'tempo-real': { label: 'Tempo Real', icon: Activity },
-                'pedidos': { label: 'Pedidos', icon: ShoppingBag }
+                'pedidos': { label: 'Pedidos', icon: ShoppingBag },
+                'leads': { label: 'Leads', icon: User }
               }[tabId]
 
               if (!tabConfig) return null
@@ -1791,6 +1795,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                     {submenuTabs.map((tabId) => {
                       const tabConfig = {
                         'havaianas': { label: 'Product Scoring', icon: Package },
+                        'dados-detalhados': { label: 'Dados Detalhados', icon: Database },
                         'frete': { label: 'Frete', icon: Truck },
                         'ab-testing': { label: 'Testes A/B', icon: Target },
                         'configuracao': { label: 'Configuração', icon: Users }
@@ -1843,6 +1848,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   {activeTab === 'tempo-real' && 'Tempo Real'}
                   {activeTab === 'configuracao' && user?.admin && 'Configuração'}
                   {activeTab === 'pedidos' && 'Pedidos'}
+                  {activeTab === 'leads' && 'Leads'}
                 </span>
               </div>
               
@@ -2089,6 +2095,26 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                         )}
                       </div>
                     </button>
+
+                    <button
+                      onClick={() => {
+                        handleTabChange('leads')
+                        setShowMobileTabMenu(false)
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                        activeTab === 'leads'
+                          ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <User className="w-5 h-5" />
+                        <span>Leads</span>
+                        {activeTab === 'leads' && (
+                          <div className="ml-auto w-2 h-2 bg-purple-600 rounded-full"></div>
+                        )}
+                      </div>
+                    </button>
                   </div>
                 </div>
               </>
@@ -2277,6 +2303,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   {activeTab === 'funil-conversao' && 'Padrão: Últimos 60 dias até hoje'}
                   {activeTab === 'dados-detalhados' && 'Padrão: Últimos 7 dias até hoje'}
                   {activeTab === 'pedidos' && 'Padrão: Hoje'}
+                  {activeTab === 'leads' && 'Padrão: Últimos 12 meses até hoje'}
                   {!['visao-geral', 'funil-conversao', 'dados-detalhados'].includes(activeTab) && 'Padrão: Mês atual até hoje'}
                 </p>
               </div>
@@ -3499,6 +3526,20 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       </button>
                     </div>
                   )}
+
+                  {/* Link para Dados Detalhados */}
+                  <div className="px-6 py-4 border-t border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+                    <button
+                      onClick={() => handleTabChange('dados-detalhados')}
+                      className="flex items-center justify-between w-full text-sm font-medium text-blue-700 hover:text-blue-800 transition-colors group"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Database className="w-5 h-5 text-blue-600" />
+                        <span>Ver dados detalhados dos clusters</span>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-blue-600 group-hover:translate-x-1 transition-transform" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Dropdown de Métricas - Overlay Elegante */}
@@ -4388,6 +4429,10 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
         {activeTab === 'pedidos' && (
           <OrdersTab selectedTable={selectedTable} startDate={startDate} endDate={endDate} />
+        )}
+
+        {activeTab === 'leads' && (
+          <LeadsTab selectedTable={selectedTable} startDate={startDate} endDate={endDate} />
         )}
 
       </main>

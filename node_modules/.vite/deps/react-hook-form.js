@@ -244,6 +244,7 @@ function useController(props) {
     exact: true
   });
   const _props = import_react.default.useRef(props);
+  const _previousNameRef = import_react.default.useRef(void 0);
   const _registerProps = import_react.default.useRef(control.register(name, {
     ...props.rules,
     value,
@@ -307,6 +308,10 @@ function useController(props) {
   }), [name, disabled, formState.disabled, onChange, onBlur, ref, value]);
   import_react.default.useEffect(() => {
     const _shouldUnregisterField = control._options.shouldUnregister || shouldUnregister;
+    const previousName = _previousNameRef.current;
+    if (previousName && previousName !== name && !isArrayField) {
+      control.unregister(previousName);
+    }
     control.register(name, {
       ..._props.current.rules,
       ...isBoolean(_props.current.disabled) ? { disabled: _props.current.disabled } : {}
@@ -319,13 +324,14 @@ function useController(props) {
     };
     updateMounted(name, true);
     if (_shouldUnregisterField) {
-      const value2 = cloneObject(get(control._options.defaultValues, name));
+      const value2 = cloneObject(get(control._options.defaultValues, name, _props.current.defaultValue));
       set(control._defaultValues, name, value2);
       if (isUndefined(get(control._formValues, name))) {
         set(control._formValues, name, value2);
       }
     }
     !isArrayField && control.register(name);
+    _previousNameRef.current = name;
     return () => {
       (isArrayField ? _shouldUnregisterField && !control._state.action : _shouldUnregisterField) ? control.unregister(name) : updateMounted(name, false);
     };
@@ -463,6 +469,24 @@ var createSubject = () => {
     unsubscribe
   };
 };
+function extractFormValues(fieldsState, formValues) {
+  const values = {};
+  for (const key in fieldsState) {
+    if (fieldsState.hasOwnProperty(key)) {
+      const fieldState = fieldsState[key];
+      const fieldValue = formValues[key];
+      if (fieldState && isObject(fieldState) && fieldValue) {
+        const nestedFieldsState = extractFormValues(fieldState, fieldValue);
+        if (isObject(nestedFieldsState)) {
+          values[key] = nestedFieldsState;
+        }
+      } else if (fieldsState[key]) {
+        values[key] = fieldValue;
+      }
+    }
+  }
+  return values;
+}
 var isEmptyObject = (value) => isObject(value) && !Object.keys(value).length;
 var isFileInput = (element) => element.type === "file";
 var isFunction = (value) => typeof value === "function";
@@ -514,38 +538,37 @@ var objectHasFunction = (data) => {
   }
   return false;
 };
+function isTraversable(value) {
+  return Array.isArray(value) || isObject(value) && !objectHasFunction(value);
+}
 function markFieldsDirty(data, fields = {}) {
-  const isParentNodeArray = Array.isArray(data);
-  if (isObject(data) || isParentNodeArray) {
-    for (const key in data) {
-      if (Array.isArray(data[key]) || isObject(data[key]) && !objectHasFunction(data[key])) {
-        fields[key] = Array.isArray(data[key]) ? [] : {};
-        markFieldsDirty(data[key], fields[key]);
-      } else if (!isNullOrUndefined(data[key])) {
-        fields[key] = true;
-      }
+  for (const key in data) {
+    if (isTraversable(data[key])) {
+      fields[key] = Array.isArray(data[key]) ? [] : {};
+      markFieldsDirty(data[key], fields[key]);
+    } else if (!isUndefined(data[key])) {
+      fields[key] = true;
     }
   }
   return fields;
 }
-function getDirtyFieldsFromDefaultValues(data, formValues, dirtyFieldsFromValues) {
-  const isParentNodeArray = Array.isArray(data);
-  if (isObject(data) || isParentNodeArray) {
-    for (const key in data) {
-      if (Array.isArray(data[key]) || isObject(data[key]) && !objectHasFunction(data[key])) {
-        if (isUndefined(formValues) || isPrimitive(dirtyFieldsFromValues[key])) {
-          dirtyFieldsFromValues[key] = Array.isArray(data[key]) ? markFieldsDirty(data[key], []) : { ...markFieldsDirty(data[key]) };
-        } else {
-          getDirtyFieldsFromDefaultValues(data[key], isNullOrUndefined(formValues) ? {} : formValues[key], dirtyFieldsFromValues[key]);
-        }
+function getDirtyFields(data, formValues, dirtyFieldsFromValues) {
+  if (!dirtyFieldsFromValues) {
+    dirtyFieldsFromValues = markFieldsDirty(formValues);
+  }
+  for (const key in data) {
+    if (isTraversable(data[key])) {
+      if (isUndefined(formValues) || isPrimitive(dirtyFieldsFromValues[key])) {
+        dirtyFieldsFromValues[key] = markFieldsDirty(data[key], Array.isArray(data[key]) ? [] : {});
       } else {
-        dirtyFieldsFromValues[key] = !deepEqual(data[key], formValues[key]);
+        getDirtyFields(data[key], isNullOrUndefined(formValues) ? {} : formValues[key], dirtyFieldsFromValues[key]);
       }
+    } else {
+      dirtyFieldsFromValues[key] = !deepEqual(data[key], formValues[key]);
     }
   }
   return dirtyFieldsFromValues;
 }
-var getDirtyFields = (defaultValues, formValues) => getDirtyFieldsFromDefaultValues(defaultValues, formValues, markFieldsDirty(formValues));
 var defaultResult = {
   value: false,
   isValid: false
@@ -698,12 +721,11 @@ var updateFieldArrayRootError = (errors, error, name) => {
   set(errors, name, fieldArrayErrors);
   return errors;
 };
-var isMessage = (value) => isString(value);
 function getValidateError(result, ref, type = "validate") {
-  if (isMessage(result) || Array.isArray(result) && result.every(isMessage) || isBoolean(result) && !result) {
+  if (isString(result) || Array.isArray(result) && result.every(isString) || isBoolean(result) && !result) {
     return {
       type,
-      message: isMessage(result) ? result : "",
+      message: isString(result) ? result : "",
       ref
     };
   }
@@ -741,7 +763,7 @@ var validateField = async (field, disabledFieldNames, formValues, validateAllFie
     };
   };
   if (isFieldArray ? !Array.isArray(inputValue) || !inputValue.length : required && (!isRadioOrCheckbox2 && (isEmpty || isNullOrUndefined(inputValue)) || isBoolean(inputValue) && !inputValue || isCheckBox && !getCheckboxValue(refs).isValid || isRadio && !getRadioValue(refs).isValid)) {
-    const { value, message } = isMessage(required) ? { value: !!required, message: required } : getValueAndMessage(required);
+    const { value, message } = isString(required) ? { value: !!required, message: required } : getValueAndMessage(required);
     if (value) {
       error[name] = {
         type: INPUT_VALIDATION_RULES.required,
@@ -1085,11 +1107,11 @@ function createFormControl(props = {}) {
           const isFieldArrayRoot = _names.array.has(_f.name);
           const isPromiseFunction = field._f && hasPromiseValidation(field._f);
           if (isPromiseFunction && _proxyFormState.validatingFields) {
-            _updateIsValidating([name], true);
+            _updateIsValidating([_f.name], true);
           }
           const fieldError = await validateField(field, _names.disabled, _formValues, shouldDisplayAllAssociatedErrors, _options.shouldUseNativeValidation && !shouldOnlyCheckValid, isFieldArrayRoot);
           if (isPromiseFunction && _proxyFormState.validatingFields) {
-            _updateIsValidating([name]);
+            _updateIsValidating([_f.name]);
           }
           if (fieldError[_f.name]) {
             context.valid = false;
@@ -1264,7 +1286,7 @@ function createFormControl(props = {}) {
         }
       }
       if (isFieldValueUpdated) {
-        field._f.deps && trigger(field._f.deps);
+        field._f.deps && (!Array.isArray(field._f.deps) || field._f.deps.length > 0) && trigger(field._f.deps);
         shouldRenderByError(name, isValid, error, fieldState);
       }
     }
@@ -1301,10 +1323,13 @@ function createFormControl(props = {}) {
     options.shouldFocus && !validationResult && iterateFieldsByAction(_fields, _focusInput, name ? fieldNames : _names.mount);
     return validationResult;
   };
-  const getValues = (fieldNames) => {
-    const values = {
+  const getValues = (fieldNames, config) => {
+    let values = {
       ..._state.mount ? _formValues : _defaultValues
     };
+    if (config) {
+      values = extractFormValues(config.dirtyFields ? _formState.dirtyFields : _formState.touchedFields, values);
+    }
     return isUndefined(fieldNames) ? values : isString(fieldNames) ? get(values, fieldNames) : fieldNames.map((name) => get(values, name));
   };
   const getFieldState = (name, formState) => ({
@@ -1779,11 +1804,9 @@ function useFieldArray(props) {
   const { control = methods.control, name, keyName = "id", shouldUnregister, rules } = props;
   const [fields, setFields] = import_react.default.useState(control._getFieldArray(name));
   const ids = import_react.default.useRef(control._getFieldArray(name).map(generateId));
-  const _fieldIds = import_react.default.useRef(fields);
   const _actioned = import_react.default.useRef(false);
-  _fieldIds.current = fields;
   control._names.array.add(name);
-  import_react.default.useMemo(() => rules && control.register(name, rules), [control, rules, name]);
+  import_react.default.useMemo(() => rules && fields.length >= 0 && control.register(name, rules), [control, name, fields.length, rules]);
   useIsomorphicLayoutEffect(() => control._subjects.array.subscribe({
     next: ({ values, name: fieldArrayName }) => {
       if (fieldArrayName === name || !fieldArrayName) {
@@ -2059,10 +2082,12 @@ function useForm(props = {}) {
   _formControl.current.formState = getProxyFormState(formState, control);
   return _formControl.current;
 }
+var Watch = ({ control, names, render }) => render(useWatch({ control, name: names }));
 export {
   Controller,
   Form,
   FormProvider,
+  Watch,
   appendErrors,
   createFormControl,
   get,

@@ -1,4 +1,4 @@
-import { AdsCampaignRequest, AdsCampaignResponse, FreteRequest, FreteResponse } from '../types'
+import { AdsCampaignRequest, AdsCampaignResponse, FreteRequest, FreteResponse, LeadsOrdersRequest, LeadsOrdersResponse } from '../types'
 
 const API_BASE_URL = (typeof window !== 'undefined' && window.location.origin.includes('localhost'))
   ? '/api'
@@ -518,6 +518,66 @@ export const api = {
       }
       console.error('❌ Orders fetch error:', error)
       throw new Error('Erro ao buscar pedidos.')
+    }
+  },
+
+  async getLeadsOrders(token: string, leadsData: LeadsOrdersRequest, signal?: AbortSignal): Promise<LeadsOrdersResponse> {
+    try {
+      console.log('🌐 Leads Orders API Request:', {
+        url: `${API_BASE_URL}/metrics/leads_orders`,
+        method: 'POST',
+        body: leadsData
+      })
+
+      // Criar um timeout de 60 segundos
+      const timeoutId = setTimeout(() => {
+        if (!signal?.aborted) {
+          console.warn('⏱️ Leads Orders request timeout após 60s')
+        }
+      }, 60000)
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/metrics/leads_orders`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify(leadsData),
+          signal,
+        })
+
+        clearTimeout(timeoutId)
+
+        console.log('📡 Leads Orders Response status:', response.status, response.statusText)
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          console.error('❌ Leads Orders API Error:', errorText)
+          throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+        }
+
+        const data = await response.json()
+        console.log('📦 Leads Orders API Response data:', data)
+        return data
+      } catch (fetchError) {
+        clearTimeout(timeoutId)
+        throw fetchError
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('⏹️ Leads Orders request aborted (AbortError)')
+        throw error
+      }
+      
+      // Detectar timeout
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        console.error('❌ Leads Orders fetch error (Network):', error)
+        throw new Error('Network error: Falha ao conectar com o servidor. Verifique sua conexão.')
+      }
+      
+      console.error('❌ Leads Orders fetch error:', error)
+      throw error instanceof Error ? error : new Error('Erro ao buscar leads e pedidos.')
     }
   },
 

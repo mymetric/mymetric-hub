@@ -207,4 +207,45 @@ export interface AdsCreativeResponse {
   total_rows?: number
   summary?: AdsCreativeSummary
   cache_info?: CacheInfo
+}
+
+// Tipos para Leads
+export interface LeadsOrderItem {
+  subscribe_timestamp: string
+  name: string
+  phone: string
+  email: string
+  fsm_source: string
+  fsm_medium: string
+  fsm_campaign: string
+  transaction_id: string
+  purchase_timestamp: string
+  value: number
+  source: string
+  medium: string
+  campaign: string
+  days_between_subscribe_and_purchase: number
+  minutes_between_subscribe_and_purchase: number
+}
+
+export interface LeadsOrdersRequest {
+  start_date?: string
+  end_date?: string
+  table_name: string
+  limit?: number
+  offset?: number
+  last_cache?: boolean
+}
+
+export interface LeadsOrdersResponse {
+  data: LeadsOrderItem[]
+  total_rows: number
+  total_records?: number
+  summary: Record<string, any>
+  cache_info: Record<string, any>
+  pagination?: {
+    limit: number
+    offset: number
+    has_more: boolean
+  }
 } 

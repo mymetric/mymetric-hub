@@ -59,6 +59,11 @@ export const getDatePresets = () => {
       end: formatDateToString(new Date(todayYear, todayMonth, todayDate)),
       label: 'Últimos 90 dias'
     },
+    last12months: {
+      start: formatDateToString(new Date(todayYear, todayMonth, todayDate - 364)), // 365 dias incluindo hoje
+      end: formatDateToString(new Date(todayYear, todayMonth, todayDate)),
+      label: 'Últimos 12 meses'
+    },
     thisWeek: {
       start: formatDateToString(new Date(todayYear, todayMonth, todayDate - today.getDay())), // Domingo da semana atual
       end: formatDateToString(new Date(todayYear, todayMonth, todayDate)),
@@ -103,6 +108,11 @@ export const getDefaultPeriodForTab = (tab: string) => {
       return {
         start: presets.today.start,
         end: presets.today.end
+      }
+    case 'leads':
+      return {
+        start: presets.last12months.start,
+        end: presets.last12months.end
       }
     default:
       return {
