@@ -7,9 +7,9 @@ import {
   Tooltip, 
   ResponsiveContainer
 } from 'recharts'
-import { TrendingUp, DollarSign, Users, ShoppingCart, Target, Eye, MousePointer } from 'lucide-react'
-import React, { useState } from 'react'
-import { parseDateString } from '../utils/dateUtils'
+import { TrendingUp, DollarSign, Users, ShoppingCart, Target, Eye, MousePointer, Calendar } from 'lucide-react'
+import React, { useState, useMemo } from 'react'
+import { parseDateString, groupTimelineDataByMonth, formatMonthRange } from '../utils/dateUtils'
 
 interface PaidMediaTimelineData {
   date: string
@@ -56,6 +56,18 @@ const PaidMediaTimeline = ({ data, title }: PaidMediaTimelineProps) => {
   const [selectedMetrics, setSelectedMetrics] = useState(['cost', 'revenue'])
   const [showMetricSelector, setShowMetricSelector] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [granularity, setGranularity] = useState<'daily' | 'monthly'>('daily')
+
+  // Processar dados baseado na granularidade selecionada
+  const processedData = useMemo(() => {
+    if (!data || data.length === 0) return []
+    
+    if (granularity === 'monthly') {
+      return groupTimelineDataByMonth(data)
+    }
+    
+    return data
+  }, [data, granularity])
 
   const toggleMetric = (metricKey: string) => {
     setSelectedMetrics(prev => 
@@ -70,7 +82,7 @@ const PaidMediaTimeline = ({ data, title }: PaidMediaTimelineProps) => {
       return (
         <div className="bg-white p-4 border border-gray-200 rounded-lg shadow-lg">
           <p className="font-semibold text-gray-900 mb-2">
-            {parseDateString(label).toLocaleDateString('pt-BR')}
+            {granularity === 'monthly' ? label : parseDateString(label).toLocaleDateString('pt-BR')}
           </p>
           {payload.map((entry: any, index: number) => {
             const metric = paidMediaMetrics.find(m => m.key === entry.dataKey)
@@ -109,8 +121,36 @@ const PaidMediaTimeline = ({ data, title }: PaidMediaTimelineProps) => {
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
         
-        {/* Botão Dropdown de Métricas */}
-        <div className="relative">
+        <div className="flex items-center gap-3">
+          {/* Seletor de Granularidade */}
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-gray-600" />
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setGranularity('daily')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                  granularity === 'daily'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Diária
+              </button>
+              <button
+                onClick={() => setGranularity('monthly')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                  granularity === 'monthly'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Mensal
+              </button>
+            </div>
+          </div>
+          
+          {/* Botão Dropdown de Métricas */}
+          <div className="relative">
           <button
             onClick={() => setShowMetricSelector(!showMetricSelector)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
@@ -139,6 +179,7 @@ const PaidMediaTimeline = ({ data, title }: PaidMediaTimelineProps) => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </button>
+          </div>
         </div>
       </div>
 
@@ -310,13 +351,13 @@ const PaidMediaTimeline = ({ data, title }: PaidMediaTimelineProps) => {
 
       <div className="h-96">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data}>
+          <LineChart data={processedData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis 
               dataKey="date" 
               stroke="#666"
               fontSize={12}
-              tickFormatter={(value) => parseDateString(value).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+              tickFormatter={(value) => granularity === 'monthly' ? value : parseDateString(value).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
             />
             <YAxis 
               yAxisId="left"

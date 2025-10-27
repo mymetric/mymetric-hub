@@ -52,7 +52,7 @@ import TokenDebug from './TokenDebug'
 import OrdersByLocation from './OrdersByLocation'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useUrlParams } from '../hooks/useUrlParams'
-import { getDefaultPeriodForTab, getDatePresets, formatDateToString } from '../utils/dateUtils'
+import { getDefaultPeriodForTab, getDatePresets, formatDateToString, convertBrazilianDateToISO } from '../utils/dateUtils'
 import OrdersTab from './OrdersTab'
 import LeadsTab from './LeadsTab'
 
@@ -854,7 +854,9 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   // Preparar dados para a timeline baseados nos dados filtrados
   const timelineData = filteredMetrics
     .reduce((acc, item) => {
-      const existingDate = acc.find(d => d.date === item.Data)
+      // Converter data brasileira para formato ISO
+      const isoDate = convertBrazilianDateToISO(item.Data)
+      const existingDate = acc.find(d => d.date === isoDate)
       if (existingDate) {
         existingDate.sessions += item.Sessoes
         existingDate.revenue += item.Receita
@@ -872,7 +874,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         const orders = item.Pedidos
         const revenue = item.Receita
         acc.push({
-          date: item.Data,
+          date: isoDate,
           sessions: item.Sessoes,
           revenue: revenue,
           clicks: item.Cliques,

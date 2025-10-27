@@ -185,3 +185,97 @@ export const validateDateRange = (startDate: string, endDate: string) => {
     errors
   }
 }
+
+/**
+ * Obtém o início do mês para uma data específica
+ */
+export const getMonthStart = (dateString: string): string => {
+  const date = parseDateString(dateString)
+  const monthStart = new Date(date.getFullYear(), date.getMonth(), 1)
+  return formatDateToString(monthStart)
+}
+
+/**
+ * Obtém o fim do mês para uma data específica
+ */
+export const getMonthEnd = (dateString: string): string => {
+  const date = parseDateString(dateString)
+  const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0)
+  return formatDateToString(monthEnd)
+}
+
+/**
+ * Formata uma data para exibição de mês (ex: "Jan/2024")
+ */
+export const formatMonthRange = (monthStart: string): string => {
+  const start = parseDateString(monthStart)
+  return start.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })
+}
+
+/**
+ * Converte uma data brasileira (DD/MM/YYYY) para formato ISO (YYYY-MM-DD)
+ */
+export const convertBrazilianDateToISO = (brazilianDate: string): string => {
+  if (!brazilianDate) return ''
+  
+  // Se já está no formato ISO, retorna como está
+  if (brazilianDate.match(/^\d{4}-\d{2}-\d{2}/)) {
+    return brazilianDate
+  }
+  
+  // Se está no formato brasileiro DD/MM/YYYY HH:mm:ss
+  if (brazilianDate.match(/^\d{2}\/\d{2}\/\d{4},\s\d{2}:\d{2}:\d{2}/)) {
+    const [datePart] = brazilianDate.split(',')
+    const [day, month, year] = datePart.split('/')
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+  }
+  
+  // Se está no formato brasileiro DD/MM/YYYY
+  if (brazilianDate.match(/^\d{2}\/\d{2}\/\d{4}/)) {
+    const [day, month, year] = brazilianDate.split('/')
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+  }
+  
+  return brazilianDate
+}
+export const groupTimelineDataByMonth = <T extends { date: string; [key: string]: any }>(
+  data: T[]
+): T[] => {
+  if (!data || data.length === 0) return []
+  
+  // Agrupar por mês
+  const monthlyGroups = new Map<string, T[]>()
+  
+  data.forEach(item => {
+    const monthStart = getMonthStart(item.date)
+    if (!monthlyGroups.has(monthStart)) {
+      monthlyGroups.set(monthStart, [])
+    }
+    monthlyGroups.get(monthStart)!.push(item)
+  })
+  
+  // Consolidar dados de cada mês
+  const monthlyData: T[] = []
+  
+  monthlyGroups.forEach((monthItems, monthStart) => {
+    if (monthItems.length === 0) return
+    
+    // Criar objeto consolidado para o mês
+    const consolidatedItem = { ...monthItems[0] }
+    consolidatedItem.date = monthStart
+    
+    // Somar todas as métricas numéricas
+    monthItems.forEach(item => {
+      Object.keys(item).forEach(key => {
+        if (key !== 'date' && typeof item[key] === 'number') {
+          consolidatedItem[key] = (consolidatedItem[key] || 0) + item[key]
+        }
+      })
+    })
+    
+    monthlyData.push(consolidatedItem)
+  })
+  
+  // Ordenar por data
+  return monthlyData.sort((a, b) => compareDateStrings(a.date, b.date))
+}

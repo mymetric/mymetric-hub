@@ -20,7 +20,7 @@ import {
 import { api, validateTableName } from '../services/api'
 import { AdsCampaignData, AdsCampaignResponse, CacheInfo, AdsCampaignSummary, AdsCreativeData, AdsCreativeResponse } from '../types'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
-import { compareDateStrings, parseDateString } from '../utils/dateUtils'
+import { compareDateStrings, parseDateString, convertBrazilianDateToISO } from '../utils/dateUtils'
 import SortableHeader from './SortableHeader'
 import PaidMediaTimeline from './PaidMediaTimeline'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
@@ -343,7 +343,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         campaign_name: item.campaign_name,
         ad_group_name: item.adset_name || item.ad_group_name || 'N/A',
         creative_name: item.ad_name || item.creative_name || 'N/A',
-        date: item.date,
+        date: convertBrazilianDateToISO(item.date),
         cost: item.cost,
         impressions: item.impressions,
         clicks: item.clicks,
@@ -1575,7 +1575,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
 
   // Processar dados para timeline de mídia paga (usar dados filtrados - apenas campanhas)
   const timelineData = filteredData.length > 0 ? filteredData.reduce((acc, item) => {
-    const existingDate = acc.find(d => d.date === item.date)
+    const isoDate = convertBrazilianDateToISO(item.date)
+    const existingDate = acc.find(d => d.date === isoDate)
     if (existingDate) {
       existingDate.cost += item.cost
       existingDate.impressions += item.impressions
@@ -1597,7 +1598,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     } else {
       // Aplicar modelo de atribuição na timeline
       const timelineItem = {
-        date: item.date,
+        date: convertBrazilianDateToISO(item.date),
         cost: item.cost,
         impressions: item.impressions,
         clicks: item.clicks,
@@ -1644,7 +1645,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
 
   // Processar dados para timeline de criativos (usar dados de criativos)
   const creativeTimelineData = creativeData.length > 0 ? creativeData.reduce((acc, item) => {
-    const existingDate = acc.find(d => d.date === item.date)
+    const isoDate = convertBrazilianDateToISO(item.date)
+    const existingDate = acc.find(d => d.date === isoDate)
     if (existingDate) {
       existingDate.cost += item.cost
       existingDate.impressions += item.impressions
@@ -1656,7 +1658,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       existingDate.revenue_first += item.revenue_first
     } else {
       acc.push({
-        date: item.date,
+        date: isoDate,
         cost: item.cost,
         impressions: item.impressions,
         clicks: item.clicks,

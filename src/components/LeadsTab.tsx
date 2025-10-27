@@ -2,6 +2,12 @@ import { useEffect, useState, useRef, useCallback, Fragment, useMemo } from 'rea
 import { User, ChevronRight, ChevronDown, Maximize2, Minimize2, DollarSign, TrendingUp, Mail, Phone, Calendar, Clock, ShoppingBag } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
 import { LeadsOrderItem, LeadsOrdersRequest } from '../types'
+
+interface GroupedLeadItem extends LeadsOrderItem {
+	orders_count: number
+	total_value: number
+	orders: LeadsOrderItem[]
+}
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { formatDateToString } from '../utils/dateUtils'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
@@ -13,6 +19,19 @@ interface LeadsTabProps {
 }
 
 const LeadsTab = ({ selectedTable, startDate, endDate }: LeadsTabProps) => {
+	// Verificação de props
+	if (!selectedTable || !startDate || !endDate) {
+		return (
+			<div className="p-4 sm:p-6 lg:p-8">
+				<div className="bg-red-50 border border-red-200 rounded-lg p-4">
+					<h3 className="text-red-800 font-medium">Erro de Configuração</h3>
+					<p className="text-red-600 text-sm mt-1">
+						Props inválidas: selectedTable={selectedTable}, startDate={startDate}, endDate={endDate}
+					</p>
+				</div>
+			</div>
+		)
+	}
 	const [leads, setLeads] = useState<LeadsOrderItem[]>([])
 	const [isLoading, setIsLoading] = useState(false)
 	const [error, setError] = useState<string | null>(null)
@@ -27,22 +46,9 @@ const LeadsTab = ({ selectedTable, startDate, endDate }: LeadsTabProps) => {
 	const [allLeads, setAllLeads] = useState<LeadsOrderItem[]>([])
 	const [hasMoreData, setHasMoreData] = useState(true)
 	const [lastOffset, setLastOffset] = useState(0)
+	const [loadAllData, setLoadAllData] = useState(false)
 	const abortControllerRef = useRef<AbortController | null>(null)
 
-	// Atualizar título da aba com status de carregamento
-	const getTabTitle = () => {
-		if (isLoading && hasMoreData && totalRows > 0) {
-			const percentage = Math.round((allLeads.length / totalRows) * 100)
-			return `Leads (${percentage}%) 🔄`
-		} else if (isLoading) {
-			return 'Leads 🔄'
-		} else if (leads.length > 0) {
-			return `Leads (${allLeads.length}${totalRows > allLeads.length ? `/${totalRows}` : ''})`
-		}
-		return 'Leads'
-	}
-
-	useDocumentTitle(getTabTitle())
 
 	const formatCurrency = (value: number) => {
 		return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0)
@@ -76,6 +82,82 @@ const LeadsTab = ({ selectedTable, startDate, endDate }: LeadsTabProps) => {
 		return '—'
 	}
 
+	// Função para agrupar leads por email
+	const groupLeadsByEmail = (leads: LeadsOrderItem[]): GroupedLeadItem[] => {
+		const emailGroups = new Map<string, LeadsOrderItem[]>()
+		
+		// Agrupar por email
+		leads.forEach(lead => {
+			if (!lead || !lead.email) return
+			
+			const email = lead.email.toLowerCase().trim()
+			if (!emailGroups.has(email)) {
+				emailGroups.set(email, [])
+			}
+			emailGroups.get(email)!.push(lead)
+		})
+		
+		// Consolidar dados por email
+		const groupedLeads: GroupedLeadItem[] = []
+		
+		emailGroups.forEach((orders, email) => {
+			if (orders.length === 0) return
+			
+			// Usar o primeiro pedido como base
+			const baseLead = orders[0]
+			
+			// Calcular totais
+			const totalValue = orders.reduce((sum, order) => sum + (order.value || 0), 0)
+			
+			// Criar lead agrupado
+			const groupedLead: GroupedLeadItem = {
+				...baseLead,
+				orders_count: orders.length,
+				total_value: totalValue,
+				orders: orders.sort((a, b) => {
+					const dateA = new Date(a.purchase_timestamp || 0).getTime()
+					const dateB = new Date(b.purchase_timestamp || 0).getTime()
+					return dateA - dateB
+				})
+			}
+			
+			groupedLeads.push(groupedLead)
+		})
+		
+		// Ordenar por total_value decrescente
+		return groupedLeads.sort((a, b) => b.total_value - a.total_value)
+	}
+
+	// Processar dados baseado na opção de agrupamento
+	const processedLeads = useMemo(() => {
+		try {
+			if (!allLeads || allLeads.length === 0) return []
+			
+			// Sempre agrupar por email
+			return groupLeadsByEmail(allLeads)
+		} catch (error) {
+			console.error('Erro ao processar leads:', error)
+			return allLeads || []
+		}
+	}, [allLeads])
+
+	// Atualizar título da aba com status de carregamento
+	const getTabTitle = () => {
+		if (isLoading && hasMoreData && totalRows > 0) {
+			const percentage = Math.round((allLeads.length / totalRows) * 100)
+			return `Leads (${percentage}%) 🔄`
+		} else if (isLoading) {
+			return 'Leads 🔄'
+		} else if (processedLeads.length > 0) {
+			const uniqueEmails = processedLeads.length
+			const totalOrders = allLeads.length
+			return `Leads (${uniqueEmails} emails, ${totalOrders} pedidos)`
+		}
+		return 'Leads'
+	}
+
+	useDocumentTitle(getTabTitle())
+
 	const toggleExpand = (id: string) => {
 		setExpanded((prev) => {
 			const copy = new Set(prev)
@@ -88,6 +170,7 @@ const LeadsTab = ({ selectedTable, startDate, endDate }: LeadsTabProps) => {
 	const fetchLeads = useCallback(async (retryAttempt = 0, useCacheParam?: boolean, offset = 0, autoLoadAll = false) => {
 		const maxRetries = 3
 		const retryDelay = 2000 // 2 segundos
+		const initialBatchSize = 50 // Carregar apenas 50 leads inicialmente
 
 		console.log(`🚀 fetchLeads chamado - retryAttempt: ${retryAttempt}, offset: ${offset}, autoLoadAll: ${autoLoadAll}, useCacheParam: ${useCacheParam}`)
 
@@ -113,7 +196,7 @@ const LeadsTab = ({ selectedTable, startDate, endDate }: LeadsTabProps) => {
 
 			const body: LeadsOrdersRequest = {
 				table_name: selectedTable,
-				limit: 5000,
+				limit: autoLoadAll ? 5000 : initialBatchSize,
 				offset: offset
 			}
 
@@ -229,12 +312,19 @@ const LeadsTab = ({ selectedTable, startDate, endDate }: LeadsTabProps) => {
 		setHasMoreData(true)
 		setAllLeads([]) // Limpar dados anteriores
 		setLastOffset(0) // Reset offset
-		fetchLeads(0, undefined, 0, true) // Auto-carregar todas as páginas
+		setLoadAllData(false) // Reset flag de carregar todos
+		fetchLeads(0, undefined, 0, false) // Carregar apenas lote inicial
 		return () => {
 			if (abortControllerRef.current) abortControllerRef.current.abort()
 		}
 	}, [selectedTable, startDate, endDate])
 
+	const handleLoadAllData = async () => {
+		setLoadAllData(true)
+		setHasMoreData(true)
+		setLastOffset(0)
+		await fetchLeads(0, undefined, 0, true) // Carregar todos os dados
+	}
 	const handleRefresh = async () => {
 		setIsRefreshing(true)
 		setHasMoreData(true)
@@ -246,7 +336,7 @@ const LeadsTab = ({ selectedTable, startDate, endDate }: LeadsTabProps) => {
 
 	// Filtrar leads por termo de pesquisa
 	const filteredLeadsRaw = useMemo(() => {
-		return (allLeads || []).filter(lead => {
+		return (processedLeads || []).filter(lead => {
 			const searchLower = searchTerm.toLowerCase().trim()
 			if (!searchTerm) return true
 			
@@ -263,7 +353,7 @@ const LeadsTab = ({ selectedTable, startDate, endDate }: LeadsTabProps) => {
 				lead.transaction_id?.toLowerCase().includes(searchLower)
 			)
 		})
-	}, [allLeads, searchTerm])
+	}, [processedLeads, searchTerm])
 
 	// Limitar exibição a 30 resultados
 	const filteredLeads = filteredLeadsRaw.slice(0, 30)
@@ -271,46 +361,34 @@ const LeadsTab = ({ selectedTable, startDate, endDate }: LeadsTabProps) => {
 	// Resumo dos dados da API
 	const [summary, setSummary] = useState<any>(null)
 
-	// Função para obter o início da semana (segunda-feira)
-	const getWeekStart = (dateStr: string): string => {
-		const [year, month, day] = dateStr.split('-').map(Number)
-		const date = new Date(year, month - 1, day)
-		const dayOfWeek = date.getDay() // 0 = domingo, 1 = segunda, etc.
-		const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek // Se domingo, volta 6 dias
-		const monday = new Date(date)
-		monday.setDate(date.getDate() + mondayOffset)
-		return formatDateToString(monday)
-	}
 
-	// Preparar dados para timeline agregados por semana
+	// Preparar dados para timeline agregados por dia
 	const timelineData = useMemo(() => {
-		const leadsByWeek: Record<string, { leads: number; sales: number; revenue: number }> = {}
+		const leadsByDay: Record<string, { leads: number; sales: number; revenue: number }> = {}
 		
 		allLeads.forEach(lead => {
-			// Agrupar por semana de inscrição (captura de leads)
+			// Agrupar por dia de inscrição (captura de leads)
 			if (lead.subscribe_timestamp) {
 				const date = lead.subscribe_timestamp.split('T')[0]
-				const weekStart = getWeekStart(date)
-				if (!leadsByWeek[weekStart]) {
-					leadsByWeek[weekStart] = { leads: 0, sales: 0, revenue: 0 }
+				if (!leadsByDay[date]) {
+					leadsByDay[date] = { leads: 0, sales: 0, revenue: 0 }
 				}
-				leadsByWeek[weekStart].leads++
+				leadsByDay[date].leads++
 			}
 			
-			// Agrupar por semana de compra (vendas)
+			// Agrupar por dia de compra (vendas)
 			if (lead.purchase_timestamp && lead.transaction_id) {
 				const date = lead.purchase_timestamp.split('T')[0]
-				const weekStart = getWeekStart(date)
-				if (!leadsByWeek[weekStart]) {
-					leadsByWeek[weekStart] = { leads: 0, sales: 0, revenue: 0 }
+				if (!leadsByDay[date]) {
+					leadsByDay[date] = { leads: 0, sales: 0, revenue: 0 }
 				}
-				leadsByWeek[weekStart].sales++
-				leadsByWeek[weekStart].revenue += lead.value || 0
+				leadsByDay[date].sales++
+				leadsByDay[date].revenue += lead.value || 0
 			}
 		})
 		
 		// Converter para array e ordenar por data
-		return Object.entries(leadsByWeek)
+		return Object.entries(leadsByDay)
 			.map(([date, data]) => ({
 				date,
 				leads: data.leads,
@@ -321,11 +399,33 @@ const LeadsTab = ({ selectedTable, startDate, endDate }: LeadsTabProps) => {
 	}, [allLeads])
 
 	const formatDateForChart = (dateStr: string) => {
-		const [year, month, day] = dateStr.split('-').map(Number)
-		const date = new Date(year, month - 1, day)
-		const weekEnd = new Date(date)
-		weekEnd.setDate(date.getDate() + 6) // Adicionar 6 dias para mostrar fim da semana
-		return `${date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} - ${weekEnd.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`
+		if (!dateStr) return 'Data inválida'
+		
+		try {
+			const [year, month, day] = dateStr.split('-').map(Number)
+			
+			// Verificar se os valores são válidos
+			if (isNaN(year) || isNaN(month) || isNaN(day)) {
+				console.error('Data inválida:', dateStr)
+				return 'Data inválida'
+			}
+			
+			const date = new Date(year, month - 1, day)
+			
+			// Verificar se a data é válida
+			if (isNaN(date.getTime())) {
+				console.error('Data inválida após criação:', dateStr)
+				return 'Data inválida'
+			}
+			
+			return date.toLocaleDateString('pt-BR', { 
+				day: '2-digit', 
+				month: '2-digit' 
+			})
+		} catch (error) {
+			console.error('Erro ao formatar data:', dateStr, error)
+			return 'Data inválida'
+		}
 	}
 
 	const CustomTooltip = ({ active, payload }: any) => {
@@ -345,12 +445,12 @@ const LeadsTab = ({ selectedTable, startDate, endDate }: LeadsTabProps) => {
 			}
 			
 			const dateStr = payload[0]?.payload?.date
-			const weekLabel = dateStr ? formatDateForChart(dateStr) : ''
+			const dateLabel = dateStr ? formatDateForChart(dateStr) : ''
 			
 			return (
 				<div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
 					<p className="font-semibold text-gray-900 mb-2">
-						Semana: {weekLabel}
+						Data: {dateLabel}
 					</p>
 					{payload.map((entry: any, index: number) => (
 						<p key={index} className="text-sm" style={{ color: entry.color }}>
@@ -374,6 +474,7 @@ const LeadsTab = ({ selectedTable, startDate, endDate }: LeadsTabProps) => {
 						<th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Telefone</th>
 						<th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Data de Inscrição</th>
 						<th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+						<th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Pedidos</th>
 						<th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Origem</th>
 						<th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Mídia</th>
 						<th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Campanha</th>
@@ -428,6 +529,19 @@ const LeadsTab = ({ selectedTable, startDate, endDate }: LeadsTabProps) => {
 											<span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800">Lead</span>
 										)}
 									</td>
+									<td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+										<div className="flex items-center gap-2">
+											<ShoppingBag className="w-4 h-4 text-gray-400" />
+											<div className="text-center">
+												<div className="font-medium text-gray-900">
+													{(lead as GroupedLeadItem).orders_count} pedido{(lead as GroupedLeadItem).orders_count > 1 ? 's' : ''}
+												</div>
+												<div className="text-xs text-green-600 font-medium">
+													{formatCurrency((lead as GroupedLeadItem).total_value)}
+												</div>
+											</div>
+										</div>
+									</td>
 									<td className="px-6 py-4 whitespace-nowrap text-sm">
 										<span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700 border border-blue-200">{display(lead.fsm_source || lead.source)}</span>
 									</td>
@@ -441,7 +555,7 @@ const LeadsTab = ({ selectedTable, startDate, endDate }: LeadsTabProps) => {
 
 								{isOpen && (
 									<tr>
-										<td colSpan={9} className="px-6 pb-6 pt-2 bg-gray-50">
+										<td colSpan={10} className="px-6 pb-6 pt-2 bg-gray-50">
 											<div className="space-y-3">
 												{/* Resumo do lead */}
 												<div className="bg-white border border-gray-200 rounded-lg p-3 flex items-center justify-between">
@@ -451,14 +565,12 @@ const LeadsTab = ({ selectedTable, startDate, endDate }: LeadsTabProps) => {
 														<span>{display(lead.email)}</span>
 													</div>
 													<div className="flex items-center gap-2">
-														{hasPurchase ? (
-															<>
-																<span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800">Convertido</span>
-																<span className="px-2 py-0.5 rounded-full text-xs bg-emerald-50 text-emerald-700 border border-emerald-200">{formatCurrency(lead.value)}</span>
-															</>
-														) : (
-															<span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800">Lead sem conversão</span>
-														)}
+														<span className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-800">
+															{(lead as GroupedLeadItem).orders_count} pedido{(lead as GroupedLeadItem).orders_count > 1 ? 's' : ''}
+														</span>
+														<span className="px-2 py-0.5 rounded-full text-xs bg-emerald-50 text-emerald-700 border border-emerald-200">
+															{formatCurrency((lead as GroupedLeadItem).total_value)}
+														</span>
 													</div>
 												</div>
 
@@ -505,6 +617,25 @@ const LeadsTab = ({ selectedTable, startDate, endDate }: LeadsTabProps) => {
 														</div>
 													</div>
 
+													{(lead as GroupedLeadItem).orders_count > 1 && (
+														<div className="border border-orange-100 rounded-lg bg-white p-4 shadow-sm">
+															<h4 className="text-sm font-semibold text-orange-700 mb-3">Todos os Pedidos</h4>
+															<div className="space-y-2">
+																{(lead as GroupedLeadItem).orders.map((order, orderIdx) => (
+																	<div key={orderIdx} className="flex items-center justify-between p-2 bg-gray-50 rounded border">
+																		<div className="text-sm">
+																			<div className="font-medium text-gray-900">{formatDateTime(order.purchase_timestamp)}</div>
+																			<div className="text-gray-500 text-xs">ID: {display(order.transaction_id)}</div>
+																		</div>
+																		<div className="text-sm font-medium text-green-600">
+																			{formatCurrency(order.value)}
+																		</div>
+																	</div>
+																))}
+															</div>
+														</div>
+													)}
+
 													{/* Atribuição na Compra (se houver) */}
 													{hasPurchase && (
 														<div className="border border-orange-100 rounded-lg bg-white p-4 shadow-sm">
@@ -527,18 +658,33 @@ const LeadsTab = ({ selectedTable, startDate, endDate }: LeadsTabProps) => {
 				</tbody>
 			</table>
 			
+			{/* Botão para carregar todos os dados */}
+			{!loadAllData && hasMoreData && !isLoading && (
+				<div className="bg-white border-t border-gray-200 px-6 py-4">
+					<div className="flex justify-center">
+						<button
+							onClick={handleLoadAllData}
+							className="px-6 py-3 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+						>
+							📥 Carregar Todos os Dados
+						</button>
+					</div>
+				</div>
+			)}
+			
 			{/* Resumo de carregamento */}
 			{!isLoading && totalRows > 0 && (
 				<div className="bg-gray-50 border-t border-gray-200 px-6 py-3">
-					<div className="flex items-center justify-between text-sm text-gray-600">
+					<div className="text-sm text-gray-600">
 						<span>
-							Mostrando <strong>{filteredLeads.length}</strong> de <strong>{filteredLeadsRaw.length}</strong> leads filtrados
+							Mostrando <strong>{filteredLeads.length}</strong> de <strong>{filteredLeadsRaw.length}</strong> emails únicos filtrados
 							{filteredLeadsRaw.length > 30 && (
 								<span className="ml-2 text-orange-600">(limitado a 30 na exibição)</span>
 							)}
 							{totalRows > filteredLeadsRaw.length && (
 								<span className="ml-2 text-gray-500">de {totalRows} total</span>
 							)}
+							<span className="ml-2 text-blue-600">({allLeads.length} pedidos totais)</span>
 						</span>
 					</div>
 				</div>
@@ -595,7 +741,7 @@ const LeadsTab = ({ selectedTable, startDate, endDate }: LeadsTabProps) => {
 				</div>
 			)}
 
-			{/* Controles de Cache e Refresh */}
+			{/* Controles de Cache e Agrupamento */}
 			<div className="bg-white rounded-xl border border-gray-200 p-4 mb-4 shadow-sm">
 				<div className="flex items-center justify-between">
 					<div className="flex items-center gap-4">
@@ -648,20 +794,43 @@ const LeadsTab = ({ selectedTable, startDate, endDate }: LeadsTabProps) => {
 				<div className="space-y-6 mb-6">
 					{/* Linha 1: Métricas Principais */}
 					<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-						{/* Total de Leads */}
+						{/* Tempo Médio entre Lead e Conversão */}
 						<div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
 							<div className="flex items-center justify-between">
 								<div className="flex-1">
-									<p className="text-sm font-medium text-gray-600 mb-1">Total de Leads</p>
-									<p className="text-3xl font-bold text-gray-900">{summary?.total_leads?.toLocaleString() || 0}</p>
-									{filteredLeads.length !== allLeads.length && (
-										<p className="text-xs text-blue-600 mt-1">
-											{filteredLeads.length} na tela
-										</p>
-									)}
+									<p className="text-sm font-medium text-gray-600 mb-1">Tempo Médio Lead → Conversão</p>
+									<p className="text-3xl font-bold text-gray-900">
+										{(() => {
+											const leadsWithPurchase = allLeads.filter(lead => 
+												lead.purchase_timestamp && 
+												lead.days_between_subscribe_and_purchase !== null
+											)
+											
+											if (leadsWithPurchase.length === 0) return '0d'
+											
+											const totalDays = leadsWithPurchase.reduce((sum, lead) => 
+												sum + (lead.days_between_subscribe_and_purchase || 0), 0
+											)
+											
+											const avgDays = Math.round(totalDays / leadsWithPurchase.length)
+											
+											if (avgDays === 0) {
+												const totalMinutes = leadsWithPurchase.reduce((sum, lead) => 
+													sum + (lead.minutes_between_subscribe_and_purchase || 0), 0
+												)
+												const avgMinutes = Math.round(totalMinutes / leadsWithPurchase.length)
+												return `${avgMinutes}m`
+											}
+											
+											return `${avgDays}d`
+										})()}
+									</p>
+									<p className="text-xs text-gray-500 mt-1">
+										{allLeads.filter(lead => lead.purchase_timestamp).length} conversões analisadas
+									</p>
 								</div>
-								<div className="p-3 bg-purple-100 rounded-lg">
-									<User className="w-6 h-6 text-purple-600" />
+								<div className="p-3 bg-blue-100 rounded-lg">
+									<Clock className="w-6 h-6 text-blue-600" />
 								</div>
 							</div>
 						</div>
@@ -890,7 +1059,7 @@ const LeadsTab = ({ selectedTable, startDate, endDate }: LeadsTabProps) => {
 						Tentar novamente
 					</button>
 				</div>
-			) : allLeads.length === 0 ? (
+			) : processedLeads.length === 0 && !isLoading ? (
 				<div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-600">Nenhum lead no período.</div>
 			) : (
 				TableBlock

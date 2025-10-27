@@ -7,8 +7,9 @@ import {
   Tooltip, 
   ResponsiveContainer
 } from 'recharts'
-import { TrendingUp, DollarSign, Users, ShoppingCart, Package, Target, Search, X, Filter } from 'lucide-react'
-import React, { useState } from 'react'
+import { TrendingUp, DollarSign, Users, ShoppingCart, Package, Target, Search, X, Filter, Calendar } from 'lucide-react'
+import React, { useState, useMemo } from 'react'
+import { groupTimelineDataByMonth, formatMonthRange } from '../utils/dateUtils'
 
 interface TimelineData {
   date: string
@@ -81,6 +82,18 @@ const TimelineChart = ({ data, title, showMovingAverage = false }: TimelineChart
   const [showMetricSelector, setShowMetricSelector] = useState(true)
   const [showDropdown, setShowDropdown] = useState(false)
   const [showSecondaryDropdown, setShowSecondaryDropdown] = useState(false)
+  const [granularity, setGranularity] = useState<'daily' | 'monthly'>('daily')
+
+  // Processar dados baseado na granularidade selecionada
+  const processedData = useMemo(() => {
+    if (!data || data.length === 0) return []
+    
+    if (granularity === 'monthly') {
+      return groupTimelineDataByMonth(data)
+    }
+    
+    return data
+  }, [data, granularity])
 
   // Não alterar as métricas selecionadas automaticamente
   // O usuário mantém suas seleções e elas são automaticamente mapeadas para média móvel
@@ -126,12 +139,17 @@ const TimelineChart = ({ data, title, showMovingAverage = false }: TimelineChart
   }
 
   // Preparar dados para o gráfico
-  const chartData = data.map(item => ({
+  const chartData = processedData.map(item => ({
     ...item,
     date: (() => {
       // Converter data de forma segura para evitar problemas de timezone
       const [year, month, day] = item.date.split('-').map(Number)
       const date = new Date(year, month - 1, day)
+      
+      if (granularity === 'monthly') {
+        return formatMonthRange(item.date)
+      }
+      
       return date.toLocaleDateString('pt-BR', { 
         day: '2-digit', 
         month: '2-digit' 
@@ -173,7 +191,7 @@ const TimelineChart = ({ data, title, showMovingAverage = false }: TimelineChart
 
 
   // Calcular totais baseado no modo (normal ou média móvel)
-  const totals = data.reduce((acc, item) => {
+  const totals = processedData.reduce((acc, item) => {
     if (showMovingAverage) {
       // No modo média móvel, usar os valores de média móvel
       return {
@@ -348,22 +366,54 @@ const TimelineChart = ({ data, title, showMovingAverage = false }: TimelineChart
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6">
-      {/* Métricas Selector */}
-      <div className={`mb-6 bg-white border border-gray-200 rounded-lg ${showMetricSelector ? 'p-3' : 'p-2'}`}>
-        <div 
-          className="flex items-center justify-between cursor-pointer"
-          onClick={() => setShowMetricSelector(!showMetricSelector)}
-        >
+      {/* Controles de Granularidade e Métricas */}
+      <div className="mb-6 bg-white border border-gray-200 rounded-lg p-3">
+        {/* Seletor de Granularidade */}
+        <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-gray-700">Selecionar Métricas</span>
-            <span className="text-xs text-gray-500">
-              ({[primaryMetric, secondaryMetric].filter(Boolean).length})
-            </span>
+            <Calendar className="w-4 h-4 text-gray-600" />
+            <span className="text-sm font-medium text-gray-700">Granularidade</span>
           </div>
-          <div className="text-xs font-medium text-gray-600">
-            {showMetricSelector ? '▲' : '▼'}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setGranularity('daily')}
+              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                granularity === 'daily'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Diária
+            </button>
+            <button
+              onClick={() => setGranularity('monthly')}
+              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                granularity === 'monthly'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Mensal
+            </button>
           </div>
         </div>
+
+        {/* Métricas Selector */}
+        <div className={`bg-gray-50 rounded-lg ${showMetricSelector ? 'p-3' : 'p-2'}`}>
+          <div 
+            className="flex items-center justify-between cursor-pointer"
+            onClick={() => setShowMetricSelector(!showMetricSelector)}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-gray-700">Selecionar Métricas</span>
+              <span className="text-xs text-gray-500">
+                ({[primaryMetric, secondaryMetric].filter(Boolean).length})
+              </span>
+            </div>
+            <div className="text-xs font-medium text-gray-600">
+              {showMetricSelector ? '▲' : '▼'}
+            </div>
+          </div>
 
         {showMetricSelector && (
           <div className="space-y-2 pt-2 border-t border-gray-200">
@@ -516,6 +566,7 @@ const TimelineChart = ({ data, title, showMovingAverage = false }: TimelineChart
             )}
           </div>
         )}
+        </div>
       </div>
       
       {/* Chart */}
@@ -597,7 +648,7 @@ const TimelineChart = ({ data, title, showMovingAverage = false }: TimelineChart
                         style: 'currency',
                         currency: 'BRL',
                         minimumFractionDigits: 2
-                      }).format(total / data.length)
+                      }).format(total / processedData.length)
                     : new Intl.NumberFormat('pt-BR').format(total)
                   }
                 </p>
