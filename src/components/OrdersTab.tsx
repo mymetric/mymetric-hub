@@ -68,10 +68,15 @@ const OrdersTab = ({ selectedTable, startDate, endDate }: OrdersTabProps) => {
 	const [isLoadingMore, setIsLoadingMore] = useState(false)
 	const [retryCount, setRetryCount] = useState(0)
 	const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false)
+	const [retryCountdown, setRetryCountdown] = useState<number | null>(null)
+	const [isLoadingComplete, setIsLoadingComplete] = useState(false)
 	
 	// Estados para collapse dos filtros
 	const [filtersExpanded, setFiltersExpanded] = useState(false)
 	const abortControllerRef = useRef<AbortController | null>(null)
+	const retryIntervalRef = useRef<any>(null)
+	const retryTimeoutRef = useRef<any>(null)
+	const audioRef = useRef<HTMLAudioElement | null>(null)
 
 	const formatCurrency = (value: number) => {
 		return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0)
@@ -219,7 +224,7 @@ const OrdersTab = ({ selectedTable, startDate, endDate }: OrdersTabProps) => {
 
 	const fetchOrders = useCallback(async (offset = 0, append = false, retryAttempt = 0) => {
 		const maxRetries = 3
-		const retryDelay = 2000 // 2 segundos
+		const retryDelayMs = 120000 // 2 minutos
 		
 		try {
 			if (offset === 0) {
@@ -230,6 +235,10 @@ const OrdersTab = ({ selectedTable, startDate, endDate }: OrdersTabProps) => {
 				setIsLoadingMore(true)
 			}
 			setError(null)
+			// Cancelar qualquer countdown de retry pendente quando uma nova tentativa inicia
+			if (retryIntervalRef.current) clearInterval(retryIntervalRef.current)
+			if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current)
+			setRetryCountdown(null)
 
 			const token = localStorage.getItem('auth-token') || ''
 			if (!token) throw new Error('Token não encontrado')
@@ -287,6 +296,39 @@ const OrdersTab = ({ selectedTable, startDate, endDate }: OrdersTabProps) => {
 				setTotalRows(totalRowsFromAPI)
 			}
 			setRetryCount(0) // Reset retry count on success
+			setRetryCountdown(null)
+			if (retryIntervalRef.current) clearInterval(retryIntervalRef.current)
+			if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current)
+			
+			// Tocar som quando carregamento inicial for concluído
+			if (offset === 0 && !append) {
+				setIsLoadingComplete(true)
+				// Criar e tocar som de notificação
+				try {
+					const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+					const oscillator = audioContext.createOscillator()
+					const gainNode = audioContext.createGain()
+					
+					oscillator.connect(gainNode)
+					gainNode.connect(audioContext.destination)
+					
+					oscillator.frequency.setValueAtTime(800, audioContext.currentTime)
+					oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1)
+					oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.2)
+					
+					gainNode.gain.setValueAtTime(0, audioContext.currentTime)
+					gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.05)
+					gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.3)
+					
+					oscillator.start(audioContext.currentTime)
+					oscillator.stop(audioContext.currentTime + 0.3)
+				} catch (error) {
+					console.log('Não foi possível reproduzir som de notificação:', error)
+				}
+				
+				// Resetar flag após um tempo
+				setTimeout(() => setIsLoadingComplete(false), 3000)
+			}
 			
 			if (append) {
 				setOrders(prev => {
@@ -322,17 +364,31 @@ const OrdersTab = ({ selectedTable, startDate, endDate }: OrdersTabProps) => {
 				return
 			}
 			
-			// Verificar se deve tentar novamente
+			// Verificar se deve tentar novamente com espera de 2 minutos e timer visível
 			if (retryAttempt < maxRetries) {
 				const nextRetry = retryAttempt + 1
-				console.log(`🔄 Tentativa ${nextRetry}/${maxRetries} falhou. Tentando novamente em ${retryDelay/1000}s...`)
+				console.log(`🔄 Tentativa ${nextRetry}/${maxRetries} falhou. Tentando novamente em ${retryDelayMs/1000}s...`)
 				setRetryCount(nextRetry)
-				
-				// Aguardar antes de tentar novamente
-				await new Promise(resolve => setTimeout(resolve, retryDelay))
-				
-				// Tentar novamente
-				return fetchOrders(offset, append, nextRetry)
+				// Iniciar countdown em segundos
+				const totalSeconds = Math.floor(retryDelayMs / 1000)
+				setRetryCountdown(totalSeconds)
+				if (retryIntervalRef.current) clearInterval(retryIntervalRef.current)
+				if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current)
+				retryIntervalRef.current = setInterval(() => {
+					setRetryCountdown(prev => {
+						if (prev === null) return null
+						if (prev <= 1) {
+							clearInterval(retryIntervalRef.current)
+							return 0
+						}
+						return prev - 1
+					})
+				}, 1000)
+				retryTimeoutRef.current = setTimeout(() => {
+					setRetryCountdown(null)
+					fetchOrders(offset, append, nextRetry)
+				}, retryDelayMs)
+				return
 			}
 			
 			console.error('❌ Erro ao obter pedidos após todas as tentativas:', err)
@@ -352,6 +408,8 @@ const OrdersTab = ({ selectedTable, startDate, endDate }: OrdersTabProps) => {
 		fetchOrders()
 		return () => {
 			if (abortControllerRef.current) abortControllerRef.current.abort()
+			if (retryIntervalRef.current) clearInterval(retryIntervalRef.current)
+			if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current)
 		}
 	}, [fetchOrders])
 
@@ -613,6 +671,16 @@ const OrdersTab = ({ selectedTable, startDate, endDate }: OrdersTabProps) => {
 
 	return (
 		<div className="p-4 sm:p-6 lg:p-8">
+			{/* Indicador de carregamento concluído */}
+			{isLoadingComplete && (
+				<div className="mb-4 bg-green-50 border border-green-200 rounded-xl p-4 animate-pulse">
+					<div className="flex items-center justify-center gap-2 text-green-700 text-sm">
+						<div className="w-2 h-2 bg-green-500 rounded-full animate-bounce"></div>
+						<span className="font-medium">✅ Pedidos carregados com sucesso!</span>
+					</div>
+				</div>
+			)}
+			
 			<div className="flex items-center justify-between mb-6">
 				<div className="flex items-center gap-3">
 					<div className="p-2 bg-blue-100 rounded-lg">
@@ -622,12 +690,17 @@ const OrdersTab = ({ selectedTable, startDate, endDate }: OrdersTabProps) => {
 						<h2 className="text-xl font-semibold text-gray-900">Pedidos</h2>
 						<p className="text-sm text-gray-500">
 							{startDate} • {endDate} • {selectedTable}
-							{retryCount > 0 && (
-								<span className="ml-2 text-orange-600 font-medium">(Tentativa {retryCount}/3)</span>
-							)}
+						{/* mensagem de tentativa removida para reduzir expectativa de retry explícito */}
 						</p>
 					</div>
 				</div>
+				{/* Indicador de loading na aba */}
+				{isLoading && (
+					<div className="flex items-center gap-2 px-3 py-1 bg-blue-50 border border-blue-200 rounded-lg">
+						<div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+						<span className="text-sm text-blue-700 font-medium">Carregando...</span>
+					</div>
+				)}
 				<div className="flex items-center gap-2">
 					<button
 						onClick={() => setIsFullscreen(true)}
@@ -639,6 +712,21 @@ const OrdersTab = ({ selectedTable, startDate, endDate }: OrdersTabProps) => {
 					</button>
 				</div>
 			</div>
+
+			{/* Banner de retry com timer */}
+			{retryCountdown !== null && (
+				<div className="mb-4 bg-orange-50 border border-orange-200 rounded-xl p-4">
+					<div className="flex flex-col items-center justify-center text-orange-700 text-sm">
+						<span className="mb-1 font-medium">Esta consulta é pesada e pode levar alguns minutos.</span>
+						<span>Atualiza automaticamente em
+							<span className="ml-1 font-semibold">
+								{String(Math.floor(retryCountdown / 60)).padStart(2, '0')}:
+								{String(retryCountdown % 60).padStart(2, '0')}
+							</span>
+						</span>
+					</div>
+				</div>
+			)}
 
 			{/* Status de Loading */}
 			{isLoading && (
