@@ -82,6 +82,7 @@ interface DetailedDataProps {
 const DetailedData = ({ startDate, endDate, selectedTable, attributionModel }: DetailedDataProps) => {
   const { getUrlParams, updateUrlParams } = useUrlParams()
   const [data, setData] = useState<DetailedDataItem[]>([])
+  const [summary, setSummary] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [loadingMessage, setLoadingMessage] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -194,6 +195,12 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel }: D
         console.log('✅ Dados detalhados recebidos:', response.data?.length || 0, 'registros')
         
         setData(response.data || [])
+        // Guardar resumo retornado pela API (se houver)
+        if (response.summary) {
+          setSummary(response.summary)
+        } else {
+          setSummary(null)
+        }
         
         // Atualizar informações de paginação
         if (response.pagination) {
@@ -263,6 +270,10 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel }: D
         
         // Adicionar novos dados aos existentes
         setData(prevData => [...prevData, ...newData])
+        // Preservar summary do primeiro lote; atualiza apenas se ainda não definido
+        if (!summary && response.summary) {
+          setSummary(response.summary)
+        }
         
         // Atualizar progresso baseado no número de lotes
         // Usar uma estimativa mais realista baseada no número de lotes carregados
@@ -1041,6 +1052,12 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel }: D
       console.log('✅ Dados recarregados:', response.data?.length || 0, 'registros')
       
       setData(response.data || [])
+      // Atualizar summary no reload
+      if (response.summary) {
+        setSummary(response.summary)
+      } else {
+        setSummary(null)
+      }
       
       // Atualizar informações de paginação
       if (response.pagination) {
@@ -1253,7 +1270,7 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel }: D
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
           <MetricCard
             title="Sessões"
-            value={totals.sessoes}
+            value={selectedFilters.length === 0 && summary?.total_sessoes ? summary.total_sessoes : totals.sessoes}
             icon={Globe}
             color="blue"
           />
