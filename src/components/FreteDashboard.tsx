@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { api } from '../services/api'
 import { FreteDataItem } from '../types'
 import { 
@@ -46,6 +46,7 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
   const [isProductTableFullscreen, setIsProductTableFullscreen] = useState(false)
   const [minCalculations, setMinCalculations] = useState<number>(100)
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null)
+  const lastRequestKeyRef = useRef<string | null>(null)
 
   // Resetar showAllProducts quando mudar a ordenação
   useEffect(() => {
@@ -90,7 +91,13 @@ const FreteDashboard: React.FC<FreteDashboardProps> = ({
       }
     }
 
+    // Evitar requests duplicados em desenvolvimento (React Strict Mode)
+    const requestKey = `${selectedTable}::${startDate}::${endDate}`
     if (selectedTable && startDate && endDate) {
+      if (lastRequestKeyRef.current === requestKey) {
+        return
+      }
+      lastRequestKeyRef.current = requestKey
       fetchFreteData()
     } else {
       setIsLoading(false)
