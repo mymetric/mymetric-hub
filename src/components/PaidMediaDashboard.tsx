@@ -326,19 +326,58 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     setIsLoadingCreatives(true)
 
     try {
-      const requestData = {
-        start_date: startDate,
-        end_date: endDate,
-        table_name: selectedTable,
-        last_cache: useCache && !forceRefresh,
-        force_refresh: forceRefresh
-      }
+      // Tentar primeiro com cache quando disponível
+      let response: any = null
+      let cacheWorked = false
+      
+      if (useCache && !forceRefresh) {
+        try {
+          console.log('🚀 Tentando buscar criativos com cache...')
+          response = await api.getAdsCreatives(token, {
+            start_date: startDate,
+            end_date: endDate,
+            table_name: selectedTable,
+            last_cache: true,
+            force_refresh: false
+          })
 
-      console.log('🚀 Buscando dados de criativos:', requestData)
-      const response = await api.getAdsCreatives(token, requestData)
+          // Verificar se o cache funcionou (retornou dados válidos)
+          if (response && response.data && response.data.length > 0) {
+            cacheWorked = true
+            console.log('✅ Cache de criativos funcionou! Dados recebidos:', response.data.length, 'registros')
+          } else {
+            console.log('⚠️ Cache de criativos não retornou dados válidos, tentando request novo...')
+            cacheWorked = false
+          }
+        } catch (cacheError) {
+          console.log('⚠️ Erro ao buscar criativos com cache, tentando request novo...', cacheError)
+          cacheWorked = false
+        }
+      }
+      
+      // Se o cache não funcionou, fazer request novo sem cache
+      if (!cacheWorked) {
+        console.log('🚀 Fazendo request novo de criativos sem cache...')
+        try {
+          response = await api.getAdsCreatives(token, {
+            start_date: startDate,
+            end_date: endDate,
+            table_name: selectedTable,
+            last_cache: false,
+            force_refresh: forceRefresh
+          })
+          console.log('✅ Request novo de criativos concluído. Dados recebidos:', response?.data?.length || 0, 'registros')
+        } catch (error) {
+          console.error('❌ Erro ao buscar dados de criativos (request novo):', error)
+          setCreativeData([])
+          setCacheInfo(null)
+          setIsLoadingCreatives(false)
+          return
+        }
+      }
       
       // Converter dados da API para o formato esperado
-      const convertedData: AdsCreativeData[] = (response.data || []).map((item: any) => ({
+      const convertedData: AdsCreativeData[] = (response?.data || []).map((item: any) => ({
         platform: item.platform,
         campaign_name: item.campaign_name,
         ad_group_name: item.adset_name || item.ad_group_name || 'N/A',
@@ -359,7 +398,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       }))
       
         setCreativeData(convertedData)
-        setCacheInfo(response.cache_info || null)
+        setCacheInfo(response?.cache_info || null)
         
         console.log('✅ Dados de criativos carregados:', convertedData.length, 'registros')
         console.log('📊 Amostra dos dados convertidos:', convertedData.slice(0, 3))
@@ -460,39 +499,77 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         console.log('🔄 useCache mode:', useCache)
         console.log('🔄 startDate:', startDate, 'endDate:', endDate)
         
-        // Usar cache quando disponível para evitar 504 errors
-        console.log('🔄 Fazendo request com cache ativado...')
-        console.log('🔄 startDate:', startDate, 'endDate:', endDate)
-        console.log('🔄 selectedTable:', selectedTable)
-        console.log('🔄 useCache:', useCache)
+        // Tentar primeiro com cache quando disponível
+        let response: any = null
+        let cacheWorked = false
         
-          const response = await api.getAdsCampaigns(token, {
-            start_date: startDate,
-            end_date: endDate,
-            table_name: selectedTable,
-            last_cache: useCache,
-            force_refresh: false
-          })
+        if (useCache) {
+          try {
+            console.log('🔄 Tentando request com cache ativado...')
+            console.log('🔄 startDate:', startDate, 'endDate:', endDate)
+            console.log('🔄 selectedTable:', selectedTable)
+            
+            response = await api.getAdsCampaigns(token, {
+              start_date: startDate,
+              end_date: endDate,
+              table_name: selectedTable,
+              last_cache: true,
+              force_refresh: false
+            })
 
-        console.log('✅ Response com datas específicas:', response)
-        console.log('✅ Dados recebidos:', response.data?.length || 0, 'campanhas')
-        console.log('✅ Primeira campanha:', response.data?.[0])
-        console.log('🔍 Plataformas nos dados da API:', [...new Set((response.data || []).map(item => item.platform))])
-        console.log('🔍 Amostra dos dados da API:', (response.data || []).slice(0, 5).map(item => ({ 
+            // Verificar se o cache funcionou (retornou dados válidos)
+            if (response && response.data && response.data.length > 0) {
+              cacheWorked = true
+              console.log('✅ Cache funcionou! Dados recebidos:', response.data.length, 'campanhas')
+            } else {
+              console.log('⚠️ Cache não retornou dados válidos, tentando request novo...')
+              cacheWorked = false
+            }
+          } catch (cacheError) {
+            console.log('⚠️ Erro ao buscar com cache, tentando request novo...', cacheError)
+            cacheWorked = false
+          }
+        }
+        
+        // Se o cache não funcionou, fazer request novo sem cache
+        if (!cacheWorked) {
+          console.log('🔄 Fazendo request novo sem cache...')
+          try {
+            response = await api.getAdsCampaigns(token, {
+              start_date: startDate,
+              end_date: endDate,
+              table_name: selectedTable,
+              last_cache: false,
+              force_refresh: false
+            })
+            console.log('✅ Request novo concluído. Dados recebidos:', response?.data?.length || 0, 'campanhas')
+          } catch (error) {
+            console.error('❌ Error fetching ads campaigns (request novo):', error)
+            setCampaignData([])
+            setIsLoading(false)
+            return
+          }
+        }
+
+        console.log('✅ Response final:', response)
+        console.log('✅ Dados recebidos:', response?.data?.length || 0, 'campanhas')
+        console.log('✅ Primeira campanha:', response?.data?.[0])
+        console.log('🔍 Plataformas nos dados da API:', [...new Set((response?.data || []).map(item => item.platform))])
+        console.log('🔍 Amostra dos dados da API:', (response?.data || []).slice(0, 5).map(item => ({ 
           platform: item.platform, 
           campaign: item.campaign_name,
           cost: item.cost 
         })))
         console.log('🔍 Contagem por plataforma na API:', {
-          google_ads: (response.data || []).filter(item => item.platform === 'google_ads').length,
-          meta_ads: (response.data || []).filter(item => item.platform === 'meta_ads').length,
-          total: (response.data || []).length
+          google_ads: (response?.data || []).filter(item => item.platform === 'google_ads').length,
+          meta_ads: (response?.data || []).filter(item => item.platform === 'meta_ads').length,
+          total: (response?.data || []).length
         })
         
-          setCampaignData(response.data || [])
-          setCacheInfo(response.cache_info || null)
-          setSummary(response.summary || null)
-          setUsedFallback(false)
+        setCampaignData(response?.data || [])
+        setCacheInfo(response?.cache_info || null)
+        setSummary(response?.summary || null)
+        setUsedFallback(!cacheWorked)
       } catch (error) {
         console.error('❌ Error fetching ads campaigns:', error)
         setCampaignData([])
