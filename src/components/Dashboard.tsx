@@ -652,7 +652,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     // Limpar cache de pedidos quando mudar tabela, datas ou modelo de atribuição
     setDownloadedOrders(new Set())
     setDownloadingOrders(new Set())
-  }, [user, selectedTable, startDate, endDate, attributionModel, activeTab])
+  }, [user, selectedTable, startDate, endDate, attributionModel])
 
   // Verificação periódica do token removida - não é mais necessária
   // useEffect(() => {
