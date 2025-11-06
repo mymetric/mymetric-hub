@@ -112,16 +112,25 @@ const DateRangeSelector = ({ onDateRangeChange, startDate, endDate }: DateRangeS
         
         <div className="flex items-center gap-2 flex-shrink-0">
           {hasSelection && (
-            <button
+            <span
+              role="button"
+              tabIndex={0}
               onClick={(e) => {
                 e.stopPropagation()
                 clearSelection()
               }}
-              className="text-gray-400 hover:text-gray-600 p-1"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  clearSelection()
+                }
+              }}
+              className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer"
               title="Limpar seleção"
             >
               <X className="w-3 h-3" />
-            </button>
+            </span>
           )}
           <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
         </div>

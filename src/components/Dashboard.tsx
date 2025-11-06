@@ -574,6 +574,10 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   useEffect(() => {
     const fetchMetrics = async () => {
       try {
+        // Evitar buscar dados básicos quando a aba for Mídia Paga
+        if (activeTab === 'midia-paga') {
+          return
+        }
         const token = localStorage.getItem('auth-token')
         if (!token) return
 
@@ -652,7 +656,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     // Limpar cache de pedidos quando mudar tabela, datas ou modelo de atribuição
     setDownloadedOrders(new Set())
     setDownloadingOrders(new Set())
-  }, [user, selectedTable, startDate, endDate, attributionModel])
+  }, [user, selectedTable, startDate, endDate, attributionModel, activeTab])
 
   // Verificação periódica do token removida - não é mais necessária
   // useEffect(() => {

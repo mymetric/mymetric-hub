@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import { 
   TrendingUp, 
@@ -65,10 +65,130 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
   const [isBackgroundLoading, setIsBackgroundLoading] = useState(false)
   const [isFullWidth, setIsFullWidth] = useState(false)
   const [activeTab, setActiveTab] = useState<'overview' | 'creatives'>('overview')
+  const [reloadNonce, setReloadNonce] = useState(0)
   
-  // Estados para modo creatives
+  // Estados para modo creatives (declarados antes dos useEffects que os usam)
   const [creativeData, setCreativeData] = useState<AdsCreativeData[]>([])
   const [isLoadingCreatives, setIsLoadingCreatives] = useState(false)
+  
+  const lastCampaignsKeyRef = useRef<string | null>(null)
+  const lastCreativesKeyRef = useRef<string | null>(null)
+  const prevIsLoadingRef = useRef<boolean>(false)
+  const prevIsLoadingCreativesRef = useRef<boolean>(false)
+  const prevIsRefreshingRef = useRef<boolean>(false)
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hasScheduledRetryRef = useRef(false)
+  const retryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [retryCountdown, setRetryCountdown] = useState<number | null>(null)
+
+  const playDoneSound = () => {
+    try {
+      if (typeof window === 'undefined') return
+      const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext
+      if (!AudioCtx) return
+      const ctx = new AudioCtx()
+      const o = ctx.createOscillator()
+      const g = ctx.createGain()
+      o.type = 'sine'
+      o.frequency.setValueAtTime(880, ctx.currentTime)
+      g.gain.setValueAtTime(0.0001, ctx.currentTime)
+      g.gain.exponentialRampToValueAtTime(0.1, ctx.currentTime + 0.01)
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25)
+      o.connect(g)
+      g.connect(ctx.destination)
+      o.start()
+      o.stop(ctx.currentTime + 0.3)
+      // Close context shortly after to release resources
+      setTimeout(() => ctx.close().catch(() => {}), 400)
+    } catch {}
+  }
+
+  // Tocar som quando o carregamento principal finalizar
+  useEffect(() => {
+    if (prevIsLoadingRef.current && !isLoading) {
+      playDoneSound()
+    }
+    prevIsLoadingRef.current = isLoading
+  }, [isLoading])
+
+  // Tocar som quando o carregamento de criativos finalizar
+  useEffect(() => {
+    if (prevIsLoadingCreativesRef.current && !isLoadingCreatives) {
+      playDoneSound()
+    }
+    prevIsLoadingCreativesRef.current = isLoadingCreatives
+  }, [isLoadingCreatives])
+
+  // Tocar som quando o refresh em background finalizar
+  useEffect(() => {
+    if (prevIsRefreshingRef.current && !isRefreshing) {
+      playDoneSound()
+    }
+    prevIsRefreshingRef.current = isRefreshing
+  }, [isRefreshing])
+
+  // Gerenciar countdown visual e retry automático quando não houver dados
+  useEffect(() => {
+    const noData = !isLoading && (campaignData?.length || 0) === 0
+    if (noData && !hasScheduledRetryRef.current) {
+      hasScheduledRetryRef.current = true
+      setRetryCountdown(10)
+      // Garantir limpeza de timeout antigo
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current)
+        retryTimeoutRef.current = null
+      }
+      // Iniciar intervalo de 1s para countdown
+      if (retryIntervalRef.current) {
+        clearInterval(retryIntervalRef.current)
+        retryIntervalRef.current = null
+      }
+      retryIntervalRef.current = setInterval(() => {
+        setRetryCountdown(prev => {
+          if (prev == null) return prev
+          if (prev <= 1) {
+            // Finaliza contagem e executa retry
+            if (retryIntervalRef.current) {
+              clearInterval(retryIntervalRef.current)
+              retryIntervalRef.current = null
+            }
+            hasScheduledRetryRef.current = false
+            setRetryCountdown(null)
+            setReloadNonce((p: number) => p + 1)
+            return null
+          }
+          return prev - 1
+        })
+      }, 1000)
+    }
+
+    if (!noData) {
+      // Limpar timers e countdown quando começar a carregar ou houver dados
+      hasScheduledRetryRef.current = false
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current)
+        retryTimeoutRef.current = null
+      }
+      if (retryIntervalRef.current) {
+        clearInterval(retryIntervalRef.current)
+        retryIntervalRef.current = null
+      }
+      if (retryCountdown !== null) setRetryCountdown(null)
+    }
+
+    return () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current)
+        retryTimeoutRef.current = null
+      }
+      if (retryIntervalRef.current) {
+        clearInterval(retryIntervalRef.current)
+        retryIntervalRef.current = null
+      }
+    }
+  }, [isLoading, campaignData])
+  
+  // Estados para modo creatives (drilldown)
   const [drilldownLevel, setDrilldownLevel] = useState<'campaign' | 'adgroup' | 'creative'>('campaign')
   const [selectedCreativeCampaign, setSelectedCreativeCampaign] = useState<string | null>(null)
   const [selectedAdGroup, setSelectedAdGroup] = useState<string | null>(null)
@@ -317,7 +437,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
 
   useDocumentTitle(getPageTitle())
 
-  const fetchCreativeData = async (forceRefresh = false) => {
+  const fetchCreativeData = async (forceRefresh = false, useCacheFirst = false) => {
     if (!validateTableName(selectedTable)) {
       console.log('❌ Table name inválido para busca de criativos')
       return
@@ -326,13 +446,13 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     setIsLoadingCreatives(true)
 
     try {
-      // Tentar primeiro com cache quando disponível
+      // Tentar cache primeiro apenas se indicado (ex.: primeiro load da aba)
       let response: any = null
       let cacheWorked = false
       
-      if (useCache && !forceRefresh) {
+      if (useCacheFirst) {
         try {
-          console.log('🚀 Tentando buscar criativos com cache...')
+          console.log('🚀 [Criativos] Tentando cache (last_cache: true)...')
           response = await api.getAdsCreatives(token, {
             start_date: startDate,
             end_date: endDate,
@@ -340,31 +460,25 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
             last_cache: true,
             force_refresh: false
           })
-
-          // Verificar se o cache funcionou (retornou dados válidos)
           if (response && response.data && response.data.length > 0) {
             cacheWorked = true
-            console.log('✅ Cache de criativos funcionou! Dados recebidos:', response.data.length, 'registros')
-          } else {
-            console.log('⚠️ Cache de criativos não retornou dados válidos, tentando request novo...')
-            cacheWorked = false
           }
         } catch (cacheError) {
-          console.log('⚠️ Erro ao buscar criativos com cache, tentando request novo...', cacheError)
           cacheWorked = false
         }
       }
       
-      // Se o cache não funcionou, fazer request novo sem cache
+      // Se o cache não funcionou (ou não foi tentado), fazer request novo sem cache
+      // Sempre usar force_refresh: false
       if (!cacheWorked) {
-        console.log('🚀 Fazendo request novo de criativos sem cache...')
+        console.log('🚀 [Criativos] Request sem cache (sem force_refresh)...')
         try {
           response = await api.getAdsCreatives(token, {
             start_date: startDate,
             end_date: endDate,
             table_name: selectedTable,
             last_cache: false,
-            force_refresh: forceRefresh
+            force_refresh: false
           })
           console.log('✅ Request novo de criativos concluído. Dados recebidos:', response?.data?.length || 0, 'registros')
         } catch (error) {
@@ -499,16 +613,18 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         console.log('🔄 useCache mode:', useCache)
         console.log('🔄 startDate:', startDate, 'endDate:', endDate)
         
-        // Tentar primeiro com cache quando disponível
+        // Determinar se é primeiro load e/ou se o período mudou
+        const requestKey = `${selectedTable}::${startDate}::${endDate}`
+        const isFirstLoad = lastCampaignsKeyRef.current === null
+        const isNewDateRange = lastCampaignsKeyRef.current !== requestKey
+
         let response: any = null
         let cacheWorked = false
-        
-        if (useCache) {
+
+        if (isFirstLoad) {
+          // Primeiro load da aba: tenta last_cache primeiro
           try {
-            console.log('🔄 Tentando request com cache ativado...')
-            console.log('🔄 startDate:', startDate, 'endDate:', endDate)
-            console.log('🔄 selectedTable:', selectedTable)
-            
+            console.log('🔄 [Primeiro load] Tentando request com cache (last_cache: true)...')
             response = await api.getAdsCampaigns(token, {
               start_date: startDate,
               end_date: endDate,
@@ -516,25 +632,32 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
               last_cache: true,
               force_refresh: false
             })
-
-            // Verificar se o cache funcionou (retornou dados válidos)
             if (response && response.data && response.data.length > 0) {
               cacheWorked = true
-              console.log('✅ Cache funcionou! Dados recebidos:', response.data.length, 'campanhas')
-            } else {
-              console.log('⚠️ Cache não retornou dados válidos, tentando request novo...')
-              cacheWorked = false
             }
           } catch (cacheError) {
-            console.log('⚠️ Erro ao buscar com cache, tentando request novo...', cacheError)
             cacheWorked = false
           }
-        }
-        
-        // Se o cache não funcionou, fazer request novo sem cache
-        if (!cacheWorked) {
-          console.log('🔄 Fazendo request novo sem cache...')
+          if (!cacheWorked) {
+            try {
+              response = await api.getAdsCampaigns(token, {
+                start_date: startDate,
+                end_date: endDate,
+                table_name: selectedTable,
+                last_cache: false,
+                force_refresh: false
+              })
+            } catch (error) {
+              console.error('❌ Error fetching ads campaigns (primeiro load sem cache):', error)
+              setCampaignData([])
+              setIsLoading(false)
+              return
+            }
+          }
+        } else if (isNewDateRange) {
+          // Mudança de data: não usar last_cache, fazer request normal sem cache
           try {
+            console.log('🚀 [Mudança de data] Request sem cache (sem force_refresh)')
             response = await api.getAdsCampaigns(token, {
               start_date: startDate,
               end_date: endDate,
@@ -542,12 +665,42 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
               last_cache: false,
               force_refresh: false
             })
-            console.log('✅ Request novo concluído. Dados recebidos:', response?.data?.length || 0, 'campanhas')
           } catch (error) {
-            console.error('❌ Error fetching ads campaigns (request novo):', error)
+            console.error('❌ Error fetching ads campaigns (force refresh após mudança de data):', error)
             setCampaignData([])
             setIsLoading(false)
             return
+          }
+        } else {
+          // Sem mudança de data: pode tentar cache primeiro normalmente
+          try {
+            console.log('🔄 [Mesmo período] Tentando cache...')
+            response = await api.getAdsCampaigns(token, {
+              start_date: startDate,
+              end_date: endDate,
+              table_name: selectedTable,
+              last_cache: true,
+              force_refresh: false
+            })
+            if (response && response.data && response.data.length > 0) {
+              cacheWorked = true
+            }
+          } catch {}
+          if (!cacheWorked) {
+            try {
+              response = await api.getAdsCampaigns(token, {
+                start_date: startDate,
+                end_date: endDate,
+                table_name: selectedTable,
+                last_cache: false,
+                force_refresh: false
+              })
+            } catch (error) {
+              console.error('❌ Error fetching ads campaigns (fallback sem cache):', error)
+              setCampaignData([])
+              setIsLoading(false)
+              return
+            }
           }
         }
 
@@ -570,6 +723,9 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         setCacheInfo(response?.cache_info || null)
         setSummary(response?.summary || null)
         setUsedFallback(!cacheWorked)
+
+        // Atualiza a chave do último request bem-sucedido
+        lastCampaignsKeyRef.current = requestKey
       } catch (error) {
         console.error('❌ Error fetching ads campaigns:', error)
         setCampaignData([])
@@ -580,12 +736,16 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     }
 
     fetchAdsCampaigns()
-  }, [selectedTable, attributionModel, startDate, endDate])
+  }, [selectedTable, attributionModel, startDate, endDate, reloadNonce])
 
   // useEffect para buscar dados de criativos quando a aba mudar
   useEffect(() => {
     if (activeTab === 'creatives') {
-      fetchCreativeData()
+      const requestKey = `${selectedTable}::${startDate}::${endDate}`
+      const isFirstLoad = lastCreativesKeyRef.current === null
+      const isNewDateRange = lastCreativesKeyRef.current !== requestKey
+      fetchCreativeData(isNewDateRange, isFirstLoad)
+      lastCreativesKeyRef.current = requestKey
     }
   }, [activeTab, selectedTable, startDate, endDate, token])
 
@@ -616,7 +776,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         start_date: startDate,
         end_date: endDate,
         table_name: selectedTable,
-        force_refresh: true
+        force_refresh: false
       })
       
       // Aguarda um pouco para garantir que o token seja renovado se necessário
@@ -626,12 +786,12 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       token = localStorage.getItem('auth-token')
       console.log('🔄 Token após aguardar:', token ? 'disponível' : 'não disponível')
       
-      // Faz request normal em background com force_refresh
+      // Faz request normal em background sem force_refresh
       const response = await api.getAdsCampaigns(token || '', {
         start_date: startDate,
         end_date: endDate,
         table_name: selectedTable,
-        force_refresh: true
+        force_refresh: false
       })
 
       console.log('✅ Dados atualizados em background:', response)
@@ -1808,7 +1968,6 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     )
   }
 
-
   if (campaignData.length === 0 && !isLoading) {
     return (
       <div className="bg-white rounded-xl shadow-lg p-12 text-center">
@@ -1819,6 +1978,17 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         <p className="text-gray-600 mb-4">
           Não foram encontrados dados de campanhas para a tabela selecionada no período.
         </p>
+        {retryCountdown !== null && (
+          <div className="mt-4">
+            <div className="text-sm text-gray-700 mb-2">Tentando novamente em {retryCountdown}s</div>
+            <div className="w-64 mx-auto h-2 bg-gray-200 rounded-full overflow-hidden">
+              <div
+                className="h-2 bg-blue-600 transition-all"
+                style={{ width: `${((10 - (retryCountdown || 0)) / 10) * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
     )
   }
