@@ -66,6 +66,7 @@ const RealtimeData = ({ selectedTable }: RealtimeDataProps) => {
   const [data, setData] = useState<RealtimeDataItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [finalRevenue, setFinalRevenue] = useState<number>(0)
   
   // Estados para controle de paginação das tabelas
   const [showAllTrafficCategories, setShowAllTrafficCategories] = useState(false)
@@ -128,6 +129,21 @@ const RealtimeData = ({ selectedTable }: RealtimeDataProps) => {
       
       console.log('✅ Realtime data response:', response)
       setData(response.data || [])
+
+      // Buscar receita final em tempo real (agregada)
+      try {
+        const revenueResp = await api.getRealtimeFinalRevenue(token, { table_name: selectedTable })
+        // Suportar chaves alternativas que o backend possa retornar
+        const value =
+          (revenueResp as any)?.final_revenue ??
+          (revenueResp as any)?.total_revenue ??
+          (revenueResp as any)?.revenue ??
+          0
+        setFinalRevenue(typeof value === 'number' ? value : 0)
+      } catch (revErr) {
+        console.warn('⚠️ Falha ao buscar receita final em tempo real:', revErr)
+        setFinalRevenue(0)
+      }
     } catch (error) {
       console.error('❌ Error fetching realtime data:', error)
       setError('Erro ao buscar dados')
@@ -774,7 +790,23 @@ const RealtimeData = ({ selectedTable }: RealtimeDataProps) => {
               currency: 'BRL'
             }).format(metrics.totalRevenue)}
           </h3>
-          <p className="text-sm text-gray-600">Receita total</p>
+          <p className="text-sm text-gray-600">Receita de Produto</p>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-lg p-6">
+          <div className="flex items-center justify-between mb-2">
+            <div className="p-2 bg-emerald-100 rounded-lg">
+              <DollarSign className="w-5 h-5 text-emerald-600" />
+            </div>
+            <span className="text-sm text-gray-500">Hoje</span>
+          </div>
+          <h3 className="text-2xl font-bold text-gray-900">
+            {new Intl.NumberFormat('pt-BR', {
+              style: 'currency',
+              currency: 'BRL'
+            }).format(finalRevenue)}
+          </h3>
+          <p className="text-sm text-gray-600">Receita de Pedidos</p>
         </div>
 
         <div className="bg-white rounded-xl shadow-lg p-6">
@@ -788,20 +820,7 @@ const RealtimeData = ({ selectedTable }: RealtimeDataProps) => {
           <p className="text-sm text-gray-600">Sessões desta hora</p>
         </div>
 
-        <div className="bg-white rounded-xl shadow-lg p-6">
-          <div className="flex items-center justify-between mb-2">
-            <div className="p-2 bg-orange-100 rounded-lg">
-              <BarChart3 className="w-5 h-5 text-orange-600" />
-            </div>
-            <span className="text-sm text-gray-500">Peak</span>
-          </div>
-          <h3 className="text-2xl font-bold text-gray-900">
-            {metrics.peakHour ? `${metrics.peakHour.hourLabel}` : '--'}
-          </h3>
-          <p className="text-sm text-gray-600">
-            {metrics.peakHour ? `${metrics.peakHour.sessions} sessões` : 'Nenhum pico'}
-          </p>
-        </div>
+        
       </div>
 
       {/* Gráfico de Barras Timeline */}

@@ -215,6 +215,14 @@ interface RealtimeDataResponse {
   data: RealtimeDataItem[]
 }
 
+interface RealtimeRevenueRequest {
+  table_name: string
+}
+
+interface RealtimeRevenueResponse {
+  final_revenue: number
+}
+
 interface User {
   id?: string
   email: string
@@ -960,6 +968,40 @@ export const api = {
     } catch (error) {
       console.error('❌ Realtime Data fetch error:', error)
       throw new Error('Erro ao buscar dados em tempo real.')
+    }
+  },
+
+  async getRealtimeFinalRevenue(token: string, realtimeRevenueData: RealtimeRevenueRequest): Promise<RealtimeRevenueResponse> {
+    try {
+      console.log('🌐 Realtime Final Revenue API Request:', {
+        url: `${API_BASE_URL}/metrics/realtime-revenue`,
+        method: 'POST',
+        body: realtimeRevenueData
+      })
+
+      const response = await fetch(`${API_BASE_URL}/metrics/realtime-revenue`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(realtimeRevenueData),
+      })
+
+      console.log('📡 Realtime Final Revenue Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Realtime Final Revenue API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('📦 Realtime Final Revenue API Response data:', data)
+      return data
+    } catch (error) {
+      console.error('❌ Realtime Final Revenue fetch error:', error)
+      throw new Error('Erro ao buscar receita final em tempo real.')
     }
   },
 
