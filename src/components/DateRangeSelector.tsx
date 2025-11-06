@@ -53,24 +53,12 @@ const DateRangeSelector = ({ onDateRangeChange, startDate, endDate }: DateRangeS
 
   const handleStartDateChange = (value: string) => {
     setLocalStartDate(value)
-    if (validateDates(value, localEndDate)) {
-      onDateRangeChange(value, localEndDate)
-      // Fechar dropdown após seleção se ambas as datas estão preenchidas
-      if (value && localEndDate) {
-        setIsOpen(false)
-      }
-    }
+    validateDates(value, localEndDate)
   }
 
   const handleEndDateChange = (value: string) => {
     setLocalEndDate(value)
-    if (validateDates(localStartDate, value)) {
-      onDateRangeChange(localStartDate, value)
-      // Fechar dropdown após seleção se ambas as datas estão preenchidas
-      if (localStartDate && value) {
-        setIsOpen(false)
-      }
-    }
+    validateDates(localStartDate, value)
   }
 
   const handleQuickSelect = (preset: string) => {
@@ -81,15 +69,13 @@ const DateRangeSelector = ({ onDateRangeChange, startDate, endDate }: DateRangeS
 
     setLocalStartDate(selectedPreset.start)
     setLocalEndDate(selectedPreset.end)
-    onDateRangeChange(selectedPreset.start, selectedPreset.end)
-    setIsOpen(false)
+    validateDates(selectedPreset.start, selectedPreset.end)
   }
 
   const clearSelection = () => {
     setLocalStartDate('')
     setLocalEndDate('')
     setErrors({})
-    onDateRangeChange('', '')
   }
 
   const hasErrors = Object.keys(errors).length > 0
@@ -216,7 +202,14 @@ const DateRangeSelector = ({ onDateRangeChange, startDate, endDate }: DateRangeS
             </button>
             
             <button
-              onClick={() => setIsOpen(false)}
+              onClick={() => {
+                const isClearing = !localStartDate && !localEndDate
+                const isValid = validateDates(localStartDate, localEndDate)
+                if (isClearing || isValid) {
+                  onDateRangeChange(localStartDate || '', localEndDate || '')
+                  setIsOpen(false)
+                }
+              }}
               className="px-4 py-2 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
             >
               Aplicar
