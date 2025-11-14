@@ -63,6 +63,8 @@ export interface AdsCampaignData {
   revenue_origin_stack: number
   transactions_first_origin_stack: number
   revenue_first_origin_stack: number
+  pixel_transactions?: number
+  pixel_revenue?: number
 }
 
 export interface AdsCampaignRequest {
@@ -94,6 +96,8 @@ export interface AdsCampaignSummary {
   periodo: string
   tablename: string
   user_access: string
+  pixel_transactions?: number
+  pixel_revenue?: number
 }
 
 export interface AdsCampaignResponse {

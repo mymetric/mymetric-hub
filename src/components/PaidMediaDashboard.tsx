@@ -15,7 +15,9 @@ import {
   BarChart3,
   Layers,
   Star,
-  Award
+  Award,
+  Activity,
+  Cpu
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
 import { AdsCampaignData, AdsCampaignResponse, CacheInfo, AdsCampaignSummary, AdsCreativeData, AdsCreativeResponse } from '../types'
@@ -316,6 +318,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       transactions_first: acc.transactions_first + campaign.transactions_first,
       revenue: acc.revenue + campaign.revenue,
       revenue_first: acc.revenue_first + campaign.revenue_first,
+      pixel_transactions: acc.pixel_transactions + (campaign.pixel_transactions || 0),
+      pixel_revenue: acc.pixel_revenue + (campaign.pixel_revenue || 0),
     }), {
       cost: 0,
       impressions: 0,
@@ -325,6 +329,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       transactions_first: 0,
       revenue: 0,
       revenue_first: 0,
+      pixel_transactions: 0,
+      pixel_revenue: 0,
       fsm_transactions: 0
     })
     
@@ -346,57 +352,43 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     }
   }
   
+  const defaultVisibleColumns = {
+    platform: true,
+    campaign_name: true,
+    cost: true,
+    impressions: false,
+    clicks: false,
+    ctr: false,
+    cpc: false,
+    leads: false,
+    transactions: true,
+    transactions_first: false,
+    pixel_transactions: true,
+    pixel_delta: true,
+    transactions_delta: true,
+    new_customers_percentage: true,
+    revenue: true,
+    revenue_first: false,
+    pixel_revenue: true,
+    roas: true,
+    roas_first: false,
+    cpv: false,
+    cpa: false,
+    cpa_delta: true
+  }
+
   // Carregar colunas visíveis do localStorage ou usar padrão
   const getInitialVisibleColumns = () => {
     const saved = localStorage.getItem('paidMediaVisibleColumns')
     if (saved) {
       try {
-        return JSON.parse(saved)
+        const parsed = JSON.parse(saved)
+        return { ...defaultVisibleColumns, ...parsed }
       } catch {
-        return {
-          platform: true,
-          campaign_name: true,
-          cost: true,
-          impressions: false,
-          clicks: false,
-          ctr: false,
-          cpc: false,
-          leads: false,
-          transactions: true,
-          transactions_first: false,
-          transactions_delta: true,
-          new_customers_percentage: true,
-          revenue: true,
-          revenue_first: false,
-          roas: true,
-          roas_first: false,
-          cpv: false,
-          cpa: false,
-          cpa_delta: true
-        }
+        return defaultVisibleColumns
       }
     }
-    return {
-      platform: true,
-      campaign_name: true,
-      cost: true,
-      impressions: false,
-      clicks: false,
-      ctr: false,
-      cpc: false,
-      leads: false,
-      transactions: true,
-      transactions_first: false,
-      transactions_delta: true,
-      new_customers_percentage: true,
-      revenue: true,
-      revenue_first: false,
-      roas: true,
-      roas_first: false,
-      cpv: false,
-      cpa: false,
-      cpa_delta: true
-    }
+    return defaultVisibleColumns
   }
   
   const [visibleColumns, setVisibleColumns] = useState(getInitialVisibleColumns())
@@ -906,6 +898,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         revenue_origin_stack: 0,
         transactions_first_origin_stack: 0,
         revenue_first_origin_stack: 0,
+        pixel_transactions: 0,
+        pixel_revenue: 0,
         records: []
       }
     }
@@ -933,6 +927,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     acc[key].transactions_first_origin_stack += item.transactions_first_origin_stack
     acc[key].revenue_first_origin_stack += item.revenue_first_origin_stack
     acc[key].fsm_transactions += (item.fsm_transactions || 0)
+    acc[key].pixel_transactions += item.pixel_transactions || 0
+    acc[key].pixel_revenue += item.pixel_revenue || 0
     acc[key].records.push(item)
     
     return acc
@@ -987,6 +983,18 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
           aValue = a.transactions_first
           bValue = b.transactions_first
           break
+        case 'pixel_transactions':
+          aValue = a.pixel_transactions || 0
+          bValue = b.pixel_transactions || 0
+          break
+        case 'pixel_delta':
+          aValue = (a.pixel_transactions || 0) - (attributionModel === 'origin_stack'
+            ? (a.transactions_origin_stack || a.transactions)
+            : a.transactions)
+          bValue = (b.pixel_transactions || 0) - (attributionModel === 'origin_stack'
+            ? (b.transactions_origin_stack || b.transactions)
+            : b.transactions)
+          break
         case 'transactions_delta':
           // Usar valores originais (não afetados pelo filtro de atribuição)
           const aRevenueLND = a.records && a.records.length > 0 
@@ -1024,6 +1032,10 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         case 'revenue_first':
           aValue = a.revenue_first
           bValue = b.revenue_first
+          break
+        case 'pixel_revenue':
+          aValue = a.pixel_revenue || 0
+          bValue = b.pixel_revenue || 0
           break
         case 'roas':
           aValue = a.cost > 0 ? a.revenue / a.cost : 0
@@ -1381,6 +1393,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     revenue: acc.revenue + (attributionModel === 'origin_stack' ? (item.revenue_origin_stack || item.revenue) : item.revenue),
     transactions_first: acc.transactions_first + (attributionModel === 'origin_stack' ? (item.transactions_first_origin_stack || item.transactions_first) : item.transactions_first),
     revenue_first: acc.revenue_first + (attributionModel === 'origin_stack' ? (item.revenue_first_origin_stack || item.revenue_first) : item.revenue_first),
+    pixel_transactions: acc.pixel_transactions + (item.pixel_transactions || 0),
+    pixel_revenue: acc.pixel_revenue + (item.pixel_revenue || 0),
   }), {
     cost: 0,
     impressions: 0,
@@ -1390,6 +1404,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     revenue: 0,
     transactions_first: 0,
     revenue_first: 0,
+    pixel_transactions: 0,
+    pixel_revenue: 0,
   }) : {
     cost: 0,
     impressions: 0,
@@ -1399,6 +1415,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     revenue: 0,
     transactions_first: 0,
     revenue_first: 0,
+    pixel_transactions: 0,
+    pixel_revenue: 0,
   }
 
   // Calcular totais para criativos
@@ -1489,6 +1507,29 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
   const avgCPM = totals.impressions > 0 ? (totals.cost / totals.impressions) * 1000 : 0
   const totalROAS = totals.cost > 0 ? totals.revenue / totals.cost : 0
   const totalROASFirst = totals.cost > 0 ? totals.revenue_first / totals.cost : 0
+  const hasPixelTotals = (totals.pixel_transactions || 0) > 0
+  const pixelShare = totals.transactions > 0 && hasPixelTotals
+    ? (totals.pixel_transactions / totals.transactions) * 100
+    : 0
+  const pixelROAS = totals.cost > 0 && hasPixelTotals ? totals.pixel_revenue / totals.cost : 0
+  const pixelAOV = hasPixelTotals ? totals.pixel_revenue / totals.pixel_transactions : 0
+  const pixelDelta = hasPixelTotals ? (totals.pixel_transactions || 0) - totals.transactions : null
+  const pixelDeltaPercent = hasPixelTotals && totals.transactions > 0 && pixelDelta !== null
+    ? (pixelDelta / totals.transactions) * 100
+    : null
+  const pixelDeltaPercentages = campaignSummaries
+    .filter(item => (item.pixel_transactions || 0) > 0)
+    .map(item => {
+      const modelTransactions = attributionModel === 'origin_stack'
+        ? (item.transactions_origin_stack || item.transactions)
+        : item.transactions
+      return modelTransactions > 0
+        ? (((item.pixel_transactions || 0) - modelTransactions) / modelTransactions) * 100
+        : 0
+    })
+  const pixelDeltaPercentAverage = pixelDeltaPercentages.length > 0
+    ? pixelDeltaPercentages.reduce((acc, val) => acc + val, 0) / pixelDeltaPercentages.length
+    : null
 
   // Obter plataformas únicas (usar dados filtrados)
   const platforms = [...new Set(filteredData.map(item => item.platform))]
@@ -1740,9 +1781,16 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         'Leads': campaign.leads,
         'Transações': campaign.transactions,
         'Transações 1ª Compra': campaign.transactions_first,
+        'Conversões Pixel': campaign.pixel_transactions || 0,
+        'Δ Pixel vs Modelo (%)': campaign.pixel_transactions && campaign.transactions > 0
+          ? (((campaign.pixel_transactions - (attributionModel === 'origin_stack'
+                ? (campaign.transactions_origin_stack || campaign.transactions)
+                : campaign.transactions)) / campaign.transactions) * 100).toFixed(1)
+          : '',
         '% Novos Clientes': campaign.transactions > 0 ? ((campaign.transactions_first / campaign.transactions) * 100).toFixed(1) : '0.0',
         'Receita': campaign.revenue,
         'Receita 1ª Compra': campaign.revenue_first,
+        'Receita Pixel': campaign.pixel_revenue || 0,
         'ROAS': campaign.cost > 0 ? (campaign.revenue / campaign.cost).toFixed(2) : '0.00',
         'ROAS 1ª Compra': campaign.cost > 0 ? (campaign.revenue_first / campaign.cost).toFixed(2) : '0.00',
         'CPV': campaign.transactions > 0 ? campaign.cost / campaign.transactions : 0,
@@ -1765,9 +1813,12 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         { wch: 10 }, // Leads
         { wch: 12 }, // Transações
         { wch: 18 }, // Transações 1ª
+        { wch: 18 }, // Conversões Pixel
+        { wch: 18 }, // Delta Pixel
         { wch: 15 }, // % Novos
         { wch: 15 }, // Receita
         { wch: 18 }, // Receita 1ª
+        { wch: 18 }, // Receita Pixel
         { wch: 10 }, // ROAS
         { wch: 15 }, // ROAS 1ª
         { wch: 12 }, // CPV
@@ -2356,6 +2407,76 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
             }`}>
               ROAS 1ª: {totalROASFirst.toFixed(2)}x
             </span>
+          </div>
+
+          {/* Conversões Pixel */}
+          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="text-xs font-medium text-gray-600 mb-1">Conversões Pixel</p>
+                <p className="text-xl font-bold text-gray-900">{formatNumber(totals.pixel_transactions || 0)}</p>
+              </div>
+              <div className="p-2 bg-pink-50 rounded-lg">
+                <Activity className="w-5 h-5 text-pink-600" />
+              </div>
+            </div>
+            <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
+              {totals.transactions > 0 ? `${pixelShare.toFixed(1)}% das transações` : 'Aguardando dados'}
+            </span>
+          </div>
+
+          {/* Receita Pixel */}
+          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="text-xs font-medium text-gray-600 mb-1">Receita Pixel</p>
+                <p className="text-xl font-bold text-gray-900">{formatCurrency(totals.pixel_revenue || 0)}</p>
+              </div>
+              <div className="p-2 bg-pink-50 rounded-lg">
+                <Cpu className="w-5 h-5 text-pink-600" />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs text-gray-700">
+              <span className="bg-gray-100 px-2 py-1 rounded">ROAS Pixel: {pixelROAS.toFixed(2)}x</span>
+              <span className="bg-gray-100 px-2 py-1 rounded">Ticket Médio: {pixelAOV > 0 ? formatCurrency(pixelAOV) : '—'}</span>
+            </div>
+          </div>
+
+          {/* Delta Pixel x Modelo */}
+          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="text-xs font-medium text-gray-600 mb-1">Δ Conv. Pixel</p>
+                {pixelDeltaPercent !== null ? (
+                  <p className={`text-xl font-bold ${
+                    pixelDeltaPercentAverage !== null
+                      ? (pixelDeltaPercent >= pixelDeltaPercentAverage ? 'text-red-600' : 'text-green-600')
+                      : (pixelDeltaPercent >= 0 ? 'text-red-600' : 'text-green-600')
+                  }`}>
+                    {pixelDeltaPercent >= 0 ? '+' : ''}{pixelDeltaPercent.toFixed(1)}%
+                  </p>
+                ) : (
+                  <p className="text-xl font-bold text-gray-400">—</p>
+                )}
+              </div>
+              <div className="p-2 bg-slate-50 rounded-lg">
+                <TrendingUp className="w-5 h-5 text-slate-600" />
+              </div>
+            </div>
+            {pixelDeltaPercent !== null ? (
+              <div className="flex flex-col gap-1">
+                {pixelDeltaPercentAverage !== null && (
+                  <span className="text-[11px] text-gray-500">
+                    Média do período: {pixelDeltaPercentAverage >= 0 ? '+' : ''}{pixelDeltaPercentAverage.toFixed(1)}%
+                  </span>
+                )}
+                <span className="text-[11px] text-gray-500">
+                  Δ acima da média = menor incrementalidade • Δ abaixo = melhor incrementalidade
+                </span>
+              </div>
+            ) : (
+              <span className="text-xs text-gray-500">Sem dados de pixel para comparar</span>
+            )}
           </div>
         </div>
       </div>
@@ -3638,10 +3759,12 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                         { key: 'leads', label: 'Leads', icon: '🎯' },
                         { key: 'transactions', label: 'Transações', icon: '🛒' },
                         { key: 'transactions_first', label: 'Trans. 1ª Compra', icon: '🆕' },
+                        { key: 'pixel_transactions', label: 'Conversões Pixel', icon: '✨' },
                         { key: 'transactions_delta', label: 'Δ ROAS %', icon: '📊' },
                         { key: 'new_customers_percentage', label: '% Novos Clientes', icon: '👥' },
                         { key: 'revenue', label: 'Receita', icon: '💵' },
                         { key: 'revenue_first', label: 'Receita 1ª Compra', icon: '💎' },
+                        { key: 'pixel_revenue', label: 'Receita Pixel', icon: '💗' },
                         { key: 'roas', label: 'ROAS', icon: '📈' },
                         { key: 'roas_first', label: 'ROAS 1ª Compra', icon: '🚀' },
                         { key: 'cpv', label: 'CPV', icon: '💳' },
@@ -3764,9 +3887,12 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                         { key: 'leads', label: 'Leads', icon: '🎯' },
                         { key: 'transactions', label: 'Transações', icon: '🛒' },
                         { key: 'transactions_first', label: 'Trans. 1ª Compra', icon: '🆕' },
+                        { key: 'pixel_transactions', label: 'Conversões Pixel', icon: '✨' },
+                        { key: 'pixel_delta', label: 'Δ Pixel x Modelo', icon: '⚖️' },
                         { key: 'transactions_delta', label: 'Δ ROAS %', icon: '📊' },
                         { key: 'revenue', label: 'Receita', icon: '💵' },
-                        { key: 'revenue_first', label: 'Receita 1ª Compra', icon: '💎' }
+                        { key: 'revenue_first', label: 'Receita 1ª Compra', icon: '💎' },
+                        { key: 'pixel_revenue', label: 'Receita Pixel', icon: '💗' }
                       ].filter(metric => 
                         !metricSearchTerm || 
                         metric.label.toLowerCase().includes(metricSearchTerm.toLowerCase()) ||
@@ -3863,12 +3989,18 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                           leads: true,
                           transactions: true,
                           transactions_first: true,
+                          pixel_transactions: true,
+                          pixel_delta: true,
+                          transactions_delta: true,
+                          new_customers_percentage: true,
                           revenue: true,
                           revenue_first: true,
+                          pixel_revenue: true,
                           roas: true,
                           roas_first: true,
                           cpv: true,
-                          cpa: true
+                          cpa: true,
+                          cpa_delta: true
                         })}
                         className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-2"
                       >
@@ -3889,12 +4021,18 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                           leads: false,
                           transactions: false,
                           transactions_first: false,
+                          pixel_transactions: false,
+                          pixel_delta: false,
+                          transactions_delta: false,
+                          new_customers_percentage: false,
                           revenue: false,
                           revenue_first: false,
+                          pixel_revenue: false,
                           roas: false,
                           roas_first: false,
                           cpv: false,
-                          cpa: false
+                          cpa: false,
+                          cpa_delta: false
                         })}
                         className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2"
                       >
@@ -4020,6 +4158,26 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                   Trans. 1ª Compra
                 </SortableHeader>
                 )}
+                {visibleColumns.pixel_transactions && (
+                <SortableHeader
+                  field="pixel_transactions"
+                  currentSortField={sortField}
+                  currentSortDirection={sortDirection}
+                  onSort={handleSort}
+                >
+                  Conv. Pixel
+                </SortableHeader>
+                )}
+                {visibleColumns.pixel_delta && (
+                <SortableHeader
+                  field="pixel_delta"
+                  currentSortField={sortField}
+                  currentSortDirection={sortDirection}
+                  onSort={handleSort}
+                >
+                  Δ Pixel
+                </SortableHeader>
+                )}
                 {visibleColumns.transactions_delta && (
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider relative">
                   <div className="flex items-center gap-2">
@@ -4093,6 +4251,16 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                   onSort={handleSort}
                 >
                   Receita 1ª Compra
+                </SortableHeader>
+                )}
+                {visibleColumns.pixel_revenue && (
+                <SortableHeader
+                  field="pixel_revenue"
+                  currentSortField={sortField}
+                  currentSortDirection={sortDirection}
+                  onSort={handleSort}
+                >
+                  Receita Pixel
                 </SortableHeader>
                 )}
                 {visibleColumns.roas && (
@@ -4300,6 +4468,35 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                       {formatNumber(campaign.transactions_first)}
                     </td>
                     )}
+                    {visibleColumns.pixel_transactions && (
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-pink-600">
+                      {formatNumber(campaign.pixel_transactions || 0)}
+                    </td>
+                    )}
+                    {visibleColumns.pixel_delta && (
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      {(() => {
+                        const pixelTransactions = campaign.pixel_transactions || 0
+                        if (!pixelTransactions || currentTransactions === 0) {
+                          return <span className="text-gray-400">—</span>
+                        }
+                        const pixelDeltaValue = pixelTransactions - currentTransactions
+                        const deltaPercent = (pixelDeltaValue / currentTransactions) * 100
+                        const compareWithAvg = pixelDeltaPercentAverage !== null
+                        const higherDelta = compareWithAvg ? deltaPercent >= pixelDeltaPercentAverage : deltaPercent >= 0
+                        return (
+                          <div className={`inline-flex flex-col rounded px-2 py-1 ${higherDelta ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
+                            <span>{higherDelta ? '+' : ''}{deltaPercent.toFixed(1)}%</span>
+                            {compareWithAvg && (
+                              <span className="text-[10px] text-gray-500">
+                                média {pixelDeltaPercentAverage >= 0 ? '+' : ''}{pixelDeltaPercentAverage.toFixed(1)}%
+                              </span>
+                            )}
+                          </div>
+                        )
+                      })()}
+                    </td>
+                    )}
                     {visibleColumns.transactions_delta && (
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       {(() => {
@@ -4377,6 +4574,11 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                     {visibleColumns.revenue_first && (
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-emerald-600">
                       {formatCurrency(campaign.revenue_first)}
+                    </td>
+                    )}
+                    {visibleColumns.pixel_revenue && (
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-rose-600">
+                      {formatCurrency(campaign.pixel_revenue || 0)}
                     </td>
                     )}
                     {visibleColumns.roas && (
