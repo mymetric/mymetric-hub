@@ -20,7 +20,7 @@ import {
   Cpu
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
-import { AdsCampaignData, AdsCampaignResponse, CacheInfo, AdsCampaignSummary, AdsCreativeData, AdsCreativeResponse } from '../types'
+import { AdsCampaignData, AdsCampaignResponse, CacheInfo, AdsCampaignSummary, AdsCreativeData, AdsCreativeResponse, AdsCampaignTrendItem } from '../types'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { compareDateStrings, parseDateString, convertBrazilianDateToISO } from '../utils/dateUtils'
 import SortableHeader from './SortableHeader'
@@ -66,12 +66,23 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
   }>({})
   const [isBackgroundLoading, setIsBackgroundLoading] = useState(false)
   const [isFullWidth, setIsFullWidth] = useState(false)
-  const [activeTab, setActiveTab] = useState<'overview' | 'creatives'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'creatives' | 'trend'>('overview')
   const [reloadNonce, setReloadNonce] = useState(0)
   
   // Estados para modo creatives (declarados antes dos useEffects que os usam)
   const [creativeData, setCreativeData] = useState<AdsCreativeData[]>([])
   const [isLoadingCreatives, setIsLoadingCreatives] = useState(false)
+  
+  // Estados para modo trend
+  const [trendData, setTrendData] = useState<AdsCampaignTrendItem[]>([])
+  const [isLoadingTrend, setIsLoadingTrend] = useState(false)
+  const [expandedAreas, setExpandedAreas] = useState({
+    custo: true,  // Por padrão, mostra Custo
+    receita: true,  // Por padrão, mostra Receita
+    roas: true,  // Por padrão, mostra ROAS
+    crescimento: false
+  })
+  const [showAllWeeks, setShowAllWeeks] = useState(false) // Por padrão só mostra W4
   
   const lastCampaignsKeyRef = useRef<string | null>(null)
   const lastCreativesKeyRef = useRef<string | null>(null)
@@ -740,6 +751,35 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       lastCreativesKeyRef.current = requestKey
     }
   }, [activeTab, selectedTable, startDate, endDate, token])
+
+  // useEffect para buscar dados de tendência quando a aba mudar
+  useEffect(() => {
+    if (activeTab === 'trend') {
+      const fetchTrendData = async () => {
+        try {
+          if (!token || !selectedTable) return
+          if (!validateTableName(selectedTable)) return
+
+          setIsLoadingTrend(true)
+          console.log('📈 Fetching trend data for table:', selectedTable)
+
+          const response = await api.getAdsCampaignsTrend(token, {
+            table_name: selectedTable
+          })
+
+          console.log('✅ Trend data received:', response?.data?.length || 0, 'campanhas')
+          setTrendData(response?.data || [])
+        } catch (error) {
+          console.error('❌ Error fetching trend data:', error)
+          setTrendData([])
+        } finally {
+          setIsLoadingTrend(false)
+        }
+      }
+
+      fetchTrendData()
+    }
+  }, [activeTab, selectedTable, token])
 
   // Função para verificar se o cache é antigo (mais de 4 horas)
   const isCacheOld = () => {
@@ -1766,6 +1806,76 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     }
   }
 
+  // Função para download XLSX da aba de Tendência
+  const handleDownloadTrendXLSX = () => {
+    try {
+      // Preparar dados para exportação
+      const dataToExport = trendData.map(item => ({
+        'Campanha': item.campaign_name,
+        'Plataforma': item.platform === 'meta_ads' ? 'Meta Ads' : 'Google Ads',
+        'Custo W1': item.cost_w1,
+        'Custo W2': item.cost_w2,
+        'Custo W3': item.cost_w3,
+        'Custo W4': item.cost_w4,
+        'Receita W1': item.revenue_w1,
+        'Receita W2': item.revenue_w2,
+        'Receita W3': item.revenue_w3,
+        'Receita W4': item.revenue_w4,
+        'ROAS W1': item.roas_w1,
+        'ROAS W2': item.roas_w2,
+        'ROAS W3': item.roas_w3,
+        'ROAS W4': item.roas_w4,
+        'Crescimento ROAS W2 vs W1 (%)': item.roas_growth_w2_vs_w1_pct,
+        'Crescimento ROAS W3 vs W2 (%)': item.roas_growth_w3_vs_w2_pct,
+        'Crescimento ROAS W4 vs W3 (%)': item.roas_growth_w4_vs_w3_pct,
+        'Tendência ROAS': item.roas_trend,
+        'Custo Médio Diário W4': item.avg_daily_cost_w4
+      }))
+
+      // Criar workbook e worksheet
+      const wb = XLSX.utils.book_new()
+      const ws = XLSX.utils.json_to_sheet(dataToExport)
+
+      // Ajustar largura das colunas
+      const colWidths = [
+        { wch: 40 }, // Campanha
+        { wch: 15 }, // Plataforma
+        { wch: 12 }, // Custo W1
+        { wch: 12 }, // Custo W2
+        { wch: 12 }, // Custo W3
+        { wch: 12 }, // Custo W4
+        { wch: 12 }, // Receita W1
+        { wch: 12 }, // Receita W2
+        { wch: 12 }, // Receita W3
+        { wch: 12 }, // Receita W4
+        { wch: 10 }, // ROAS W1
+        { wch: 10 }, // ROAS W2
+        { wch: 10 }, // ROAS W3
+        { wch: 10 }, // ROAS W4
+        { wch: 25 }, // Crescimento W2 vs W1
+        { wch: 25 }, // Crescimento W3 vs W2
+        { wch: 25 }, // Crescimento W4 vs W3
+        { wch: 20 }, // Tendência ROAS
+        { wch: 20 }  // Custo Médio Diário W4
+      ]
+      ws['!cols'] = colWidths
+
+      // Adicionar worksheet ao workbook
+      XLSX.utils.book_append_sheet(wb, ws, 'Tendência')
+
+      // Gerar nome do arquivo com data
+      const today = new Date()
+      const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+      const filename = `tendencia-campanhas-${selectedTable}-${dateStr}.xlsx`
+
+      // Download do arquivo
+      XLSX.writeFile(wb, filename)
+    } catch (error) {
+      console.error('Erro ao gerar XLSX de tendência:', error)
+      alert('Erro ao gerar arquivo Excel. Por favor, tente novamente.')
+    }
+  }
+
   // Função para download XLSX
   const handleDownloadXLSX = () => {
     try {
@@ -2199,6 +2309,17 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
             >
               <Layers className="h-4 w-4" />
               <span>Criativos</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('trend')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
+                activeTab === 'trend'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <TrendingUp className="h-4 w-4" />
+              <span>Tendência</span>
             </button>
           </nav>
         </div>
@@ -5672,6 +5793,446 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                   </div>
                 </div>
               )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Aba Tendência */}
+      {activeTab === 'trend' && (
+        <div className="space-y-6">
+          {isLoadingTrend ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <span className="ml-3 text-gray-600">Carregando dados de tendência...</span>
+            </div>
+          ) : trendData.length === 0 ? (
+            <div className="bg-white rounded-lg shadow-sm border p-8 text-center">
+              <TrendingUp className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhum dado de tendência encontrado</h3>
+              <p className="text-gray-500">Não há dados de tendência disponíveis para este período.</p>
+            </div>
+          ) : (
+            <>
+              {/* Tabela de Tendência */}
+              <div className={`bg-white rounded-lg shadow-sm border overflow-hidden ${isFullWidth ? 'fixed inset-0 z-50 m-0 rounded-none' : ''}`}>
+                {/* Header com título e botões */}
+                <div className="px-6 py-3 border-b border-gray-200">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-gray-900">Tendência de Campanhas</h3>
+                      <div className="flex items-center gap-2">
+                        {/* Botão Download XLSX */}
+                        <button
+                          onClick={handleDownloadTrendXLSX}
+                          className="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 bg-green-600 text-white hover:bg-green-700 shadow-sm"
+                          title="Baixar dados de tendência em Excel"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          <span>XLSX</span>
+                        </button>
+                        {/* Botão para mostrar todas as semanas */}
+                        <button
+                          onClick={() => setShowAllWeeks(!showAllWeeks)}
+                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
+                            showAllWeeks 
+                              ? 'bg-purple-600 text-white hover:bg-purple-700 shadow-sm' 
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
+                          }`}
+                        >
+                          {showAllWeeks ? (
+                            <>
+                              <ChevronUp className="w-4 h-4" />
+                              <span>Mostrar só W4</span>
+                            </>
+                          ) : (
+                            <>
+                              <ChevronDown className="w-4 h-4" />
+                              <span>Mostrar todas as semanas</span>
+                            </>
+                          )}
+                        </button>
+                        {/* Botão Full Width */}
+                        <button
+                          onClick={() => setIsFullWidth(!isFullWidth)}
+                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
+                            isFullWidth 
+                              ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm' 
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
+                          }`}
+                        >
+                          {isFullWidth ? (
+                            <>
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9V4.5M9 9H4.5M9 9L3.5 3.5M15 9V4.5M15 9h4.5M15 9l5.5-5.5M9 15v4.5M9 15H4.5M9 15l-5.5 5.5M15 15v4.5M15 15h4.5M15 15l5.5 5.5" />
+                              </svg>
+                              <span>Tela Normal</span>
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                              </svg>
+                              <span>Tela Cheia</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                    {/* Botões para expandir/colapsar áreas */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-medium text-gray-700">Exibir áreas:</span>
+                      <button
+                        onClick={() => setExpandedAreas(prev => ({ ...prev, custo: !prev.custo }))}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-200 flex items-center gap-1 ${
+                          expandedAreas.custo 
+                            ? 'bg-green-100 text-green-800 border border-green-300' 
+                            : 'bg-gray-100 text-gray-600 border border-gray-300'
+                        }`}
+                      >
+                        {expandedAreas.custo ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        <span>Custo</span>
+                      </button>
+                      <button
+                        onClick={() => setExpandedAreas(prev => ({ ...prev, receita: !prev.receita }))}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-200 flex items-center gap-1 ${
+                          expandedAreas.receita 
+                            ? 'bg-blue-100 text-blue-800 border border-blue-300' 
+                            : 'bg-gray-100 text-gray-600 border border-gray-300'
+                        }`}
+                      >
+                        {expandedAreas.receita ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        <span>Receita</span>
+                      </button>
+                      <button
+                        onClick={() => setExpandedAreas(prev => ({ ...prev, roas: !prev.roas }))}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-200 flex items-center gap-1 ${
+                          expandedAreas.roas 
+                            ? 'bg-purple-100 text-purple-800 border border-purple-300' 
+                            : 'bg-gray-100 text-gray-600 border border-gray-300'
+                        }`}
+                      >
+                        {expandedAreas.roas ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        <span>ROAS</span>
+                      </button>
+                      <button
+                        onClick={() => setExpandedAreas(prev => ({ ...prev, crescimento: !prev.crescimento }))}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-200 flex items-center gap-1 ${
+                          expandedAreas.crescimento 
+                            ? 'bg-orange-100 text-orange-800 border border-orange-300' 
+                            : 'bg-gray-100 text-gray-600 border border-gray-300'
+                        }`}
+                      >
+                        {expandedAreas.crescimento ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        <span>Crescimento</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                {!expandedAreas.custo && !expandedAreas.receita && !expandedAreas.roas && !expandedAreas.crescimento ? (
+                  <div className="p-8 text-center">
+                    <TrendingUp className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhuma área selecionada</h3>
+                    <p className="text-gray-500">Clique nos botões acima para expandir as áreas que deseja visualizar.</p>
+                  </div>
+                ) : (
+                  <div className={`overflow-x-auto ${isFullWidth ? 'h-[calc(100vh-120px)] overflow-y-auto' : ''}`}>
+                    <table className="min-w-full divide-y divide-gray-200">
+                    <thead className={`bg-gray-50 ${isFullWidth ? 'sticky top-0 z-20' : ''}`}>
+                      {/* Primeira linha: áreas principais */}
+                      <tr>
+                        <th rowSpan={2} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-300">
+                          Campanha
+                        </th>
+                        <th rowSpan={2} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-300">
+                          Plataforma
+                        </th>
+                        {/* Área Custo */}
+                        {expandedAreas.custo && (
+                          <>
+                            <th colSpan={showAllWeeks ? 4 : 1} className="px-6 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider bg-green-50 border-r border-gray-300">
+                              💰 Custo
+                            </th>
+                          </>
+                        )}
+                        {/* Área Receita */}
+                        {expandedAreas.receita && (
+                          <>
+                            <th colSpan={showAllWeeks ? 4 : 1} className="px-6 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider bg-blue-50 border-r border-gray-300">
+                              💵 Receita
+                            </th>
+                          </>
+                        )}
+                        {/* Área ROAS */}
+                        {expandedAreas.roas && (
+                          <>
+                            <th colSpan={showAllWeeks ? 4 : 1} className="px-6 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider bg-purple-50 border-r border-gray-300">
+                              📊 ROAS
+                            </th>
+                          </>
+                        )}
+                        {/* Área Crescimento */}
+                        {expandedAreas.crescimento && (
+                          <>
+                            <th colSpan={showAllWeeks ? 3 : 1} className="px-6 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider bg-orange-50 border-r border-gray-300">
+                              📈 Crescimento ROAS
+                            </th>
+                            <th className="px-6 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider bg-orange-50 border-r border-gray-300">
+                              Tendência
+                            </th>
+                          </>
+                        )}
+                        <th rowSpan={2} className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Custo Médio Diário W4
+                        </th>
+                      </tr>
+                      {/* Segunda linha: semanas individuais */}
+                      <tr>
+                        {/* Colunas de Custo */}
+                        {expandedAreas.custo && (
+                          <>
+                            {showAllWeeks && (
+                              <>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-600 bg-green-50 border-r border-gray-200">
+                                  W1
+                                </th>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-600 bg-green-50 border-r border-gray-200">
+                                  W2
+                                </th>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-600 bg-green-50 border-r border-gray-200">
+                                  W3
+                                </th>
+                              </>
+                            )}
+                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-700 bg-green-50 border-r border-gray-200 font-semibold">
+                              W4
+                            </th>
+                          </>
+                        )}
+                        {/* Colunas de Receita */}
+                        {expandedAreas.receita && (
+                          <>
+                            {showAllWeeks && (
+                              <>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-600 bg-blue-50 border-r border-gray-200">
+                                  W1
+                                </th>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-600 bg-blue-50 border-r border-gray-200">
+                                  W2
+                                </th>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-600 bg-blue-50 border-r border-gray-200">
+                                  W3
+                                </th>
+                              </>
+                            )}
+                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-700 bg-blue-50 border-r border-gray-200 font-semibold">
+                              W4
+                            </th>
+                          </>
+                        )}
+                        {/* Colunas de ROAS */}
+                        {expandedAreas.roas && (
+                          <>
+                            {showAllWeeks && (
+                              <>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-600 bg-purple-50 border-r border-gray-200">
+                                  W1
+                                </th>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-600 bg-purple-50 border-r border-gray-200">
+                                  W2
+                                </th>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-600 bg-purple-50 border-r border-gray-200">
+                                  W3
+                                </th>
+                              </>
+                            )}
+                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-700 bg-purple-50 border-r border-gray-200 font-semibold">
+                              W4
+                            </th>
+                          </>
+                        )}
+                        {/* Colunas de Crescimento */}
+                        {expandedAreas.crescimento && (
+                          <>
+                            {showAllWeeks && (
+                              <>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-600 bg-orange-50 border-r border-gray-200">
+                                  W2 vs W1
+                                </th>
+                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-600 bg-orange-50 border-r border-gray-200">
+                                  W3 vs W2
+                                </th>
+                              </>
+                            )}
+                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-700 bg-orange-50 border-r border-gray-200 font-semibold">
+                              W4 vs W3
+                            </th>
+                          </>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {trendData.map((item, index) => (
+                        <tr key={index} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 border-r border-gray-200">
+                            {item.campaign_name}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 border-r border-gray-200">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              item.platform === 'meta_ads' 
+                                ? 'bg-blue-100 text-blue-800' 
+                                : 'bg-green-100 text-green-800'
+                            }`}>
+                              {item.platform === 'meta_ads' ? 'Meta Ads' : 'Google Ads'}
+                            </span>
+                          </td>
+                          {/* Colunas de Custo */}
+                          {expandedAreas.custo && (
+                            <>
+                              {showAllWeeks && (
+                                <>
+                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 bg-green-50 border-r border-gray-200">
+                                    {item.cost_w1.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                  </td>
+                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 bg-green-50 border-r border-gray-200">
+                                    {item.cost_w2.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                  </td>
+                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 bg-green-50 border-r border-gray-200">
+                                    {item.cost_w3.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                  </td>
+                                </>
+                              )}
+                              <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 font-semibold bg-green-50 border-r border-gray-200">
+                                {item.cost_w4.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              </td>
+                            </>
+                          )}
+                          {/* Colunas de Receita */}
+                          {expandedAreas.receita && (
+                            <>
+                              {showAllWeeks && (
+                                <>
+                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 bg-blue-50 border-r border-gray-200">
+                                    {item.revenue_w1.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                  </td>
+                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 bg-blue-50 border-r border-gray-200">
+                                    {item.revenue_w2.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                  </td>
+                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 bg-blue-50 border-r border-gray-200">
+                                    {item.revenue_w3.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                  </td>
+                                </>
+                              )}
+                              <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 font-semibold bg-blue-50 border-r border-gray-200">
+                                {item.revenue_w4.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              </td>
+                            </>
+                          )}
+                          {/* Colunas de ROAS */}
+                          {expandedAreas.roas && (
+                            <>
+                              {showAllWeeks && (
+                                <>
+                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 bg-purple-50 border-r border-gray-200">
+                                    {item.roas_w1.toFixed(2)}
+                                  </td>
+                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 bg-purple-50 border-r border-gray-200">
+                                    {item.roas_w2.toFixed(2)}
+                                  </td>
+                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 bg-purple-50 border-r border-gray-200">
+                                    {item.roas_w3.toFixed(2)}
+                                  </td>
+                                </>
+                              )}
+                              <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 font-semibold bg-purple-50 border-r border-gray-200">
+                                {item.roas_w4.toFixed(2)}
+                              </td>
+                            </>
+                          )}
+                          {/* Colunas de Crescimento */}
+                          {expandedAreas.crescimento && (
+                            <>
+                              {showAllWeeks && (
+                                <>
+                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center bg-orange-50 border-r border-gray-200">
+                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                      item.roas_growth_w2_vs_w1_pct >= 0
+                                        ? 'bg-green-100 text-green-800'
+                                        : 'bg-red-100 text-red-800'
+                                    }`}>
+                                      {item.roas_growth_w2_vs_w1_pct >= 0 ? '+' : ''}{item.roas_growth_w2_vs_w1_pct.toFixed(2)}%
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center bg-orange-50 border-r border-gray-200">
+                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                      item.roas_growth_w3_vs_w2_pct >= 0
+                                        ? 'bg-green-100 text-green-800'
+                                        : 'bg-red-100 text-red-800'
+                                    }`}>
+                                      {item.roas_growth_w3_vs_w2_pct >= 0 ? '+' : ''}{item.roas_growth_w3_vs_w2_pct.toFixed(2)}%
+                                    </span>
+                                  </td>
+                                </>
+                              )}
+                              <td className="px-4 py-4 whitespace-nowrap text-sm text-center bg-orange-50 border-r border-gray-200">
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                  item.roas_growth_w4_vs_w3_pct >= 0
+                                    ? 'bg-green-100 text-green-800'
+                                    : 'bg-red-100 text-red-800'
+                                }`}>
+                                  {item.roas_growth_w4_vs_w3_pct >= 0 ? '+' : ''}{item.roas_growth_w4_vs_w3_pct.toFixed(2)}%
+                                </span>
+                              </td>
+                              <td className="px-4 py-4 whitespace-nowrap text-sm text-center bg-orange-50 border-r border-gray-200">
+                                <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                  {item.roas_trend}
+                                </span>
+                              </td>
+                            </>
+                          )}
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-900 font-semibold">
+                            {item.avg_daily_cost_w4.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Resumo */}
+              <div className="bg-white rounded-lg shadow-sm border p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Resumo</h3>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="bg-blue-50 rounded-lg p-4">
+                    <div className="text-sm font-medium text-blue-600 mb-1">Total de Campanhas</div>
+                    <div className="text-2xl font-bold text-blue-900">{trendData.length}</div>
+                  </div>
+                  <div className="bg-green-50 rounded-lg p-4">
+                    <div className="text-sm font-medium text-green-600 mb-1">Custo Total W4</div>
+                    <div className="text-2xl font-bold text-green-900">
+                      {trendData.reduce((sum, item) => sum + item.cost_w4, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </div>
+                  </div>
+                  <div className="bg-purple-50 rounded-lg p-4">
+                    <div className="text-sm font-medium text-purple-600 mb-1">Receita Total W4</div>
+                    <div className="text-2xl font-bold text-purple-900">
+                      {trendData.reduce((sum, item) => sum + item.revenue_w4, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </div>
+                  </div>
+                  <div className="bg-orange-50 rounded-lg p-4">
+                    <div className="text-sm font-medium text-orange-600 mb-1">ROAS Médio W4</div>
+                    <div className="text-2xl font-bold text-orange-900">
+                      {trendData.length > 0 
+                        ? (trendData.reduce((sum, item) => sum + item.roas_w4, 0) / trendData.length).toFixed(2)
+                        : '0.00'}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </>
           )}
         </div>

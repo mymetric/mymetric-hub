@@ -1,4 +1,4 @@
-import { AdsCampaignRequest, AdsCampaignResponse, FreteRequest, FreteResponse, LeadsOrdersRequest, LeadsOrdersResponse } from '../types'
+import { AdsCampaignRequest, AdsCampaignResponse, FreteRequest, FreteResponse, LeadsOrdersRequest, LeadsOrdersResponse, AdsCampaignTrendRequest, AdsCampaignTrendResponse } from '../types'
 
 const API_BASE_URL = (typeof window !== 'undefined' && window.location.origin.includes('localhost'))
   ? '/api'
@@ -1219,6 +1219,40 @@ export const api = {
         throw networkError
       }
       throw new Error('Erro ao buscar dados de criativos de ads.')
+    }
+  },
+
+  async getAdsCampaignsTrend(token: string, trendData: AdsCampaignTrendRequest): Promise<AdsCampaignTrendResponse> {
+    try {
+      console.log('🌐 Ads Campaigns Trend API Request:', {
+        url: `${API_BASE_URL}/metrics/ads-campaigns-trend`,
+        method: 'POST',
+        body: trendData
+      })
+
+      const response = await fetch(`${API_BASE_URL}/metrics/ads-campaigns-trend`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(trendData),
+      })
+
+      console.log('📡 Ads Campaigns Trend Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Ads Campaigns Trend API Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('📦 Ads Campaigns Trend API Response data:', data)
+      return data
+    } catch (error) {
+      console.error('❌ Ads Campaigns Trend fetch error:', error)
+      throw new Error('Erro ao buscar dados de tendência de campanhas de ads.')
     }
   }
 } 
