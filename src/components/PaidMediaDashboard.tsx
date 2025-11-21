@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import * as XLSX from 'xlsx'
 import { 
   TrendingUp, 
@@ -20,7 +20,7 @@ import {
   Cpu
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
-import { AdsCampaignData, AdsCampaignResponse, CacheInfo, AdsCampaignSummary, AdsCreativeData, AdsCreativeResponse } from '../types'
+import { AdsCampaignData, AdsCampaignResponse, CacheInfo, AdsCampaignSummary, AdsCreativeData, AdsCreativeResponse, AdsCampaignTrendData } from '../types'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { compareDateStrings, parseDateString, convertBrazilianDateToISO } from '../utils/dateUtils'
 import SortableHeader from './SortableHeader'
@@ -66,12 +66,28 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
   }>({})
   const [isBackgroundLoading, setIsBackgroundLoading] = useState(false)
   const [isFullWidth, setIsFullWidth] = useState(false)
-  const [activeTab, setActiveTab] = useState<'overview' | 'creatives'>('overview')
+  const [isTrendFullWidth, setIsTrendFullWidth] = useState(false)
+  const [activeTab, setActiveTab] = useState<'overview' | 'creatives' | 'trend'>('overview')
+  
+  // Estados para grupos colapsáveis da aba trend
+  const [trendGroupsExpanded, setTrendGroupsExpanded] = useState({
+    custo: true,
+    receita: true,
+    roas: true,
+    crescimento: true
+  })
   const [reloadNonce, setReloadNonce] = useState(0)
   
   // Estados para modo creatives (declarados antes dos useEffects que os usam)
   const [creativeData, setCreativeData] = useState<AdsCreativeData[]>([])
   const [isLoadingCreatives, setIsLoadingCreatives] = useState(false)
+  
+  // Estados para modo trend
+  const [trendData, setTrendData] = useState<AdsCampaignTrendData[]>([])
+  const [isLoadingTrend, setIsLoadingTrend] = useState(false)
+  const trendRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const trendRetryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [trendRetryCountdown, setTrendRetryCountdown] = useState<number | null>(null)
   
   const lastCampaignsKeyRef = useRef<string | null>(null)
   const lastCreativesKeyRef = useRef<string | null>(null)
@@ -741,6 +757,106 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     }
   }, [activeTab, selectedTable, startDate, endDate, token])
 
+  // Função para buscar dados de trend
+  const fetchTrendData = useCallback(async (isRetry = false) => {
+    if (!validateTableName(selectedTable)) {
+      console.log('❌ Table name inválido para busca de trend')
+      return
+    }
+
+    // Limpar retry anterior se existir
+    if (trendRetryTimeoutRef.current) {
+      clearTimeout(trendRetryTimeoutRef.current)
+      trendRetryTimeoutRef.current = null
+    }
+    setTrendRetryCountdown(null)
+
+    setIsLoadingTrend(true)
+
+    try {
+      console.log('🚀 [Trend] Buscando dados de trend...')
+      const response = await api.getAdsCampaignsTrend(token, {
+        table_name: selectedTable
+      })
+      
+      setTrendData(response?.data || [])
+      console.log('✅ Dados de trend carregados:', response?.data?.length || 0, 'registros')
+    } catch (error) {
+      console.error('❌ Erro ao buscar dados de trend:', error)
+      setTrendData([])
+      
+      // Se não for um retry, agendar novo tentativa em 15 segundos
+      if (!isRetry) {
+        console.log('⏰ [Trend] Agendando nova tentativa em 15 segundos...')
+        setTrendRetryCountdown(15)
+        
+        // Limpar intervalo anterior se existir
+        if (trendRetryIntervalRef.current) {
+          clearInterval(trendRetryIntervalRef.current)
+        }
+        
+        // Contador regressivo
+        let countdown = 15
+        trendRetryIntervalRef.current = setInterval(() => {
+          countdown--
+          if (countdown > 0) {
+            setTrendRetryCountdown(countdown)
+          } else {
+            if (trendRetryIntervalRef.current) {
+              clearInterval(trendRetryIntervalRef.current)
+              trendRetryIntervalRef.current = null
+            }
+            setTrendRetryCountdown(null)
+          }
+        }, 1000)
+        
+        // Agendar retry após 15 segundos
+        trendRetryTimeoutRef.current = setTimeout(() => {
+          if (trendRetryIntervalRef.current) {
+            clearInterval(trendRetryIntervalRef.current)
+            trendRetryIntervalRef.current = null
+          }
+          setTrendRetryCountdown(null)
+          console.log('🔄 [Trend] Tentando novamente...')
+          fetchTrendData(true)
+        }, 15000)
+      }
+    } finally {
+      setIsLoadingTrend(false)
+    }
+  }, [selectedTable, token])
+
+  // useEffect para buscar dados de trend quando a aba mudar
+  useEffect(() => {
+    if (activeTab === 'trend') {
+      fetchTrendData()
+    } else {
+      // Limpar retry quando sair da aba
+      if (trendRetryTimeoutRef.current) {
+        clearTimeout(trendRetryTimeoutRef.current)
+        trendRetryTimeoutRef.current = null
+      }
+      if (trendRetryIntervalRef.current) {
+        clearInterval(trendRetryIntervalRef.current)
+        trendRetryIntervalRef.current = null
+      }
+      setTrendRetryCountdown(null)
+    }
+    
+    // Cleanup ao desmontar ou mudar de aba
+    return () => {
+      if (trendRetryTimeoutRef.current) {
+        clearTimeout(trendRetryTimeoutRef.current)
+        trendRetryTimeoutRef.current = null
+      }
+      if (trendRetryIntervalRef.current) {
+        clearInterval(trendRetryIntervalRef.current)
+        trendRetryIntervalRef.current = null
+      }
+      setTrendRetryCountdown(null)
+    }
+  }, [activeTab, fetchTrendData])
+
   // Função para verificar se o cache é antigo (mais de 4 horas)
   const isCacheOld = () => {
     if (!cacheInfo) return false
@@ -768,7 +884,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         start_date: startDate,
         end_date: endDate,
         table_name: selectedTable,
-        force_refresh: false
+        force_refresh: true
       })
       
       // Aguarda um pouco para garantir que o token seja renovado se necessário
@@ -778,12 +894,12 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       token = localStorage.getItem('auth-token')
       console.log('🔄 Token após aguardar:', token ? 'disponível' : 'não disponível')
       
-      // Faz request normal em background sem force_refresh
+      // Faz request forçando refresh do cache independente da hora
       const response = await api.getAdsCampaigns(token || '', {
         start_date: startDate,
         end_date: endDate,
         table_name: selectedTable,
-        force_refresh: false
+        force_refresh: true
       })
 
       console.log('✅ Dados atualizados em background:', response)
@@ -2108,7 +2224,6 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
             )}
           </div>
           <div className="flex items-center gap-2">
-          {(!cacheInfo || isCacheOld() || isRefreshing) && (
             <button
               onClick={refreshData}
               disabled={isRefreshing}
@@ -2130,7 +2245,6 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                 </>
               )}
             </button>
-          )}
             
             {/* Indicador de carregamento em background */}
             {isBackgroundLoading && (
@@ -2199,6 +2313,17 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
             >
               <Layers className="h-4 w-4" />
               <span>Criativos</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('trend')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
+                activeTab === 'trend'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <TrendingUp className="h-4 w-4" />
+              <span>Trend</span>
             </button>
           </nav>
         </div>
@@ -5673,6 +5798,326 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                 </div>
               )}
             </>
+          )}
+        </div>
+      )}
+
+      {/* Aba Trend */}
+      {activeTab === 'trend' && (
+        <div className={`space-y-6 ${isTrendFullWidth ? 'fixed inset-0 z-50 bg-white overflow-auto p-6' : ''}`}>
+          {isLoadingTrend ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+                <p className="text-gray-600">Carregando dados de trend...</p>
+              </div>
+            </div>
+          ) : trendData.length === 0 ? (
+            <div className="bg-white rounded-lg shadow-sm border p-8 text-center">
+              <div className="space-y-4">
+                <p className="text-gray-500">Erro ao carregar dados de trend.</p>
+                {trendRetryCountdown !== null && (
+                  <div className="mt-4">
+                    <p className="text-sm text-gray-600">
+                      Tentando novamente em <span className="font-semibold text-blue-600">{trendRetryCountdown}</span> segundos...
+                    </p>
+                    <div className="mt-2 w-full bg-gray-200 rounded-full h-2 max-w-xs mx-auto">
+                      <div 
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-1000"
+                        style={{ width: `${(trendRetryCountdown / 15) * 100}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className={`bg-white rounded-lg shadow-sm border overflow-hidden ${isTrendFullWidth ? 'rounded-none shadow-none border-0' : ''}`}>
+              {/* Header com botão de tela cheia */}
+              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gray-50">
+                <h3 className="text-lg font-semibold text-gray-900">Trend de Campanhas</h3>
+                <button
+                  onClick={() => setIsTrendFullWidth(!isTrendFullWidth)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
+                    isTrendFullWidth 
+                      ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
+                  }`}
+                >
+                  {isTrendFullWidth ? (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9V4.5M9 9H4.5M9 9L3.5 3.5M15 9V4.5M15 9h4.5M15 9l5.5-5.5M9 15v4.5M9 15H4.5M9 15l-5.5 5.5M15 15v4.5M15 15h4.5M15 15l5.5 5.5" />
+                      </svg>
+                      <span>Tela Normal</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                      </svg>
+                      <span>Tela Cheia</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              <div className={`overflow-x-auto ${isTrendFullWidth ? 'h-[calc(100vh-120px)] overflow-y-auto' : ''}`}>
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    {/* Linha de grupos colapsáveis */}
+                    <tr>
+                      <th rowSpan={2} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-300">
+                        Campanha
+                      </th>
+                      <th rowSpan={2} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-300">
+                        Plataforma
+                      </th>
+                      <th colSpan={trendGroupsExpanded.custo ? 4 : 1} className="px-6 py-2 text-center text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300">
+                        <button
+                          onClick={() => setTrendGroupsExpanded(prev => ({ ...prev, custo: !prev.custo }))}
+                          className="flex items-center justify-center gap-2 hover:bg-gray-100 px-2 py-1 rounded transition-colors w-full"
+                        >
+                          <span>Custo</span>
+                          {trendGroupsExpanded.custo ? (
+                            <ChevronUp className="w-4 h-4" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4" />
+                          )}
+                        </button>
+                      </th>
+                      <th colSpan={trendGroupsExpanded.receita ? 4 : 1} className="px-6 py-2 text-center text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300">
+                        <button
+                          onClick={() => setTrendGroupsExpanded(prev => ({ ...prev, receita: !prev.receita }))}
+                          className="flex items-center justify-center gap-2 hover:bg-gray-100 px-2 py-1 rounded transition-colors w-full"
+                        >
+                          <span>Receita</span>
+                          {trendGroupsExpanded.receita ? (
+                            <ChevronUp className="w-4 h-4" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4" />
+                          )}
+                        </button>
+                      </th>
+                      <th colSpan={trendGroupsExpanded.roas ? 4 : 1} className="px-6 py-2 text-center text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300">
+                        <button
+                          onClick={() => setTrendGroupsExpanded(prev => ({ ...prev, roas: !prev.roas }))}
+                          className="flex items-center justify-center gap-2 hover:bg-gray-100 px-2 py-1 rounded transition-colors w-full"
+                        >
+                          <span>ROAS</span>
+                          {trendGroupsExpanded.roas ? (
+                            <ChevronUp className="w-4 h-4" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4" />
+                          )}
+                        </button>
+                      </th>
+                      <th colSpan={trendGroupsExpanded.crescimento ? 3 : 1} className="px-6 py-2 text-center text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300">
+                        <button
+                          onClick={() => setTrendGroupsExpanded(prev => ({ ...prev, crescimento: !prev.crescimento }))}
+                          className="flex items-center justify-center gap-2 hover:bg-gray-100 px-2 py-1 rounded transition-colors w-full"
+                        >
+                          <span>Crescimento</span>
+                          {trendGroupsExpanded.crescimento ? (
+                            <ChevronUp className="w-4 h-4" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4" />
+                          )}
+                        </button>
+                      </th>
+                      <th rowSpan={2} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-300">
+                        Trend ROAS
+                      </th>
+                      <th rowSpan={2} className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Custo Médio Diário W4
+                      </th>
+                    </tr>
+                    {/* Linha de colunas individuais */}
+                    <tr>
+                      {trendGroupsExpanded.custo ? (
+                        <>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Custo W1
+                          </th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Custo W2
+                          </th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Custo W3
+                          </th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Custo W4
+                          </th>
+                        </>
+                      ) : (
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Custo W4
+                        </th>
+                      )}
+                      {trendGroupsExpanded.receita ? (
+                        <>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Receita W1
+                          </th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Receita W2
+                          </th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Receita W3
+                          </th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Receita W4
+                          </th>
+                        </>
+                      ) : (
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Receita W4
+                        </th>
+                      )}
+                      {trendGroupsExpanded.roas ? (
+                        <>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            ROAS W1
+                          </th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            ROAS W2
+                          </th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            ROAS W3
+                          </th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            ROAS W4
+                          </th>
+                        </>
+                      ) : (
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          ROAS W4
+                        </th>
+                      )}
+                      {trendGroupsExpanded.crescimento ? (
+                        <>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Cresc. ROAS W2/W1
+                          </th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Cresc. ROAS W3/W2
+                          </th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Cresc. ROAS W4/W3
+                          </th>
+                        </>
+                      ) : (
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Cresc. ROAS W4/W3
+                        </th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {trendData.map((item, index) => (
+                      <tr key={index} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 border-r border-gray-200">
+                          {item.campaign_name}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 border-r border-gray-200">
+                          {item.platform === 'meta_ads' ? 'Meta Ads' : item.platform === 'google_ads' ? 'Google Ads' : item.platform}
+                        </td>
+                        {trendGroupsExpanded.custo ? (
+                          <>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                              {item.cost_w1.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                              {item.cost_w2.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                              {item.cost_w3.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 font-semibold">
+                              {item.cost_w4.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </td>
+                          </>
+                        ) : (
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 font-semibold">
+                            {item.cost_w4.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </td>
+                        )}
+                        {trendGroupsExpanded.receita ? (
+                          <>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                              {item.revenue_w1.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                              {item.revenue_w2.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                              {item.revenue_w3.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 font-semibold">
+                              {item.revenue_w4.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </td>
+                          </>
+                        ) : (
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 font-semibold">
+                            {item.revenue_w4.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </td>
+                        )}
+                        {trendGroupsExpanded.roas ? (
+                          <>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                              {item.roas_w1.toFixed(2)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                              {item.roas_w2.toFixed(2)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                              {item.roas_w3.toFixed(2)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 font-semibold">
+                              {item.roas_w4.toFixed(2)}
+                            </td>
+                          </>
+                        ) : (
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 font-semibold">
+                            {item.roas_w4.toFixed(2)}
+                          </td>
+                        )}
+                        {trendGroupsExpanded.crescimento ? (
+                          <>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
+                              <span className={`${item.roas_growth_w2_vs_w1_pct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {item.roas_growth_w2_vs_w1_pct >= 0 ? '+' : ''}{item.roas_growth_w2_vs_w1_pct.toFixed(2)}%
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
+                              <span className={`${item.roas_growth_w3_vs_w2_pct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {item.roas_growth_w3_vs_w2_pct >= 0 ? '+' : ''}{item.roas_growth_w3_vs_w2_pct.toFixed(2)}%
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
+                              <span className={`${item.roas_growth_w4_vs_w3_pct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {item.roas_growth_w4_vs_w3_pct >= 0 ? '+' : ''}{item.roas_growth_w4_vs_w3_pct.toFixed(2)}%
+                              </span>
+                            </td>
+                          </>
+                        ) : (
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
+                            <span className={`${item.roas_growth_w4_vs_w3_pct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {item.roas_growth_w4_vs_w3_pct >= 0 ? '+' : ''}{item.roas_growth_w4_vs_w3_pct.toFixed(2)}%
+                            </span>
+                          </td>
+                        )}
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 border-r border-gray-200">
+                          {item.roas_trend}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                          {item.avg_daily_cost_w4.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           )}
         </div>
       )}

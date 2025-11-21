@@ -1,4 +1,4 @@
-import { AdsCampaignRequest, AdsCampaignResponse, FreteRequest, FreteResponse, LeadsOrdersRequest, LeadsOrdersResponse } from '../types'
+import { AdsCampaignRequest, AdsCampaignResponse, FreteRequest, FreteResponse, LeadsOrdersRequest, LeadsOrdersResponse, AdsCampaignTrendRequest, AdsCampaignTrendResponse } from '../types'
 
 const API_BASE_URL = (typeof window !== 'undefined' && window.location.origin.includes('localhost'))
   ? '/api'
@@ -1219,6 +1219,56 @@ export const api = {
         throw networkError
       }
       throw new Error('Erro ao buscar dados de criativos de ads.')
+    }
+  },
+
+  async getAdsCampaignsTrend(token: string, trendData: AdsCampaignTrendRequest): Promise<AdsCampaignTrendResponse> {
+    try {
+      console.log('🚀 ===== INICIANDO getAdsCampaignsTrend =====')
+      console.log('🌐 Ads Campaigns Trend API Request:', {
+        url: `${API_BASE_URL}/metrics/ads-campaigns-trend`,
+        method: 'POST',
+        body: trendData
+      })
+      console.log('🌐 Request body JSON:', JSON.stringify(trendData, null, 2))
+      console.log('🌐 Fazendo fetch para:', `${API_BASE_URL}/metrics/ads-campaigns-trend`)
+
+      const response = await fetch(`${API_BASE_URL}/metrics/ads-campaigns-trend`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(trendData),
+      })
+
+      console.log('🌐 Fetch concluído, status:', response.status)
+
+      console.log('📡 Ads Campaigns Trend Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Ads Campaigns Trend API Error:', errorText)
+        const error = new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+        // Adiciona o status HTTP ao erro para facilitar a detecção
+        ;(error as any).status = response.status
+        throw error
+      }
+
+      const data = await response.json()
+      console.log('📦 Ads Campaigns Trend API Response data:', data)
+      return data
+    } catch (error) {
+      console.error('❌ Ads Campaigns Trend fetch error:', error)
+      // Se for um erro de fetch (TypeError: Failed to fetch), preserva o erro original
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        // Adiciona informação sobre o erro de rede/timeout
+        const networkError = new Error(`Network error: ${error.message}`)
+        ;(networkError as any).originalError = error
+        ;(networkError as any).isNetworkError = true
+        throw networkError
+      }
+      throw new Error('Erro ao buscar dados de trend de campanhas de ads.')
     }
   }
 } 

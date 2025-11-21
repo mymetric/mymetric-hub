@@ -252,4 +252,35 @@ export interface LeadsOrdersResponse {
     offset: number
     has_more: boolean
   }
+}
+
+// Tipos para Trend de Campanhas de Mídia Paga
+export interface AdsCampaignTrendData {
+  campaign_name: string
+  platform: string
+  cost_w1: number
+  cost_w2: number
+  cost_w3: number
+  cost_w4: number
+  revenue_w1: number
+  revenue_w2: number
+  revenue_w3: number
+  revenue_w4: number
+  roas_w1: number
+  roas_w2: number
+  roas_w3: number
+  roas_w4: number
+  roas_growth_w2_vs_w1_pct: number
+  roas_growth_w3_vs_w2_pct: number
+  roas_growth_w4_vs_w3_pct: number
+  roas_trend: string
+  avg_daily_cost_w4: number
+}
+
+export interface AdsCampaignTrendRequest {
+  table_name: string
+}
+
+export interface AdsCampaignTrendResponse {
+  data: AdsCampaignTrendData[]
 } 

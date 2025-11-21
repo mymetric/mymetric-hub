@@ -814,8 +814,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const newCustomerRate = totals.pedidos > 0 ? (totals.novosClientes / totals.pedidos) * 100 : 0
   // Taxa de adição ao carrinho - limitando a um máximo de 100% por sessão
   const addToCartRate = totals.sessoes > 0 ? Math.min((totals.adicoesCarrinho / totals.sessoes) * 100, 100) : 0
-  // Taxa de conversão por leads (baseada em sessões)
-  const leadsConversionRate = totals.sessoes > 0 ? (totals.pedidos / totals.sessoes) * 100 : 0
+  // Taxa de conversão por leads (sessões que geraram leads)
+  const leadsConversionRate = totals.sessoes > 0 ? (totals.leads / totals.sessoes) * 100 : 0
 
   // Calcular ROAS usando receita paga geral e investimento total
   const roas = totals.investimento > 0 ? totals.receitaPaga / totals.investimento : 0
@@ -833,7 +833,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const previousRevenuePerSession = previousTotals.sessoes > 0 ? previousTotals.receita / previousTotals.sessoes : 0
   const previousNewCustomerRate = previousTotals.pedidos > 0 ? (previousTotals.novosClientes / previousTotals.pedidos) * 100 : 0
   const previousAddToCartRate = previousTotals.sessoes > 0 ? Math.min((previousTotals.adicoesCarrinho / previousTotals.sessoes) * 100, 100) : 0
-  const previousLeadsConversionRate = previousTotals.sessoes > 0 ? (previousTotals.pedidos / previousTotals.sessoes) * 100 : 0
+  const previousLeadsConversionRate = previousTotals.sessoes > 0 ? (previousTotals.leads / previousTotals.sessoes) * 100 : 0
   
   // Calcular ROAS e TACoS do período anterior
   const previousROAS = previousTotals.investimento > 0 ? previousTotals.receitaPaga / previousTotals.investimento : 0

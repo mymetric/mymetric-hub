@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { ShoppingBag, Package, User, ChevronRight, ChevronDown, Maximize2, Minimize2, Filter, ChevronUp, DollarSign, TrendingUp } from 'lucide-react'
+import { ShoppingBag, Package, User, ChevronRight, ChevronDown, Maximize2, Minimize2, Filter, ChevronUp, DollarSign, TrendingUp, Download } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
+import * as XLSX from 'xlsx'
 
 interface OrdersTabProps {
 	selectedTable: string
@@ -70,16 +71,21 @@ const OrdersTab = ({ selectedTable, startDate, endDate }: OrdersTabProps) => {
 	const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false)
 	const [retryCountdown, setRetryCountdown] = useState<number | null>(null)
 	const [isLoadingComplete, setIsLoadingComplete] = useState(false)
+	const [isExporting, setIsExporting] = useState(false)
 	
 	// Estados para collapse dos filtros
 	const [filtersExpanded, setFiltersExpanded] = useState(false)
 	const abortControllerRef = useRef<AbortController | null>(null)
 	const retryIntervalRef = useRef<any>(null)
 	const retryTimeoutRef = useRef<any>(null)
-	const audioRef = useRef<HTMLAudioElement | null>(null)
 
 	const formatCurrency = (value: number) => {
 		return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0)
+	}
+
+	const sanitizeText = (value?: string | number | null) => {
+		if (value === null || value === undefined) return ''
+		return value
 	}
 
 	// Funções auxiliares para seleção múltipla
@@ -502,6 +508,58 @@ const OrdersTab = ({ selectedTable, startDate, endDate }: OrdersTabProps) => {
 
 	const summary = calculateSummary()
 
+	const handleDownloadXLS = async () => {
+		const dataSource = filteredOrders.length > 0 ? filteredOrders : orders
+		if (dataSource.length === 0 || isExporting) return
+
+		try {
+			setIsExporting(true)
+			const sheetData = dataSource.map(order => ({
+				'ID da Transação': sanitizeText(order.ID_da_Transacao),
+				'Horário': formatDateTime(order.Horario),
+				'Primeiro Nome': sanitizeText(order.Primeiro_Nome),
+				Status: sanitizeText(order.Status),
+				Receita: order.Receita ?? 0,
+				'Categoria de Tráfego': sanitizeText(order.Categoria_de_Trafico),
+				'Categoria de Tráfego (1º Clique)': sanitizeText(order.Categoria_de_Trafico_Primeiro_Clique),
+				'Categoria de Tráfego (1º Lead)': sanitizeText(order.Categoria_de_Trafico_Primeiro_Lead),
+				Origem: sanitizeText(order.Origem),
+				'Mídia': sanitizeText(order.Midia),
+				Campanha: sanitizeText(order.Campanha),
+				Conteúdo: sanitizeText(order.Conteudo),
+				'Página de Entrada': sanitizeText(order.Pagina_de_Entrada),
+				'Parâmetros de URL': sanitizeText(order.Parametros_de_URL),
+				'Origem (1º Clique)': sanitizeText(order.Origem_Primeiro_Clique),
+				'Mídia (1º Clique)': sanitizeText(order.Midia_Primeiro_Clique),
+				'Campanha (1º Clique)': sanitizeText(order.Campanha_Primeiro_Clique),
+				'Conteúdo (1º Clique)': sanitizeText(order.Conteudo_Primeiro_Clique),
+				'Página de Entrada (1º Clique)': sanitizeText(order.Pagina_de_Entrada_Primeiro_Clique),
+				'Parâmetros de URL (1º Clique)': sanitizeText(order.Parametros_de_URL_Primeiro_Clique),
+				'Origem (1º Lead)': sanitizeText(order.Origem_Primeiro_Lead),
+				'Mídia (1º Lead)': sanitizeText(order.Midia_Primeiro_Lead),
+				'Campanha (1º Lead)': sanitizeText(order.Campanha_Primeiro_Lead),
+				'Conteúdo (1º Lead)': sanitizeText(order.Conteudo_Primeiro_Lead),
+				'Página de Entrada (1º Lead)': sanitizeText(order.Pagina_de_Entrada_Primeiro_Lead),
+				'Parâmetros de URL (1º Lead)': sanitizeText(order.Parametros_de_URL_Primeiro_Lead),
+				Cidade: sanitizeText(order.city),
+				Estado: sanitizeText(order.region),
+				País: sanitizeText(order.country)
+			}))
+
+			const worksheet = XLSX.utils.json_to_sheet(sheetData)
+			const workbook = XLSX.utils.book_new()
+			XLSX.utils.book_append_sheet(workbook, worksheet, 'Pedidos')
+
+			const safeTable = selectedTable.replace(/[^\w-]/g, '_')
+			const fileName = `pedidos_${safeTable}_${startDate}_${endDate}.xlsx`
+			XLSX.writeFile(workbook, fileName)
+		} catch (err) {
+			console.error('Erro ao exportar pedidos para XLS:', err)
+		} finally {
+			setIsExporting(false)
+		}
+	}
+
 	const TableBlock = (
 		<div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
 			<table className="w-full">
@@ -702,6 +760,19 @@ const OrdersTab = ({ selectedTable, startDate, endDate }: OrdersTabProps) => {
 					</div>
 				)}
 				<div className="flex items-center gap-2">
+					<button
+						onClick={handleDownloadXLS}
+						disabled={isExporting || (orders.length === 0 && filteredOrders.length === 0)}
+						className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-colors ${
+							isExporting || (orders.length === 0 && filteredOrders.length === 0)
+								? 'border-gray-200 text-gray-400 cursor-not-allowed bg-gray-50'
+								: 'border-gray-200 text-gray-700 hover:bg-gray-50'
+						}`}
+						title="Baixar XLS com os pedidos exibidos"
+					>
+						<Download className="w-4 h-4" />
+						{isExporting ? 'Gerando XLS...' : 'Baixar XLS'}
+					</button>
 					<button
 						onClick={() => setIsFullscreen(true)}
 						className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
