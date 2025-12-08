@@ -91,6 +91,14 @@ const LoginScreen = ({ onLogin }: { onLogin: (username: string, rememberMe: bool
         password: data.password
       })
 
+      // Chamar API 2.0 em paralelo (não bloqueia o fluxo)
+      api.loginV2({
+        email: data.username,
+        password: data.password
+      }).catch(error => {
+        console.error('⚠️ API 2.0 login error (não bloqueia o fluxo):', error)
+      })
+
       if (response.access_token && response.refresh_token) {
         setLoginStatus('success')
         

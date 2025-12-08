@@ -1,5 +1,5 @@
 # Dependencies
-/node_modules
+node_modules/
 /.pnp
 .pnp.js
 
@@ -36,5 +36,6 @@ lerna-debug.log*
 
 # OS
 Thumbs.db
+
 
 

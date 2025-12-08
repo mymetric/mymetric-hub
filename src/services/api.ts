@@ -33,6 +33,50 @@ interface LoginResponse {
   admin?: boolean
 }
 
+interface LoginV2Response {
+  token: string
+  user: {
+    admin: boolean
+    email: string
+    tablename: string
+  }
+}
+
+interface ProductsFunnelJobResponse {
+  job_id: string
+  status: string
+  created_at?: number
+  completed_at?: number
+  duration?: string
+  elapsed_seconds?: number
+  progress?: string
+  result?: {
+    compressed: boolean
+    count: number
+    file_path: string
+    file_url: string
+    format: string
+  }
+}
+
+interface ProductsFunnelDataItem {
+  add_payment_info: number
+  add_shipping_info: number
+  add_to_cart: number
+  begin_checkout: number
+  item_category: string
+  item_id: string
+  item_name: string
+  purchase: number
+  revenue: number
+  view_item: number
+}
+
+interface ProductsFunnelDataResponse {
+  count: number
+  data: ProductsFunnelDataItem[]
+}
+
 interface RefreshTokenRequest {
   refresh_token: string
 }
@@ -286,6 +330,69 @@ interface MetricsResponse {
 }
 
 export const api = {
+  async loginV2(loginData: LoginData): Promise<LoginV2Response> {
+    try {
+      const API_V2_URL = 'https://clownfish-app-l84ar.ondigitalocean.app/api/auth/login'
+      
+      console.log('🌐 Login API 2.0 Request:', {
+        url: API_V2_URL,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: loginData
+      })
+
+      const response = await fetch(API_V2_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(loginData),
+      })
+
+      console.log('📡 Login API 2.0 Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Login API 2.0 Error:', errorText)
+        
+        if (response.status === 401) {
+          throw new Error('Credenciais inválidas. Verifique seu usuário e senha.')
+        } else if (response.status === 403) {
+          throw new Error('Acesso negado. Verifique suas permissões.')
+        } else if (response.status >= 500) {
+          throw new Error('Erro interno do servidor. Tente novamente mais tarde.')
+        } else if (response.status === 0 || !navigator.onLine) {
+          throw new Error('Erro de conexão. Verifique sua internet e se a API está rodando.')
+        } else {
+          throw new Error(`Erro na requisição: ${response.status} - ${errorText}`)
+        }
+      }
+
+      const data = await response.json()
+      console.log('📦 Login API 2.0 Response data:', data)
+      
+      // Salvar no localStorage em uma variável não utilizada
+      localStorage.setItem('mymetric-auth-v2-response', JSON.stringify(data))
+      console.log('💾 API 2.0 response saved to localStorage as "mymetric-auth-v2-response"')
+      
+      return data
+    } catch (error) {
+      console.error('Login API 2.0 error:', error)
+      
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        throw new Error('Erro ao conectar com o servidor. Verifique se a API está rodando.')
+      }
+      
+      if (error instanceof Error && error.message !== 'Erro ao conectar com o servidor. Verifique se a API está rodando.') {
+        throw error
+      }
+      
+      throw new Error('Erro inesperado ao fazer login na API 2.0. Tente novamente.')
+    }
+  },
+
   async login(loginData: LoginData): Promise<LoginResponse> {
     try {
       console.log('🌐 Login API Request:', {
@@ -1269,6 +1376,156 @@ export const api = {
         throw networkError
       }
       throw new Error('Erro ao buscar dados de trend de campanhas de ads.')
+    }
+  },
+
+  // API 2.0 - Funil de Produtos
+  async createProductsFunnelJob(token: string, customer: string): Promise<ProductsFunnelJobResponse> {
+    try {
+      const API_V2_URL = 'https://clownfish-app-l84ar.ondigitalocean.app/api/request'
+      
+      console.log('🌐 Create Products Funnel Job Request:', {
+        url: API_V2_URL,
+        method: 'POST',
+        customer
+      })
+
+      const response = await fetch(API_V2_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          endpoint: 'funnel/products',
+          params: {
+            customer
+          }
+        }),
+      })
+
+      console.log('📡 Create Products Funnel Job Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Create Products Funnel Job Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('📦 Create Products Funnel Job Response data:', data)
+      return data
+    } catch (error) {
+      console.error('Create Products Funnel Job error:', error)
+      throw new Error('Erro ao criar job de funil de produtos.')
+    }
+  },
+
+  async getProductsFunnelJobStatus(token: string, jobId: string): Promise<ProductsFunnelJobResponse> {
+    try {
+      const API_V2_URL = `https://clownfish-app-l84ar.ondigitalocean.app/api/request/${jobId}`
+      
+      const response = await fetch(API_V2_URL, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Get Products Funnel Job Status Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      return data
+    } catch (error) {
+      console.error('Get Products Funnel Job Status error:', error)
+      throw new Error('Erro ao verificar status do job de funil de produtos.')
+    }
+  },
+
+  async getProductsFunnelData(token: string, jobId: string): Promise<ProductsFunnelDataResponse> {
+    try {
+      const API_V2_URL = `https://clownfish-app-l84ar.ondigitalocean.app/api/request/${jobId}/data`
+      
+      console.log('🌐 Get Products Funnel Data Request:', {
+        url: API_V2_URL,
+        method: 'GET'
+      })
+
+      const response = await fetch(API_V2_URL, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+
+      console.log('📡 Get Products Funnel Data Response status:', response.status, response.statusText)
+      console.log('📡 Get Products Funnel Data Response headers:', response.headers.get('content-type'))
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Get Products Funnel Data Error:', errorText)
+        
+        // Se for 404, lançar um erro especial que indica que deve tentar novamente
+        if (response.status === 404) {
+          const retryError: any = new Error(`Dados ainda não disponíveis (404). Tente novamente.`)
+          retryError.isRetryable = true
+          retryError.status = 404
+          throw retryError
+        }
+        
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      // Verificar o tipo de conteúdo
+      const contentType = response.headers.get('content-type') || ''
+      let data: ProductsFunnelDataResponse
+
+      // Sempre ler como texto primeiro para tratar NaN
+      const text = await response.text()
+      
+      // Substituir NaN por null antes de fazer parse (captura NaN em qualquer contexto)
+      // Regex mais robusta que captura NaN em qualquer posição
+      const cleanedText = text.replace(/:\s*NaN\b/g, ': null')
+      
+      console.log('📦 Response text (first 500 chars):', cleanedText.substring(0, 500))
+      
+      try {
+        data = JSON.parse(cleanedText)
+      } catch (parseError) {
+        console.error('❌ Failed to parse response as JSON:', parseError)
+        console.error('❌ Problematic text around error:', cleanedText.substring(Math.max(0, (parseError as any).message?.match(/\d+/) ? parseInt((parseError as any).message.match(/\d+/)[0]) - 100 : 0), 200))
+        throw new Error(`Resposta não é um JSON válido. Tipo: ${contentType}`)
+      }
+
+      console.log('📦 Get Products Funnel Data Response data:', data)
+      
+      // Validar estrutura dos dados
+      if (!data || (typeof data !== 'object')) {
+        throw new Error('Resposta inválida: dados não são um objeto')
+      }
+
+      // Garantir que data.data existe e é um array
+      if (!data.data || !Array.isArray(data.data)) {
+        console.warn('⚠️ Response data.data is not an array:', data)
+        // Tentar ajustar a estrutura se necessário
+        if (Array.isArray(data)) {
+          data = { count: data.length, data: data as any }
+        } else {
+          throw new Error('Resposta inválida: data.data não é um array')
+        }
+      }
+
+      return data
+    } catch (error) {
+      console.error('Get Products Funnel Data error:', error)
+      if (error instanceof Error) {
+        throw error
+      }
+      throw new Error('Erro ao buscar dados do funil de produtos.')
     }
   }
 } 

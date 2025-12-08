@@ -43,6 +43,7 @@ import DetailedData from './DetailedData'
 import HavaianasDashboard from './HavaianasDashboard'
 import ABTesting from './ABTesting'
 import ProductsDashboard from './ProductsDashboard'
+import ProductsFunnel from './ProductsFunnel'
 import PaidMediaDashboard from './PaidMediaDashboard'
 import FreteDashboard from './FreteDashboard'
 import RealtimeData from './RealtimeData'
@@ -332,8 +333,10 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   }, [visibleColumns])
   
   const [activeTab, setActiveTab] = useState<string>('visao-geral')
+  const [productsSubTab, setProductsSubTab] = useState<'visao-geral' | 'funil' | null>(null)
   const [showMobileTabMenu, setShowMobileTabMenu] = useState(false)
   const [showSubmenu, setShowSubmenu] = useState(false)
+  const [showProductsSubmenu, setShowProductsSubmenu] = useState(false)
 
   const [attributionModel, setAttributionModel] = useState<string>('Último Clique Não Direto')
   
@@ -528,6 +531,15 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     }
     
     setActiveTab(tab)
+    
+    // Resetar sub-aba de produtos quando mudar para a aba de produtos
+    if (tab === 'produtos') {
+      setProductsSubTab(null) // Não carregar nenhuma sub-aba automaticamente
+      setShowProductsSubmenu(true) // Abrir submenu quando entrar em produtos
+    } else {
+      setShowProductsSubmenu(false) // Fechar submenu quando sair de produtos
+      setProductsSubTab(null) // Limpar sub-aba ao sair
+    }
     
     // Definir período padrão baseado na aba selecionada
     const defaultPeriod = getDefaultPeriodForTab(tab)
@@ -1745,13 +1757,70 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
           <nav className="hidden md:flex">
             {/* Abas visíveis */}
             {visibleTabs.map((tabId) => {
+              // Tratamento especial para a aba "produtos" com submenu
+              if (tabId === 'produtos') {
+                const isActive = activeTab === tabId
+                return (
+                  <div key={tabId} className="relative flex-1">
+                    <button
+                      onClick={() => {
+                        handleTabChange(tabId)
+                        setShowProductsSubmenu(!showProductsSubmenu) // Toggle submenu
+                      }}
+                      className={`w-full py-3 px-6 border-b-2 font-medium text-sm transition-colors whitespace-nowrap flex items-center justify-center gap-2 ${
+                        isActive
+                          ? 'border-blue-500 text-blue-600'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      <ShoppingCart className="w-4 h-4" />
+                      <span>Produtos</span>
+                      <ChevronDown className={`w-4 h-4 transition-transform ${showProductsSubmenu && isActive ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {/* Dropdown do submenu de Produtos */}
+                    {showProductsSubmenu && isActive && (
+                      <div className="absolute top-full left-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                        <button
+                          onClick={() => {
+                            setProductsSubTab('visao-geral')
+                            setShowProductsSubmenu(false)
+                          }}
+                          className={`w-full px-4 py-3 text-left text-sm transition-colors flex items-center gap-3 ${
+                            productsSubTab === 'visao-geral'
+                              ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-500'
+                              : 'text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          <BarChart3 className="w-4 h-4" />
+                          Visão Geral
+                        </button>
+                        <button
+                          onClick={() => {
+                            setProductsSubTab('funil')
+                            setShowProductsSubmenu(false)
+                          }}
+                          className={`w-full px-4 py-3 text-left text-sm transition-colors flex items-center gap-3 ${
+                            productsSubTab === 'funil'
+                              ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-500'
+                              : 'text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          <Filter className="w-4 h-4" />
+                          Funil
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )
+              }
+
               const tabConfig = {
                 'visao-geral': { label: 'Visão Geral', icon: BarChart3 },
                 'midia-paga': { label: 'Mídia Paga', icon: TrendingUp },
                 'funil-conversao': { label: 'Funil de Conversão', icon: Filter },
                 'dados-detalhados': { label: 'Dados Detalhados', icon: Database },
                 'frete': { label: 'Frete', icon: Truck },
-                'produtos': { label: 'Produtos', icon: ShoppingCart },
                 'tempo-real': { label: 'Tempo Real', icon: Activity },
                 'pedidos': { label: 'Pedidos', icon: ShoppingBag },
                 'leads': { label: 'Leads', icon: User }
@@ -1849,7 +1918,13 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   {activeTab === 'dados-detalhados' && 'Dados Detalhados'}
                   {activeTab === 'frete' && 'Frete'}
                   {activeTab === 'havaianas' && 'Product Scoring'}
-                  {activeTab === 'produtos' && 'Produtos'}
+                  {activeTab === 'produtos' && (
+                    productsSubTab === null 
+                      ? 'Produtos' 
+                      : productsSubTab === 'visao-geral' 
+                        ? 'Produtos - Visão Geral' 
+                        : 'Produtos - Funil'
+                  )}
                   {activeTab === 'ab-testing' && 'Testes A/B'}
                   {activeTab === 'tempo-real' && 'Tempo Real'}
                   {activeTab === 'configuracao' && user?.admin && 'Configuração'}
@@ -4379,10 +4454,29 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         {/* Produtos Tab */}
         {activeTab === 'produtos' && (
           <>
-            {console.log('🔄 Rendering ProductsDashboard with selectedTable:', selectedTable)}
-            <ProductsDashboard 
-              selectedTable={selectedTable}
-            />
+            {/* Conteúdo das sub-abas */}
+            {productsSubTab === null && (
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center">
+                  <ShoppingCart className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <h2 className="text-2xl font-bold text-gray-900 mb-2">Selecione uma opção</h2>
+                  <p className="text-gray-600">Clique no menu "Produtos" acima e escolha uma das opções disponíveis.</p>
+                </div>
+              </div>
+            )}
+
+            {productsSubTab === 'visao-geral' && (
+              <>
+                {console.log('🔄 Rendering ProductsDashboard with selectedTable:', selectedTable)}
+                <ProductsDashboard 
+                  selectedTable={selectedTable}
+                />
+              </>
+            )}
+
+            {productsSubTab === 'funil' && (
+              <ProductsFunnel selectedTable={selectedTable} />
+            )}
           </>
         )}
 
