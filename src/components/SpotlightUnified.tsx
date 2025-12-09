@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { Search, Database, BarChart3, TrendingUp, Filter, Truck, ShoppingCart, Activity, Package, Target, Settings, ArrowRight, Loader2 } from 'lucide-react'
+import { Search, Database, BarChart3, TrendingUp, Filter, Truck, ShoppingCart, Activity, Package, Target, Settings, ArrowRight, Loader2, MessageSquare } from 'lucide-react'
 import { useClientList } from '../hooks/useClientList'
 
 interface SpotlightUnifiedProps {
@@ -102,6 +102,7 @@ const SpotlightUnified = ({
     'produtos': { label: 'Produtos', icon: ShoppingCart, description: 'Performance de produtos' },
     'tempo-real': { label: 'Tempo Real', icon: Activity, description: 'Dados em tempo real' },
     'havaianas': { label: 'Product Scoring', icon: Package, description: 'Scoring de produtos (Havaianas)' },
+    'funil-whatsapp': { label: 'Funil de Vendas por WhatsApp', icon: MessageSquare, description: 'Funil de conversão por WhatsApp' },
     'ab-testing': { label: 'Testes A/B', icon: Target, description: 'Experimentos e testes' },
     'configuracao': { label: 'Configuração', icon: Settings, description: 'Configurações do sistema' }
   }
@@ -117,6 +118,7 @@ const SpotlightUnified = ({
 
   const submenuTabs = [
     ...(currentTable === 'havaianas' ? ['havaianas'] : []),
+    ...(currentTable === 'coroasparavelorio' ? ['funil-whatsapp'] : []),
     'frete',
     'ab-testing',
     'produtos',

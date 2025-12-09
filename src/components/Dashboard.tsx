@@ -25,7 +25,8 @@ import {
   Users,
   ChevronDown,
   Truck,
-  ArrowRight
+  ArrowRight,
+  MessageSquare
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
 import Logo from './Logo'
@@ -44,6 +45,7 @@ import HavaianasDashboard from './HavaianasDashboard'
 import ABTesting from './ABTesting'
 import ProductsDashboard from './ProductsDashboard'
 import ProductsFunnel from './ProductsFunnel'
+import WhatsAppFunnel from './WhatsAppFunnel'
 import PaidMediaDashboard from './PaidMediaDashboard'
 import FreteDashboard from './FreteDashboard'
 import RealtimeData from './RealtimeData'
@@ -1659,6 +1661,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   // Abas que ficam no submenu
   const submenuTabs = [
     ...(selectedTable === 'havaianas' ? ['havaianas'] : []),
+    ...(selectedTable === 'coroasparavelorio' ? ['funil-whatsapp'] : []),
     'dados-detalhados',
     'frete',
     'ab-testing',
@@ -1870,6 +1873,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                     {submenuTabs.map((tabId) => {
                       const tabConfig = {
                         'havaianas': { label: 'Product Scoring', icon: Package },
+                        'funil-whatsapp': { label: 'Funil de Vendas por WhatsApp', icon: MessageSquare },
                         'dados-detalhados': { label: 'Dados Detalhados', icon: Database },
                         'frete': { label: 'Frete', icon: Truck },
                         'ab-testing': { label: 'Testes A/B', icon: Target },
@@ -1917,6 +1921,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   {activeTab === 'funil-conversao' && 'Funil de Conversão'}
                   {activeTab === 'dados-detalhados' && 'Dados Detalhados'}
                   {activeTab === 'frete' && 'Frete'}
+                  {activeTab === 'funil-whatsapp' && 'Funil de Vendas por WhatsApp'}
                   {activeTab === 'havaianas' && 'Product Scoring'}
                   {activeTab === 'produtos' && (
                     productsSubTab === null 
@@ -4506,6 +4511,11 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
             startDate={startDate}
             endDate={endDate}
           />
+        )}
+
+        {/* Funil de Vendas por WhatsApp Tab - apenas para coroasparavelorio */}
+        {activeTab === 'funil-whatsapp' && selectedTable === 'coroasparavelorio' && (
+          <WhatsAppFunnel selectedTable={selectedTable} />
         )}
 
         {/* Dados em Tempo Real Tab */}

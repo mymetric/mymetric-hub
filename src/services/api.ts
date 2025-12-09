@@ -50,6 +50,12 @@ interface ProductsFunnelJobResponse {
   duration?: string
   elapsed_seconds?: number
   progress?: string
+  applied_period?: {
+    date_column: string
+    date_end: string
+    date_start: string
+    default_period_days?: number
+  }
   result?: {
     compressed: boolean
     count: number
@@ -77,9 +83,27 @@ interface ProductsFunnelDataResponse {
   data: ProductsFunnelDataItem[]
 }
 
-interface RefreshTokenRequest {
-  refresh_token: string
+interface WhatsAppFunnelDataItem {
+  event_date: string
+  message_chat_assign_to_human: number
+  message_chat_begin_checkout: number
+  message_chat_catalog: number
+  message_chat_ended: number
+  message_chat_shipping_info: number
+  message_chat_started: number
+  message_chat_user_inactivity: number
+  message_order: number
+  messages: number
 }
+
+interface WhatsAppFunnelDataResponse {
+  count: number
+  data: WhatsAppFunnelDataItem[]
+}
+
+// interface RefreshTokenRequest {
+//   refresh_token: string
+// }
 
 interface RefreshTokenResponse {
   access_token: string
@@ -1380,14 +1404,26 @@ export const api = {
   },
 
   // API 2.0 - Funil de Produtos
-  async createProductsFunnelJob(token: string, customer: string): Promise<ProductsFunnelJobResponse> {
+  async createProductsFunnelJob(token: string, customer: string, startDate?: string, endDate?: string): Promise<ProductsFunnelJobResponse> {
     try {
       const API_V2_URL = 'https://clownfish-app-l84ar.ondigitalocean.app/api/request'
       
+      const params: any = {
+        customer
+      }
+
+      // Adicionar datas se fornecidas
+      if (startDate && endDate) {
+        params.date_start = startDate
+        params.date_end = endDate
+      }
+
       console.log('🌐 Create Products Funnel Job Request:', {
         url: API_V2_URL,
         method: 'POST',
-        customer
+        customer,
+        startDate,
+        endDate
       })
 
       const response = await fetch(API_V2_URL, {
@@ -1398,9 +1434,7 @@ export const api = {
         },
         body: JSON.stringify({
           endpoint: 'funnel/products',
-          params: {
-            customer
-          }
+          params
         }),
       })
 
@@ -1526,6 +1560,166 @@ export const api = {
         throw error
       }
       throw new Error('Erro ao buscar dados do funil de produtos.')
+    }
+  },
+
+  // API 2.0 - Funil de Vendas por WhatsApp
+  async createWhatsAppFunnelJob(token: string, customer: string, startDate?: string, endDate?: string): Promise<ProductsFunnelJobResponse> {
+    try {
+      const API_V2_URL = 'https://clownfish-app-l84ar.ondigitalocean.app/api/request'
+      
+      const params: any = {
+        customer
+      }
+
+      // Adicionar datas se fornecidas
+      if (startDate && endDate) {
+        params.date_start = startDate
+        params.date_end = endDate
+      }
+
+      console.log('🌐 Create WhatsApp Funnel Job Request:', {
+        url: API_V2_URL,
+        method: 'POST',
+        customer,
+        startDate,
+        endDate
+      })
+
+      const response = await fetch(API_V2_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          endpoint: 'coroasparavelorio/whatsapp',
+          params
+        }),
+      })
+
+      console.log('📡 Create WhatsApp Funnel Job Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Create WhatsApp Funnel Job Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('📦 Create WhatsApp Funnel Job Response data:', data)
+      return data
+    } catch (error) {
+      console.error('Create WhatsApp Funnel Job error:', error)
+      throw new Error('Erro ao criar job de funil de vendas por WhatsApp.')
+    }
+  },
+
+  async getWhatsAppFunnelJobStatus(token: string, jobId: string): Promise<ProductsFunnelJobResponse> {
+    try {
+      const API_V2_URL = `https://clownfish-app-l84ar.ondigitalocean.app/api/request/${jobId}`
+      
+      const response = await fetch(API_V2_URL, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Get WhatsApp Funnel Job Status Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      return data
+    } catch (error) {
+      console.error('Get WhatsApp Funnel Job Status error:', error)
+      throw new Error('Erro ao verificar status do job de funil de vendas por WhatsApp.')
+    }
+  },
+
+  async getWhatsAppFunnelData(token: string, jobId: string): Promise<WhatsAppFunnelDataResponse> {
+    try {
+      const API_V2_URL = `https://clownfish-app-l84ar.ondigitalocean.app/api/request/${jobId}/data`
+      
+      console.log('🌐 Get WhatsApp Funnel Data Request:', {
+        url: API_V2_URL,
+        method: 'GET'
+      })
+
+      const response = await fetch(API_V2_URL, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+
+      console.log('📡 Get WhatsApp Funnel Data Response status:', response.status, response.statusText)
+      console.log('📡 Get WhatsApp Funnel Data Response headers:', response.headers.get('content-type'))
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Get WhatsApp Funnel Data Error:', errorText)
+        
+        // Se for 404, lançar um erro especial que indica que deve tentar novamente
+        if (response.status === 404) {
+          const retryError: any = new Error(`Dados ainda não disponíveis (404). Tente novamente.`)
+          retryError.isRetryable = true
+          retryError.status = 404
+          throw retryError
+        }
+        
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      // Verificar o tipo de conteúdo
+      const contentType = response.headers.get('content-type') || ''
+      let data: WhatsAppFunnelDataResponse
+
+      // Sempre ler como texto primeiro para tratar NaN
+      const text = await response.text()
+      
+      // Substituir NaN por null antes de fazer parse (captura NaN em qualquer contexto)
+      // Regex mais robusta que captura NaN em qualquer posição
+      const cleanedText = text.replace(/:\s*NaN\b/g, ': null')
+      
+      console.log('📦 Response text (first 500 chars):', cleanedText.substring(0, 500))
+      
+      try {
+        data = JSON.parse(cleanedText)
+      } catch (parseError) {
+        console.error('❌ Failed to parse response as JSON:', parseError)
+        console.error('❌ Problematic text around error:', cleanedText.substring(Math.max(0, (parseError as any).message?.match(/\d+/) ? parseInt((parseError as any).message.match(/\d+/)[0]) - 100 : 0), 200))
+        throw new Error(`Resposta não é um JSON válido. Tipo: ${contentType}`)
+      }
+
+      console.log('📦 Get WhatsApp Funnel Data Response data:', data)
+      
+      // Validar estrutura dos dados
+      if (!data || (typeof data !== 'object')) {
+        throw new Error('Resposta inválida: dados não são um objeto')
+      }
+
+      // Garantir que data.data existe e é um array
+      if (!data.data || !Array.isArray(data.data)) {
+        console.warn('⚠️ Response data.data is not an array:', data)
+        // Tentar ajustar a estrutura se necessário
+        if (Array.isArray(data)) {
+          data = { count: data.length, data: data as any }
+        } else {
+          throw new Error('Resposta inválida: data.data não é um array')
+        }
+      }
+
+      return data
+    } catch (error) {
+      console.error('Get WhatsApp Funnel Data error:', error)
+      if (error instanceof Error) {
+        throw error
+      }
+      throw new Error('Erro ao buscar dados do funil de vendas por WhatsApp.')
     }
   }
 } 
