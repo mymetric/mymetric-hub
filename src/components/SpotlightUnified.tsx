@@ -11,6 +11,7 @@ interface SpotlightUnifiedProps {
   useCSV?: boolean
   hideClientName?: boolean
   user?: any
+  autoOpen?: boolean
 }
 
 type SpotlightCategory = 'clients' | 'tabs'
@@ -32,17 +33,45 @@ const SpotlightUnified = ({
   availableTables = [], 
   useCSV = true, 
   hideClientName = false,
-  user
+  user,
+  autoOpen = false
 }: SpotlightUnifiedProps) => {
+  console.log('🎨 SpotlightUnified renderizado com autoOpen:', autoOpen)
   const [isOpen, setIsOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [selectedCategory, setSelectedCategory] = useState<SpotlightCategory>('clients')
   const searchInputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const hasAutoOpenedRef = useRef(false)
   
   // Só executar o hook se useCSV for true
   const { clients, isLoading, error } = useClientList(useCSV)
+
+  // Abrir automaticamente se autoOpen for true (apenas uma vez)
+  useEffect(() => {
+    if (autoOpen && !hasAutoOpenedRef.current && !isOpen) {
+      console.log('🚀 SpotlightUnified: autoOpen é true, abrindo spotlight...', { isOpen, autoOpen })
+      hasAutoOpenedRef.current = true
+      
+      // Usar um delay para garantir que o componente está totalmente renderizado
+      const timer = setTimeout(() => {
+        console.log('🎯 Abrindo spotlight agora')
+        setIsOpen(true)
+        setSearchTerm('')
+        setSelectedIndex(0)
+        setSelectedCategory('clients')
+        
+        // Focar no campo de busca após um pequeno delay adicional
+        setTimeout(() => {
+          searchInputRef.current?.focus()
+          console.log('✅ Spotlight aberto e focado')
+        }, 200)
+      }, 600)
+      
+      return () => clearTimeout(timer)
+    }
+  }, [autoOpen, isOpen])
 
   // Atalho Command + K para abrir o spotlight
   useEffect(() => {

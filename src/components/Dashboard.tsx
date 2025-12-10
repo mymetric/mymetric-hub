@@ -97,6 +97,7 @@ interface MetricsDataItem {
 }
 
 const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) => {
+  console.log('🎬 Dashboard component iniciado')
   const { getUrlParams, updateUrlParams } = useUrlParams()
   
 
@@ -397,6 +398,60 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   
   // Estados para controle de dados
   const [totalRecords, setTotalRecords] = useState(0)
+  
+  // Estado para controlar abertura automática do spotlight
+  const [shouldAutoOpenSpotlight, setShouldAutoOpenSpotlight] = useState(false)
+  
+  // Verificar se usuário tem acesso ao lightbox e abrir spotlight automaticamente
+  useEffect(() => {
+    console.log('🚀 Dashboard useEffect executado - verificando acesso ao lightbox')
+    try {
+      const loginResponseStr = localStorage.getItem('login-response')
+      console.log('📋 login-response encontrado:', !!loginResponseStr)
+      
+      if (loginResponseStr) {
+        const loginResponse = JSON.parse(loginResponseStr)
+        console.log('📦 login-response parseado:', {
+          table_name: loginResponse?.table_name,
+          access_control: loginResponse?.access_control,
+          admin: loginResponse?.admin
+        })
+        
+        // Verificar se tem acesso ao lightbox (access_control === 'all' ou table_name === 'all')
+        const hasLightboxAccess = loginResponse?.table_name === 'all' || loginResponse?.access_control === 'all'
+        console.log('🔍 Verificando acesso ao lightbox:', {
+          table_name: loginResponse?.table_name,
+          access_control: loginResponse?.access_control,
+          hasLightboxAccess
+        })
+        
+        if (hasLightboxAccess) {
+          console.log('✅ Usuário com acesso ao lightbox - configurando para abrir spotlight automaticamente')
+          // Aguardar um pouco para garantir que o componente está renderizado
+          const timer = setTimeout(() => {
+            console.log('⏰ Timer executado - definindo shouldAutoOpenSpotlight como true')
+            setShouldAutoOpenSpotlight(true)
+            console.log('🎯 shouldAutoOpenSpotlight definido como true')
+            // Resetar após o spotlight abrir para evitar reabertura (aumentado para 3 segundos)
+            setTimeout(() => {
+              setShouldAutoOpenSpotlight(false)
+              console.log('🔄 shouldAutoOpenSpotlight resetado para false')
+            }, 3000)
+          }, 1000)
+          return () => {
+            console.log('🧹 Cleanup do timer')
+            clearTimeout(timer)
+          }
+        } else {
+          console.log('❌ Usuário NÃO tem acesso ao lightbox')
+        }
+      } else {
+        console.log('⚠️ login-response não encontrado no localStorage')
+      }
+    } catch (error) {
+      console.error('❌ Error checking lightbox access:', error)
+    }
+  }, [])
   
   // Atualizar selectedTable baseado no localStorage login-response
   useEffect(() => {
@@ -1686,10 +1741,18 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   const loginResponse = loginResponseStr ? JSON.parse(loginResponseStr) : null
                   const hasAccessToAll = loginResponse?.table_name === 'all' || loginResponse?.access_control === 'all'
                   
+                  const shouldAutoOpen = shouldAutoOpenSpotlight && hasAccessToAll
+                  console.log('📊 Renderizando SpotlightUnified:', {
+                    shouldAutoOpenSpotlight,
+                    hasAccessToAll,
+                    shouldAutoOpen
+                  })
+                  
                   return (
                     <div className="flex items-center gap-3">
                       <div className="w-28 sm:w-48">
                         <SpotlightUnified
+                          key={`spotlight-${shouldAutoOpen}`} // Forçar re-render quando shouldAutoOpen mudar
                           currentTable={selectedTable}
                           onTableChange={setSelectedTable}
                           activeTab={activeTab}
@@ -1702,6 +1765,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                           }
                           hideClientName={hasAccessToAll ? hideClientName : true} // Ocultar nome do cliente se não tem acesso total
                           user={user}
+                          autoOpen={shouldAutoOpen} // Abrir automaticamente para usuários com acesso ao lightbox
                         />
                       </div>
                       {hasAccessToAll && (
