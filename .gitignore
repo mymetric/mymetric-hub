@@ -7,12 +7,20 @@ node_modules/
 /coverage
 
 # Production
+<<<<<<< HEAD
 /dist
 /build
 
 # Misc
 .DS_Store
 .env
+=======
+/build
+/dist
+
+# Misc
+.DS_Store
+>>>>>>> origin/main
 .env.local
 .env.development.local
 .env.test.local
@@ -26,8 +34,14 @@ pnpm-debug.log*
 lerna-debug.log*
 
 # Editor directories and files
+<<<<<<< HEAD
 .idea/
 .vscode/
+=======
+.vscode/*
+!.vscode/extensions.json
+.idea
+>>>>>>> origin/main
 *.suo
 *.ntvs*
 *.njsproj
@@ -35,7 +49,13 @@ lerna-debug.log*
 *.sw?
 
 # OS
+<<<<<<< HEAD
 Thumbs.db
 
 
 
+=======
+.DS_Store
+Thumbs.db
+
+>>>>>>> origin/main

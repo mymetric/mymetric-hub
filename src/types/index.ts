@@ -254,8 +254,8 @@ export interface LeadsOrdersResponse {
   }
 }
 
-// Tipos para Trend de Campanhas de Mídia Paga
-export interface AdsCampaignTrendData {
+// Tipos para Tendência de Campanhas de Mídia Paga
+export interface AdsCampaignTrendItem {
   campaign_name: string
   platform: string
   cost_w1: number
@@ -282,5 +282,5 @@ export interface AdsCampaignTrendRequest {
 }
 
 export interface AdsCampaignTrendResponse {
-  data: AdsCampaignTrendData[]
+  data: AdsCampaignTrendItem[]
 } 
