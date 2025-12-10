@@ -33,6 +33,15 @@ interface LoginResponse {
   admin?: boolean
 }
 
+interface LoginV2Response {
+  token: string
+  user: {
+    admin: boolean
+    email: string
+    tablename: string
+  }
+}
+
 interface RefreshTokenRequest {
   refresh_token: string
 }
@@ -286,6 +295,69 @@ interface MetricsResponse {
 }
 
 export const api = {
+  async loginV2(loginData: LoginData): Promise<LoginV2Response> {
+    try {
+      const API_V2_URL = 'https://clownfish-app-l84ar.ondigitalocean.app/api/auth/login'
+      
+      console.log('🌐 Login API 2.0 Request:', {
+        url: API_V2_URL,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: loginData
+      })
+
+      const response = await fetch(API_V2_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(loginData),
+      })
+
+      console.log('📡 Login API 2.0 Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Login API 2.0 Error:', errorText)
+        
+        if (response.status === 401) {
+          throw new Error('Credenciais inválidas. Verifique seu usuário e senha.')
+        } else if (response.status === 403) {
+          throw new Error('Acesso negado. Verifique suas permissões.')
+        } else if (response.status >= 500) {
+          throw new Error('Erro interno do servidor. Tente novamente mais tarde.')
+        } else if (response.status === 0 || !navigator.onLine) {
+          throw new Error('Erro de conexão. Verifique sua internet e se a API está rodando.')
+        } else {
+          throw new Error(`Erro na requisição: ${response.status} - ${errorText}`)
+        }
+      }
+
+      const data = await response.json()
+      console.log('📦 Login API 2.0 Response data:', data)
+      
+      // Salvar no localStorage em uma variável não utilizada
+      localStorage.setItem('mymetric-auth-v2-response', JSON.stringify(data))
+      console.log('💾 API 2.0 response saved to localStorage as "mymetric-auth-v2-response"')
+      
+      return data
+    } catch (error) {
+      console.error('Login API 2.0 error:', error)
+      
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        throw new Error('Erro ao conectar com o servidor. Verifique se a API está rodando.')
+      }
+      
+      if (error instanceof Error && error.message !== 'Erro ao conectar com o servidor. Verifique se a API está rodando.') {
+        throw error
+      }
+      
+      throw new Error('Erro inesperado ao fazer login na API 2.0. Tente novamente.')
+    }
+  },
+
   async login(loginData: LoginData): Promise<LoginResponse> {
     try {
       console.log('🌐 Login API Request:', {
