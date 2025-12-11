@@ -65,6 +65,14 @@ export interface AdsCampaignData {
   revenue_first_origin_stack: number
   pixel_transactions?: number
   pixel_revenue?: number
+  recurring_annual_revenue?: number
+  recurring_annual_subscriptions?: number
+  recurring_montly_revenue?: number
+  recurring_montly_subscriptions?: number
+  first_annual_revenue?: number
+  first_annual_subscriptions?: number
+  first_montly_revenue?: number
+  first_montly_subscriptions?: number
 }
 
 export interface AdsCampaignRequest {

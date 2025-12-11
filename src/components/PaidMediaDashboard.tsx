@@ -166,7 +166,15 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       transactions_first_origin_stack: toNumber(item.fsm_first_transaction),
       revenue_first_origin_stack: toNumber(item.fsm_first_revenue),
       pixel_transactions: toNumber(item.pixel_transactions),
-      pixel_revenue: toNumber(item.pixel_revenue)
+      pixel_revenue: toNumber(item.pixel_revenue),
+      recurring_annual_revenue: toNumber(item.recurring_annual_revenue),
+      recurring_annual_subscriptions: toNumber(item.recurring_annual_subscriptions),
+      recurring_montly_revenue: toNumber(item.recurring_montly_revenue),
+      recurring_montly_subscriptions: toNumber(item.recurring_montly_subscriptions),
+      first_annual_revenue: toNumber(item.first_annual_revenue),
+      first_annual_subscriptions: toNumber(item.first_annual_subscriptions),
+      first_montly_revenue: toNumber(item.first_montly_revenue),
+      first_montly_subscriptions: toNumber(item.first_montly_subscriptions)
     }
   }
 
@@ -343,6 +351,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     }
     
     setIsPolling(true)
+    setJobStatus('processing')
     currentPollingJobIdRef.current = currentJobId
     console.log('🔄 Iniciando polling para job:', currentJobId)
 
@@ -436,6 +445,12 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       console.log('⚠️ Processamento já em andamento, ignorando chamada duplicada')
       return
     }
+    
+    // Verificar se o selectedTable ainda é o mesmo que iniciou o processamento
+    if (hasStartedProcessingRef.current !== selectedTable) {
+      console.log('⚠️ selectedTable mudou, cancelando processamento')
+      return
+    }
 
     // Marcar imediatamente para evitar race condition
     isProcessingRef.current = true
@@ -490,8 +505,11 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       
       // Resetar flag após um delay para permitir que o job seja criado
       // Mas manter por mais tempo para evitar chamadas duplicadas
+      // Só resetar se ainda estiver processando o mesmo selectedTable
       setTimeout(() => {
-        isProcessingRef.current = false
+        if (hasStartedProcessingRef.current === selectedTable) {
+          isProcessingRef.current = false
+        }
       }, 2000)
     } catch (error) {
       console.error('Error starting processing:', error)
@@ -751,9 +769,11 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
           pixel_revenue: false,
           pixel_transactions_delta: false,
           pixel_revenue_delta: false,
-          pixel_transactions_delta: false,
-          pixel_revenue_delta: false
-    }
+          first_annual_revenue: false,
+          first_annual_subscriptions: false,
+          first_montly_revenue: false,
+          first_montly_subscriptions: false
+        }
   }
   
   const [visibleColumns, setVisibleColumns] = useState(getInitialVisibleColumns())
@@ -954,11 +974,22 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       return
     }
 
-    // Verificar ambas as flags para evitar execuções duplicadas
-    if (hasStartedProcessingRef.current === selectedTable || isProcessingRef.current) {
-      console.log('⚠️ Processamento já iniciado ou em andamento para:', selectedTable)
+    // Verificar e marcar de forma atômica para evitar race condition no Strict Mode
+    // Se já está processando este selectedTable, ignorar
+    if (hasStartedProcessingRef.current === selectedTable) {
+      console.log('⚠️ Processamento já iniciado para:', selectedTable)
       return
     }
+    
+    // Se está processando outro selectedTable, aguardar
+    if (isProcessingRef.current) {
+      console.log('⚠️ Processamento em andamento para outro selectedTable, aguardando...')
+      return
+    }
+    
+    // Marcar IMEDIATAMENTE antes de qualquer outra operação
+    // Isso previne que a segunda execução do Strict Mode passe pela verificação
+    hasStartedProcessingRef.current = selectedTable
     
     // Limpar polling anterior se houver
     if (pollingIntervalRef.current) {
@@ -970,15 +1001,18 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       additionalPollRef.current = null
     }
     
-    // Marcar que o processamento foi iniciado para este selectedTable ANTES de chamar
-    // Isso previne que a segunda execução do Strict Mode passe pela verificação
-    hasStartedProcessingRef.current = selectedTable
-    
     console.log('🚀 Iniciando processamento para:', selectedTable)
-    startProcessing()
+    
+    // Usar setTimeout para garantir que a marcação foi feita antes da execução
+    // Isso ajuda a evitar que o Strict Mode execute duas vezes
+    const timeoutId = setTimeout(() => {
+      startProcessing()
+    }, 0)
     
     // Cleanup ao desmontar ou mudar selectedTable
     return () => {
+      clearTimeout(timeoutId)
+      
       // Resetar a ref quando selectedTable mudar
       if (hasStartedProcessingRef.current === selectedTable) {
         hasStartedProcessingRef.current = null
@@ -999,7 +1033,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         additionalPollRef.current = null
       }
     }
-  }, [selectedTable]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedTable, startProcessing])
 
   // useEffect para filtrar dados quando startDate ou endDate mudarem (sem fazer novo request)
   useEffect(() => {
@@ -1178,6 +1212,14 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         revenue_first_origin_stack: 0,
         pixel_transactions: 0,
         pixel_revenue: 0,
+        recurring_annual_revenue: 0,
+        recurring_annual_subscriptions: 0,
+        recurring_montly_revenue: 0,
+        recurring_montly_subscriptions: 0,
+        first_annual_revenue: 0,
+        first_annual_subscriptions: 0,
+        first_montly_revenue: 0,
+        first_montly_subscriptions: 0,
         records: []
       }
     }
@@ -1221,6 +1263,18 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     // Adicionar métricas de pixel
     acc[key].pixel_transactions += toNumber(item.pixel_transactions || 0)
     acc[key].pixel_revenue += toNumber(item.pixel_revenue || 0)
+    
+    // Adicionar métricas de recurring
+    acc[key].recurring_annual_revenue += toNumber(item.recurring_annual_revenue || 0)
+    acc[key].recurring_annual_subscriptions += toNumber(item.recurring_annual_subscriptions || 0)
+    acc[key].recurring_montly_revenue += toNumber(item.recurring_montly_revenue || 0)
+    acc[key].recurring_montly_subscriptions += toNumber(item.recurring_montly_subscriptions || 0)
+    
+    // Adicionar métricas de first (primeiras)
+    acc[key].first_annual_revenue += toNumber(item.first_annual_revenue || 0)
+    acc[key].first_annual_subscriptions += toNumber(item.first_annual_subscriptions || 0)
+    acc[key].first_montly_revenue += toNumber(item.first_montly_revenue || 0)
+    acc[key].first_montly_subscriptions += toNumber(item.first_montly_subscriptions || 0)
     
     acc[key].records.push(item)
     
@@ -1387,6 +1441,38 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
           bValue = bOriginStackRevenue > 0 
             ? ((bPixelRevenue - bOriginStackRevenue) / bOriginStackRevenue) * 100 
             : 0
+          break
+        case 'recurring_annual_revenue':
+          aValue = a.recurring_annual_revenue || 0
+          bValue = b.recurring_annual_revenue || 0
+          break
+        case 'recurring_annual_subscriptions':
+          aValue = a.recurring_annual_subscriptions || 0
+          bValue = b.recurring_annual_subscriptions || 0
+          break
+        case 'recurring_montly_revenue':
+          aValue = a.recurring_montly_revenue || 0
+          bValue = b.recurring_montly_revenue || 0
+          break
+        case 'recurring_montly_subscriptions':
+          aValue = a.recurring_montly_subscriptions || 0
+          bValue = b.recurring_montly_subscriptions || 0
+          break
+        case 'first_annual_revenue':
+          aValue = a.first_annual_revenue || 0
+          bValue = b.first_annual_revenue || 0
+          break
+        case 'first_annual_subscriptions':
+          aValue = a.first_annual_subscriptions || 0
+          bValue = b.first_annual_subscriptions || 0
+          break
+        case 'first_montly_revenue':
+          aValue = a.first_montly_revenue || 0
+          bValue = b.first_montly_revenue || 0
+          break
+        case 'first_montly_subscriptions':
+          aValue = a.first_montly_subscriptions || 0
+          bValue = b.first_montly_subscriptions || 0
           break
         default:
           aValue = a.cost
@@ -1772,6 +1858,14 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     revenue: acc.revenue + (attributionModel === 'origin_stack' ? (item.revenue_origin_stack || item.revenue) : item.revenue),
     transactions_first: acc.transactions_first + (attributionModel === 'origin_stack' ? (item.transactions_first_origin_stack || item.transactions_first) : item.transactions_first),
     revenue_first: acc.revenue_first + (attributionModel === 'origin_stack' ? (item.revenue_first_origin_stack || item.revenue_first) : item.revenue_first),
+    recurring_annual_revenue: acc.recurring_annual_revenue + (item.recurring_annual_revenue || 0),
+    recurring_annual_subscriptions: acc.recurring_annual_subscriptions + (item.recurring_annual_subscriptions || 0),
+    recurring_montly_revenue: acc.recurring_montly_revenue + (item.recurring_montly_revenue || 0),
+    recurring_montly_subscriptions: acc.recurring_montly_subscriptions + (item.recurring_montly_subscriptions || 0),
+    first_annual_revenue: acc.first_annual_revenue + (item.first_annual_revenue || 0),
+    first_annual_subscriptions: acc.first_annual_subscriptions + (item.first_annual_subscriptions || 0),
+    first_montly_revenue: acc.first_montly_revenue + (item.first_montly_revenue || 0),
+    first_montly_subscriptions: acc.first_montly_subscriptions + (item.first_montly_subscriptions || 0),
   }), {
     cost: 0,
     impressions: 0,
@@ -1781,6 +1875,14 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     revenue: 0,
     transactions_first: 0,
     revenue_first: 0,
+    recurring_annual_revenue: 0,
+    recurring_annual_subscriptions: 0,
+    recurring_montly_revenue: 0,
+    recurring_montly_subscriptions: 0,
+    first_annual_revenue: 0,
+    first_annual_subscriptions: 0,
+    first_montly_revenue: 0,
+    first_montly_subscriptions: 0,
   }) : filteredData.length > 0 ? filteredData.reduce((acc, item) => ({
     cost: acc.cost + item.cost,
     impressions: acc.impressions + item.impressions,
@@ -1790,6 +1892,14 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     revenue: acc.revenue + (attributionModel === 'origin_stack' ? (item.revenue_origin_stack || item.revenue) : item.revenue),
     transactions_first: acc.transactions_first + (attributionModel === 'origin_stack' ? (item.transactions_first_origin_stack || item.transactions_first) : item.transactions_first),
     revenue_first: acc.revenue_first + (attributionModel === 'origin_stack' ? (item.revenue_first_origin_stack || item.revenue_first) : item.revenue_first),
+    recurring_annual_revenue: acc.recurring_annual_revenue + (item.recurring_annual_revenue || 0),
+    recurring_annual_subscriptions: acc.recurring_annual_subscriptions + (item.recurring_annual_subscriptions || 0),
+    recurring_montly_revenue: acc.recurring_montly_revenue + (item.recurring_montly_revenue || 0),
+    recurring_montly_subscriptions: acc.recurring_montly_subscriptions + (item.recurring_montly_subscriptions || 0),
+    first_annual_revenue: acc.first_annual_revenue + (item.first_annual_revenue || 0),
+    first_annual_subscriptions: acc.first_annual_subscriptions + (item.first_annual_subscriptions || 0),
+    first_montly_revenue: acc.first_montly_revenue + (item.first_montly_revenue || 0),
+    first_montly_subscriptions: acc.first_montly_subscriptions + (item.first_montly_subscriptions || 0),
   }), {
     cost: 0,
     impressions: 0,
@@ -1799,6 +1909,14 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     revenue: 0,
     transactions_first: 0,
     revenue_first: 0,
+    recurring_annual_revenue: 0,
+    recurring_annual_subscriptions: 0,
+    recurring_montly_revenue: 0,
+    recurring_montly_subscriptions: 0,
+    first_annual_revenue: 0,
+    first_annual_subscriptions: 0,
+    first_montly_revenue: 0,
+    first_montly_subscriptions: 0,
   }) : {
     cost: 0,
     impressions: 0,
@@ -1808,6 +1926,14 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     revenue: 0,
     transactions_first: 0,
     revenue_first: 0,
+    recurring_annual_revenue: 0,
+    recurring_annual_subscriptions: 0,
+    recurring_montly_revenue: 0,
+    recurring_montly_subscriptions: 0,
+    first_annual_revenue: 0,
+    first_annual_subscriptions: 0,
+    first_montly_revenue: 0,
+    first_montly_subscriptions: 0,
   }
 
   // Calcular totais para criativos
@@ -1886,6 +2012,46 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     transactions_first: 0,
     revenue_first: 0,
   }
+
+  // Verificar se há dados recurring não zerados - verificar tanto nos summaries quanto nos totais
+  const hasRecurringData = campaignSummaries.some(campaign => 
+    (campaign.recurring_annual_revenue || 0) > 0 ||
+    (campaign.recurring_annual_subscriptions || 0) > 0 ||
+    (campaign.recurring_montly_revenue || 0) > 0 ||
+    (campaign.recurring_montly_subscriptions || 0) > 0
+  ) || (totals.recurring_annual_revenue || 0) > 0 || 
+       (totals.recurring_annual_subscriptions || 0) > 0 || 
+       (totals.recurring_montly_revenue || 0) > 0 || 
+       (totals.recurring_montly_subscriptions || 0) > 0
+
+  // Verificar se há dados first (primeiras) não zerados - verificar tanto nos summaries quanto nos totais
+  const hasFirstData = campaignSummaries.some(campaign => 
+    (campaign.first_annual_revenue || 0) > 0 ||
+    (campaign.first_annual_subscriptions || 0) > 0 ||
+    (campaign.first_montly_revenue || 0) > 0 ||
+    (campaign.first_montly_subscriptions || 0) > 0
+  ) || (totals.first_annual_revenue || 0) > 0 || 
+       (totals.first_annual_subscriptions || 0) > 0 || 
+       (totals.first_montly_revenue || 0) > 0 || 
+       (totals.first_montly_subscriptions || 0) > 0
+
+  // Debug: Log dos totais de assinatura
+  console.log('🔍 Debug Totais de Assinatura:', {
+    hasRecurringData,
+    hasFirstData,
+    recurring_annual_revenue: totals.recurring_annual_revenue,
+    recurring_annual_subscriptions: totals.recurring_annual_subscriptions,
+    recurring_montly_revenue: totals.recurring_montly_revenue,
+    recurring_montly_subscriptions: totals.recurring_montly_subscriptions,
+    first_annual_revenue: totals.first_annual_revenue,
+    first_annual_subscriptions: totals.first_annual_subscriptions,
+    first_montly_revenue: totals.first_montly_revenue,
+    first_montly_subscriptions: totals.first_montly_subscriptions,
+    sampleCampaign: campaignSummaries[0] ? {
+      recurring_annual_revenue: campaignSummaries[0].recurring_annual_revenue,
+      first_annual_revenue: campaignSummaries[0].first_annual_revenue
+    } : null
+  })
 
   // Métricas calculadas
   const avgCTR = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0
@@ -2364,7 +2530,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
 
 
 
-  if (isLoading) {
+  if (isLoading && !jobId && !isPolling) {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="text-center">
@@ -2433,6 +2599,81 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
 
   return (
     <div className={`${isFullWidth ? 'fixed inset-0 z-50 bg-white overflow-auto' : 'space-y-6'}`}>
+      {/* Status do Polling - Sempre visível quando houver polling ou status ativo */}
+      {(isLoading || isPolling || jobStatus === 'completed' || jobStatus === 'processing' || jobStatus === 'error' || jobId) && (
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm mb-6">
+          <div className="px-6 py-4">
+            {jobStatus === 'processing' || isPolling ? (
+              <div className="flex items-center gap-3">
+                <Loader2 className="w-5 h-5 text-blue-600 animate-spin flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900">
+                    {jobProgress || 'Processando dados de campanhas...'}
+                  </p>
+                  <div className="flex items-center gap-4 mt-1 flex-wrap">
+                    {jobId && (
+                      <p className="text-xs text-gray-500">
+                        Job ID: <span className="font-mono font-medium">{jobId}</span>
+                      </p>
+                    )}
+                    {elapsedSeconds !== null && (
+                      <p className="text-xs text-gray-500">
+                        Tempo decorrido: <span className="font-medium">{Math.round(elapsedSeconds)}s</span>
+                      </p>
+                    )}
+                    {isPolling && (
+                      <p className="text-xs text-blue-600 font-medium">
+                        🔄 Verificando status...
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : jobStatus === 'completed' ? (
+              <div className="flex items-center gap-3">
+                <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900">
+                    {jobProgress || 'Dados carregados com sucesso!'}
+                  </p>
+                  {elapsedSeconds !== null && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Processamento concluído em {Math.round(elapsedSeconds)}s
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : jobStatus === 'error' ? (
+              <div className="flex items-center gap-3">
+                <div className="w-5 h-5 text-red-600 flex-shrink-0">⚠️</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-red-900">
+                    Erro ao processar dados
+                  </p>
+                  <p className="text-xs text-red-600 mt-1">
+                    {jobProgress || 'Tente atualizar os dados novamente'}
+                  </p>
+                </div>
+              </div>
+            ) : isLoading ? (
+              <div className="flex items-center gap-3">
+                <Loader2 className="w-5 h-5 text-blue-600 animate-spin flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900">
+                    {jobProgress || 'Carregando dados...'}
+                  </p>
+                  {jobId && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Job ID: <span className="font-mono font-medium">{jobId}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
+
       {/* Informações do Cache e Botão Atualizar */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <div className="flex items-center justify-between">
@@ -2498,62 +2739,6 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
           </div>
         </div>
       </div>
-
-      {/* Status do Polling */}
-      {(isLoading || isPolling || jobStatus === 'completed' || jobStatus === 'processing') && (
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-          <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-            {jobStatus === 'processing' || isPolling ? (
-              <div className="flex items-center gap-3">
-                <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-900">
-                    {jobProgress || 'Processando dados de campanhas...'}
-                  </p>
-                  <div className="flex items-center gap-4 mt-1 flex-wrap">
-                    {jobId && (
-                      <p className="text-xs text-gray-500">
-                        Job ID: <span className="font-mono font-medium">{jobId}</span>
-                      </p>
-                    )}
-                    {elapsedSeconds !== null && (
-                      <p className="text-xs text-gray-500">
-                        Tempo decorrido: <span className="font-medium">{Math.round(elapsedSeconds)}s</span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : jobStatus === 'completed' ? (
-              <div className="flex items-center gap-3">
-                <CheckCircle className="w-5 h-5 text-green-600" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-900">
-                    {jobProgress || 'Dados carregados com sucesso!'}
-                  </p>
-                  {elapsedSeconds !== null && (
-                    <p className="text-xs text-gray-500 mt-1">
-                      Processamento concluído em {Math.round(elapsedSeconds)}s
-                    </p>
-                  )}
-                </div>
-              </div>
-            ) : jobStatus === 'error' ? (
-              <div className="flex items-center gap-3">
-                <div className="w-5 h-5 text-red-600">⚠️</div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-red-900">
-                    Erro ao processar dados
-                  </p>
-                  <p className="text-xs text-red-600 mt-1">
-                    {jobProgress || 'Tente atualizar os dados novamente'}
-                  </p>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      )}
 
       {/* Seletor de Modelo de Atribuição */}
       <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
@@ -2820,6 +3005,88 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
               ROAS 1ª: {totalROASFirst.toFixed(2)}x
             </span>
           </div>
+
+          {/* Métricas de Assinatura - Apenas se houver dados */}
+          {hasRecurringData && (
+            <>
+              {/* Receita Recorrente Anual */}
+              {((totals.recurring_annual_revenue || 0) > 0 || (totals.recurring_annual_subscriptions || 0) > 0) && (
+                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <p className="text-xs font-medium text-gray-600 mb-1">Receita Rec. Anual</p>
+                      <p className="text-xl font-bold text-gray-900">{formatCurrency(totals.recurring_annual_revenue || 0)}</p>
+                    </div>
+                    <div className="p-2 bg-indigo-50 rounded-lg">
+                      <DollarSign className="w-5 h-5 text-indigo-600" />
+                    </div>
+                  </div>
+                  <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
+                    Assinaturas: {formatNumber(Math.round(totals.recurring_annual_subscriptions || 0))}
+                  </span>
+                </div>
+              )}
+
+              {/* Receita Recorrente Mensal */}
+              {((totals.recurring_montly_revenue || 0) > 0 || (totals.recurring_montly_subscriptions || 0) > 0) && (
+                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <p className="text-xs font-medium text-gray-600 mb-1">Receita Rec. Mensal</p>
+                      <p className="text-xl font-bold text-gray-900">{formatCurrency(totals.recurring_montly_revenue || 0)}</p>
+                    </div>
+                    <div className="p-2 bg-purple-50 rounded-lg">
+                      <DollarSign className="w-5 h-5 text-purple-600" />
+                    </div>
+                  </div>
+                  <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
+                    Assinaturas: {formatNumber(Math.round(totals.recurring_montly_subscriptions || 0))}
+                  </span>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Métricas de Primeiras Assinaturas - Apenas se houver dados */}
+          {hasFirstData && (
+            <>
+              {/* Receita Primeira Anual */}
+              {((totals.first_annual_revenue || 0) > 0 || (totals.first_annual_subscriptions || 0) > 0) && (
+                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <p className="text-xs font-medium text-gray-600 mb-1">Receita 1ª Anual</p>
+                      <p className="text-xl font-bold text-gray-900">{formatCurrency(totals.first_annual_revenue || 0)}</p>
+                    </div>
+                    <div className="p-2 bg-cyan-50 rounded-lg">
+                      <DollarSign className="w-5 h-5 text-cyan-600" />
+                    </div>
+                  </div>
+                  <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
+                    Assinaturas: {formatNumber(Math.round(totals.first_annual_subscriptions || 0))}
+                  </span>
+                </div>
+              )}
+
+              {/* Receita Primeira Mensal */}
+              {((totals.first_montly_revenue || 0) > 0 || (totals.first_montly_subscriptions || 0) > 0) && (
+                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <p className="text-xs font-medium text-gray-600 mb-1">Receita 1ª Mensal</p>
+                      <p className="text-xl font-bold text-gray-900">{formatCurrency(totals.first_montly_revenue || 0)}</p>
+                    </div>
+                    <div className="p-2 bg-pink-50 rounded-lg">
+                      <DollarSign className="w-5 h-5 text-pink-600" />
+                    </div>
+                  </div>
+                  <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
+                    Assinaturas: {formatNumber(Math.round(totals.first_montly_subscriptions || 0))}
+                  </span>
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
 
@@ -4233,7 +4500,19 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                         { key: 'pixel_transactions', label: 'Trans. Pixel', icon: '📱' },
                         { key: 'pixel_revenue', label: 'Receita Pixel', icon: '💰' },
                         { key: 'pixel_transactions_delta', label: 'Δ Trans. Pixel %', icon: '📊' },
-                        { key: 'pixel_revenue_delta', label: 'Δ Receita Pixel %', icon: '📊' }
+                        { key: 'pixel_revenue_delta', label: 'Δ Receita Pixel %', icon: '📊' },
+                        ...(hasRecurringData ? [
+                          { key: 'recurring_annual_revenue', label: 'Receita Recorrente Anual', icon: '📅' },
+                          { key: 'recurring_annual_subscriptions', label: 'Assinaturas Anuais', icon: '📋' },
+                          { key: 'recurring_montly_revenue', label: 'Receita Recorrente Mensal', icon: '📆' },
+                          { key: 'recurring_montly_subscriptions', label: 'Assinaturas Mensais', icon: '📝' }
+                        ] : []),
+                        ...(hasFirstData ? [
+                          { key: 'first_annual_revenue', label: 'Receita 1ª Anual', icon: '🎁' },
+                          { key: 'first_annual_subscriptions', label: 'Assin. 1ª Anuais', icon: '🎯' },
+                          { key: 'first_montly_revenue', label: 'Receita 1ª Mensal', icon: '🎊' },
+                          { key: 'first_montly_subscriptions', label: 'Assin. 1ª Mensais', icon: '🎈' }
+                        ] : [])
                       ].filter(metric => 
                         !metricSearchTerm || 
                         metric.label.toLowerCase().includes(metricSearchTerm.toLowerCase()) ||
@@ -4638,6 +4917,86 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                   </div>
                 </th>
                 )}
+                {hasRecurringData && visibleColumns.recurring_annual_revenue && (
+                <SortableHeader
+                  field="recurring_annual_revenue"
+                  currentSortField={sortField}
+                  currentSortDirection={sortDirection}
+                  onSort={handleSort}
+                >
+                  Receita Rec. Anual
+                </SortableHeader>
+                )}
+                {hasRecurringData && visibleColumns.recurring_annual_subscriptions && (
+                <SortableHeader
+                  field="recurring_annual_subscriptions"
+                  currentSortField={sortField}
+                  currentSortDirection={sortDirection}
+                  onSort={handleSort}
+                >
+                  Assin. Anuais
+                </SortableHeader>
+                )}
+                {hasRecurringData && visibleColumns.recurring_montly_revenue && (
+                <SortableHeader
+                  field="recurring_montly_revenue"
+                  currentSortField={sortField}
+                  currentSortDirection={sortDirection}
+                  onSort={handleSort}
+                >
+                  Receita Rec. Mensal
+                </SortableHeader>
+                )}
+                {hasRecurringData && visibleColumns.recurring_montly_subscriptions && (
+                <SortableHeader
+                  field="recurring_montly_subscriptions"
+                  currentSortField={sortField}
+                  currentSortDirection={sortDirection}
+                  onSort={handleSort}
+                >
+                  Assin. Mensais
+                </SortableHeader>
+                )}
+                {hasFirstData && visibleColumns.first_annual_revenue && (
+                <SortableHeader
+                  field="first_annual_revenue"
+                  currentSortField={sortField}
+                  currentSortDirection={sortDirection}
+                  onSort={handleSort}
+                >
+                  Receita 1ª Anual
+                </SortableHeader>
+                )}
+                {hasFirstData && visibleColumns.first_annual_subscriptions && (
+                <SortableHeader
+                  field="first_annual_subscriptions"
+                  currentSortField={sortField}
+                  currentSortDirection={sortDirection}
+                  onSort={handleSort}
+                >
+                  Assin. 1ª Anuais
+                </SortableHeader>
+                )}
+                {hasFirstData && visibleColumns.first_montly_revenue && (
+                <SortableHeader
+                  field="first_montly_revenue"
+                  currentSortField={sortField}
+                  currentSortDirection={sortDirection}
+                  onSort={handleSort}
+                >
+                  Receita 1ª Mensal
+                </SortableHeader>
+                )}
+                {hasFirstData && visibleColumns.first_montly_subscriptions && (
+                <SortableHeader
+                  field="first_montly_subscriptions"
+                  currentSortField={sortField}
+                  currentSortDirection={sortDirection}
+                  onSort={handleSort}
+                >
+                  Assin. 1ª Mensais
+                </SortableHeader>
+                )}
                 {visibleColumns.roas && (
                 <SortableHeader
                   field="roas"
@@ -5026,6 +5385,46 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                           </div>
                         )
                       })()}
+                    </td>
+                    )}
+                    {hasRecurringData && visibleColumns.recurring_annual_revenue && (
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">
+                      {formatCurrency(campaign.recurring_annual_revenue || 0)}
+                    </td>
+                    )}
+                    {hasRecurringData && visibleColumns.recurring_annual_subscriptions && (
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">
+                      {formatNumber(Math.round(campaign.recurring_annual_subscriptions || 0))}
+                    </td>
+                    )}
+                    {hasRecurringData && visibleColumns.recurring_montly_revenue && (
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">
+                      {formatCurrency(campaign.recurring_montly_revenue || 0)}
+                    </td>
+                    )}
+                    {hasRecurringData && visibleColumns.recurring_montly_subscriptions && (
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">
+                      {formatNumber(Math.round(campaign.recurring_montly_subscriptions || 0))}
+                    </td>
+                    )}
+                    {hasFirstData && visibleColumns.first_annual_revenue && (
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-cyan-600">
+                      {formatCurrency(campaign.first_annual_revenue || 0)}
+                    </td>
+                    )}
+                    {hasFirstData && visibleColumns.first_annual_subscriptions && (
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-cyan-600">
+                      {formatNumber(Math.round(campaign.first_annual_subscriptions || 0))}
+                    </td>
+                    )}
+                    {hasFirstData && visibleColumns.first_montly_revenue && (
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-pink-600">
+                      {formatCurrency(campaign.first_montly_revenue || 0)}
+                    </td>
+                    )}
+                    {hasFirstData && visibleColumns.first_montly_subscriptions && (
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-pink-600">
+                      {formatNumber(Math.round(campaign.first_montly_subscriptions || 0))}
                     </td>
                     )}
                     {visibleColumns.roas && (
