@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import * as XLSX from 'xlsx'
 import { 
   TrendingUp, 
@@ -16,11 +16,11 @@ import {
   Layers,
   Star,
   Award,
-  Activity,
-  Cpu
+  Loader2,
+  CheckCircle
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
-import { AdsCampaignData, AdsCampaignResponse, CacheInfo, AdsCampaignSummary, AdsCreativeData, AdsCreativeResponse, AdsCampaignTrendItem } from '../types'
+import { AdsCampaignData, AdsCampaignResponse, CacheInfo, AdsCampaignSummary, AdsCreativeData, AdsCreativeResponse, PaidMediaCampaignResult } from '../types'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { compareDateStrings, parseDateString, convertBrazilianDateToISO } from '../utils/dateUtils'
 import SortableHeader from './SortableHeader'
@@ -66,23 +66,12 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
   }>({})
   const [isBackgroundLoading, setIsBackgroundLoading] = useState(false)
   const [isFullWidth, setIsFullWidth] = useState(false)
-  const [activeTab, setActiveTab] = useState<'overview' | 'creatives' | 'trend'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'creatives'>('overview')
   const [reloadNonce, setReloadNonce] = useState(0)
   
   // Estados para modo creatives (declarados antes dos useEffects que os usam)
   const [creativeData, setCreativeData] = useState<AdsCreativeData[]>([])
   const [isLoadingCreatives, setIsLoadingCreatives] = useState(false)
-  
-  // Estados para modo trend
-  const [trendData, setTrendData] = useState<AdsCampaignTrendItem[]>([])
-  const [isLoadingTrend, setIsLoadingTrend] = useState(false)
-  const [expandedAreas, setExpandedAreas] = useState({
-    custo: true,  // Por padrão, mostra Custo
-    receita: true,  // Por padrão, mostra Receita
-    roas: true,  // Por padrão, mostra ROAS
-    crescimento: false
-  })
-  const [showAllWeeks, setShowAllWeeks] = useState(false) // Por padrão só mostra W4
   
   const lastCampaignsKeyRef = useRef<string | null>(null)
   const lastCreativesKeyRef = useRef<string | null>(null)
@@ -93,6 +82,19 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
   const hasScheduledRetryRef = useRef(false)
   const retryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [retryCountdown, setRetryCountdown] = useState<number | null>(null)
+  
+  // Estados para nova API (request/polling/data retrieve)
+  const [jobId, setJobId] = useState<string | null>(null)
+  const [isPolling, setIsPolling] = useState(false)
+  const [jobStatus, setJobStatus] = useState<string>('idle') // idle, processing, completed, error
+  const [jobProgress, setJobProgress] = useState<string>('')
+  const [elapsedSeconds, setElapsedSeconds] = useState<number | null>(null)
+  const [allCampaignData, setAllCampaignData] = useState<AdsCampaignData[]>([]) // Dados completos dos últimos 90 dias
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const additionalPollRef = useRef<NodeJS.Timeout | null>(null)
+  const currentPollingJobIdRef = useRef<string | null>(null)
+  const hasStartedProcessingRef = useRef<string | null>(null) // Evitar múltiplas execuções
+  const isProcessingRef = useRef<boolean>(false) // Flag para evitar múltiplos jobs simultâneos
 
   const playDoneSound = () => {
     try {
@@ -115,6 +117,389 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       setTimeout(() => ctx.close().catch(() => {}), 400)
     } catch {}
   }
+
+  // Função helper para converter valores para número (trata null, undefined, NaN, strings)
+  const toNumber = (value: any): number => {
+    if (value === null || value === undefined) {
+      return 0
+    }
+    if (typeof value === 'number') {
+      return isNaN(value) ? 0 : value
+    }
+    if (typeof value === 'string') {
+      const parsed = parseFloat(value)
+      return isNaN(parsed) ? 0 : parsed
+    }
+    return 0
+  }
+
+  // Função para obter o token da API 2.0
+  const getV2Token = (): string | null => {
+    try {
+      const authV2Response = localStorage.getItem('mymetric-auth-v2-response')
+      if (authV2Response) {
+        const parsed = JSON.parse(authV2Response)
+        return parsed.token || null
+      }
+    } catch (error) {
+      console.error('Error getting V2 token:', error)
+    }
+    return null
+  }
+
+  // Função para converter PaidMediaCampaignResult para AdsCampaignData
+  const convertPaidMediaToAdsCampaignData = (item: PaidMediaCampaignResult): AdsCampaignData => {
+    return {
+      platform: item.platform,
+      campaign_name: item.campaign_name,
+      date: item.date,
+      cost: toNumber(item.cost),
+      impressions: toNumber(item.impressions),
+      clicks: toNumber(item.clicks),
+      leads: toNumber(item.leads),
+      transactions: toNumber(item.transactions), // last_non_direct
+      revenue: toNumber(item.revenue), // last_non_direct
+      transactions_first: toNumber(item.first_transaction),
+      revenue_first: toNumber(item.first_revenue),
+      transactions_origin_stack: toNumber(item.fsm_transactions),
+      revenue_origin_stack: toNumber(item.fsm_revenue),
+      transactions_first_origin_stack: toNumber(item.fsm_first_transaction),
+      revenue_first_origin_stack: toNumber(item.fsm_first_revenue),
+      pixel_transactions: toNumber(item.pixel_transactions),
+      pixel_revenue: toNumber(item.pixel_revenue)
+    }
+  }
+
+  // Função para calcular summary
+  const recalculateSummary = (data: AdsCampaignData[]) => {
+    if (!data || data.length === 0) return null
+    
+    const totals = data.reduce((acc, campaign) => ({
+      cost: acc.cost + campaign.cost,
+      impressions: acc.impressions + campaign.impressions,
+      clicks: acc.clicks + campaign.clicks,
+      leads: acc.leads + campaign.leads,
+      transactions: acc.transactions + campaign.transactions,
+      transactions_first: acc.transactions_first + campaign.transactions_first,
+      revenue: acc.revenue + campaign.revenue,
+      revenue_first: acc.revenue_first + campaign.revenue_first,
+      pixel_transactions: acc.pixel_transactions + (campaign.pixel_transactions || 0),
+      pixel_revenue: acc.pixel_revenue + (campaign.pixel_revenue || 0),
+    }), {
+      cost: 0,
+      impressions: 0,
+      clicks: 0,
+      leads: 0,
+      transactions: 0,
+      transactions_first: 0,
+      revenue: 0,
+      revenue_first: 0,
+      pixel_transactions: 0,
+      pixel_revenue: 0
+    })
+    
+    const avgCTR = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0
+    const avgCPC = totals.clicks > 0 ? totals.cost / totals.clicks : 0
+    const avgCPV = totals.transactions > 0 ? totals.cost / totals.transactions : 0
+    const avgCPA = totals.transactions_first > 0 ? totals.cost / totals.transactions_first : 0
+    const avgROAS = totals.cost > 0 ? totals.revenue / totals.cost : 0
+    const avgROASFirst = totals.cost > 0 ? totals.revenue_first / totals.cost : 0
+    
+    return {
+      ...totals,
+      avg_ctr: avgCTR,
+      avg_cpc: avgCPC,
+      avg_cpv: avgCPV,
+      avg_cpa: avgCPA,
+      avg_roas: avgROAS,
+      avg_roas_first: avgROASFirst,
+      ctr: avgCTR,
+      cpm: totals.impressions > 0 ? (totals.cost / totals.impressions) * 1000 : 0,
+      cpc: avgCPC,
+      conversion_rate: totals.clicks > 0 ? (totals.transactions / totals.clicks) * 100 : 0,
+      roas: avgROAS,
+      total_cost: totals.cost,
+      total_revenue: totals.revenue,
+      total_impressions: totals.impressions,
+      total_clicks: totals.clicks,
+      total_leads: totals.leads,
+      total_transactions: totals.transactions,
+      pixel_transactions: totals.pixel_transactions,
+      pixel_revenue: totals.pixel_revenue,
+      periodo: `${startDate} - ${endDate}`,
+      tablename: selectedTable,
+      user_access: 'all'
+    } as AdsCampaignSummary
+  }
+
+  // Função para filtrar dados por intervalo de datas
+  const filterDataByDateRange = useCallback((data: AdsCampaignData[], start: string, end: string) => {
+    if (!start || !end) {
+      setCampaignData(data)
+      // Recalcular summary quando não há filtro de data
+      const calculatedSummary = recalculateSummary(data)
+      if (calculatedSummary) {
+        setSummary(calculatedSummary)
+      }
+      return
+    }
+    
+    const filtered = data.filter(item => {
+      const itemDate = item.date
+      return itemDate >= start && itemDate <= end
+    })
+    
+    setCampaignData(filtered)
+    // Recalcular summary com dados filtrados
+    const calculatedSummary = recalculateSummary(filtered)
+    if (calculatedSummary) {
+      setSummary(calculatedSummary)
+    }
+  }, [startDate, endDate, selectedTable])
+
+  // Função para buscar dados com retry
+  const fetchDataWithRetry = useCallback(async (token: string, currentJobId: string, maxRetries = 10, retryDelay = 3000) => {
+    console.log('📥 Iniciando busca de dados de campanhas para job:', currentJobId)
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const dataResponse = await api.getPaidMediaCampaignsData(token, currentJobId)
+        console.log('✅ Data fetched successfully:', {
+          jobId: currentJobId,
+          count: dataResponse?.count,
+          dataLength: dataResponse?.data?.length,
+          attempt
+        })
+        
+        if (dataResponse && dataResponse.data && Array.isArray(dataResponse.data)) {
+          // Converter dados da nova API para o formato esperado
+          const convertedData = dataResponse.data.map(convertPaidMediaToAdsCampaignData)
+          
+          // Verificar se o jobId ainda é o mesmo antes de atualizar os dados
+          if (currentPollingJobIdRef.current && currentPollingJobIdRef.current !== currentJobId) {
+            console.log('⚠️ Job ID mudou durante busca de dados, ignorando dados antigos')
+            return
+          }
+          
+          // Armazenar todos os dados (últimos 90 dias)
+          setAllCampaignData(convertedData)
+          
+          // Filtrar por data se necessário (startDate e endDate)
+          if (startDate && endDate) {
+            filterDataByDateRange(convertedData, startDate, endDate)
+          } else {
+            setCampaignData(convertedData)
+          }
+          
+          // Calcular e atualizar summary
+          const calculatedSummary = recalculateSummary(convertedData)
+          if (calculatedSummary) {
+            setSummary(calculatedSummary)
+          }
+          
+          setJobStatus('completed')
+          setJobProgress(`Dados carregados: ${dataResponse.count || convertedData.length} campanhas`)
+          setIsLoading(false)
+          setIsPolling(false)
+          console.log('✅ Estado atualizado, dados devem ser renderizados agora')
+          return
+        } else {
+          console.warn('⚠️ Unexpected data structure:', dataResponse)
+          setJobStatus('error')
+          setIsLoading(false)
+          return
+        }
+      } catch (error: any) {
+        console.error(`❌ Error fetching data (attempt ${attempt}/${maxRetries}):`, error)
+        
+        if (error?.isRetryable && error?.status === 404 && attempt < maxRetries) {
+          setJobProgress(`Dados ainda não disponíveis, tentando novamente... (${attempt}/${maxRetries})`)
+          await new Promise(resolve => setTimeout(resolve, retryDelay))
+          continue
+        }
+        
+        setJobStatus('error')
+        setIsLoading(false)
+        setIsPolling(false)
+        return
+      }
+    }
+    
+    setJobStatus('error')
+    setIsLoading(false)
+    setIsPolling(false)
+  }, [startDate, endDate, filterDataByDateRange])
+
+  // Função para fazer polling do status
+  const startPolling = useCallback((currentJobId: string, token: string) => {
+    // Parar qualquer polling anterior
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+      pollingIntervalRef.current = null
+    }
+    if (additionalPollRef.current) {
+      clearInterval(additionalPollRef.current)
+      additionalPollRef.current = null
+    }
+    
+    setIsPolling(true)
+    currentPollingJobIdRef.current = currentJobId
+    console.log('🔄 Iniciando polling para job:', currentJobId)
+
+    const poll = async () => {
+      // Verificar se o jobId ainda é o mesmo
+      if (currentPollingJobIdRef.current !== currentJobId) {
+        console.log('⚠️ Job ID mudou durante polling, parando polling antigo')
+        setIsPolling(false)
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current)
+          pollingIntervalRef.current = null
+        }
+        return
+      }
+      
+      try {
+        const statusResponse = await api.getPaidMediaCampaignsJobStatus(token, currentJobId)
+        console.log('📊 Job Status Response:', { 
+          jobId: currentJobId, 
+          status: statusResponse.status, 
+          progress: statusResponse.progress,
+          elapsed: statusResponse.elapsed_seconds 
+        })
+        
+        // Verificar novamente se o jobId ainda é o mesmo
+        if (currentPollingJobIdRef.current !== currentJobId) {
+          console.log('⚠️ Job ID mudou durante processamento da resposta, ignorando')
+          return
+        }
+        
+        // Atualizar elapsed_seconds se disponível
+        if (statusResponse.elapsed_seconds !== undefined && statusResponse.elapsed_seconds !== null) {
+          setElapsedSeconds(statusResponse.elapsed_seconds)
+        }
+        
+        // Formatar progresso com tempo decorrido
+        const progressText = statusResponse.progress || 'Processando...'
+        const elapsedText = statusResponse.elapsed_seconds !== undefined && statusResponse.elapsed_seconds !== null
+          ? ` (${Math.round(statusResponse.elapsed_seconds)}s)`
+          : ''
+        setJobProgress(`${progressText}${elapsedText}`)
+
+        if (statusResponse.status === 'completed') {
+          // Job concluído, buscar dados
+          console.log('✅ Job concluído, buscando dados para job:', currentJobId)
+          setIsPolling(false)
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current)
+            pollingIntervalRef.current = null
+          }
+          if (additionalPollRef.current) {
+            clearInterval(additionalPollRef.current)
+            additionalPollRef.current = null
+          }
+
+          setJobProgress('Processamento concluído, baixando dados...')
+          await fetchDataWithRetry(token, currentJobId)
+        } else if (statusResponse.status === 'error' || statusResponse.status === 'failed') {
+          // Job falhou
+          setIsPolling(false)
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current)
+            pollingIntervalRef.current = null
+          }
+          if (additionalPollRef.current) {
+            clearInterval(additionalPollRef.current)
+            additionalPollRef.current = null
+          }
+          setJobStatus('error')
+          setIsLoading(false)
+        }
+        // Se ainda está processando, continua o polling
+      } catch (error) {
+        console.error('Error polling status:', error)
+        // Não para o polling em caso de erro temporário
+      }
+    }
+
+    // Executar primeira verificação imediatamente
+    poll()
+    
+    // Configurar polling principal a cada 3 segundos
+    pollingIntervalRef.current = setInterval(poll, 3000)
+    console.log('⏰ Polling configurado para verificar a cada 3 segundos')
+  }, [fetchDataWithRetry])
+
+  // Função para iniciar o processamento
+  const startProcessing = useCallback(async () => {
+    // Proteção contra múltiplas execuções simultâneas - verificar ANTES de qualquer operação
+    if (isProcessingRef.current) {
+      console.log('⚠️ Processamento já em andamento, ignorando chamada duplicada')
+      return
+    }
+
+    // Marcar imediatamente para evitar race condition
+    isProcessingRef.current = true
+
+    const token = getV2Token()
+    if (!token) {
+      setJobStatus('error')
+      setIsLoading(false)
+      isProcessingRef.current = false
+      return
+    }
+
+    if (!validateTableName(selectedTable)) {
+      setJobStatus('error')
+      setIsLoading(false)
+      isProcessingRef.current = false
+      return
+    }
+
+    // Limpar dados e estado antes de iniciar novo processamento
+    console.log('🔄 Iniciando novo processamento de campanhas para:', selectedTable)
+    
+    // Parar qualquer polling anterior
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+      pollingIntervalRef.current = null
+    }
+    if (additionalPollRef.current) {
+      clearInterval(additionalPollRef.current)
+      additionalPollRef.current = null
+    }
+    
+    setIsLoading(true)
+    setJobStatus('processing')
+    setJobProgress('Iniciando processamento...')
+    setElapsedSeconds(null)
+    setJobId(null)
+    setAllCampaignData([])
+    setCampaignData([])
+
+    try {
+      // Criar o job (sempre busca últimos 90 dias)
+      const jobResponse = await api.createPaidMediaCampaignsJob(token, selectedTable)
+      console.log('📦 Job Response inicial:', jobResponse)
+      console.log('📦 Job ID:', jobResponse.job_id)
+      
+      setJobId(jobResponse.job_id)
+      setJobProgress('Job criado, aguardando processamento...')
+
+      // Iniciar polling
+      startPolling(jobResponse.job_id, token)
+      
+      // Resetar flag após um delay para permitir que o job seja criado
+      // Mas manter por mais tempo para evitar chamadas duplicadas
+      setTimeout(() => {
+        isProcessingRef.current = false
+      }, 2000)
+    } catch (error) {
+      console.error('Error starting processing:', error)
+      setJobStatus('error')
+      setIsLoading(false)
+      isProcessingRef.current = false
+    }
+  }, [selectedTable, startPolling])
 
   // Tocar som quando o carregamento principal finalizar
   useEffect(() => {
@@ -311,95 +696,64 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     return bestCache
   }
   
-  const filterDataByDateRange = (data: AdsCampaignData[], start: string, end: string) => {
-    return data.filter(campaign => {
-      return campaign.date >= start && campaign.date <= end
-    })
-  }
   
-  const recalculateSummary = (data: AdsCampaignData[]) => {
-    if (!data || data.length === 0) return null
-    
-    const totals = data.reduce((acc, campaign) => ({
-      cost: acc.cost + campaign.cost,
-      impressions: acc.impressions + campaign.impressions,
-      clicks: acc.clicks + campaign.clicks,
-      leads: acc.leads + campaign.leads,
-      transactions: acc.transactions + campaign.transactions,
-      transactions_first: acc.transactions_first + campaign.transactions_first,
-      revenue: acc.revenue + campaign.revenue,
-      revenue_first: acc.revenue_first + campaign.revenue_first,
-      pixel_transactions: acc.pixel_transactions + (campaign.pixel_transactions || 0),
-      pixel_revenue: acc.pixel_revenue + (campaign.pixel_revenue || 0),
-    }), {
-      cost: 0,
-      impressions: 0,
-      clicks: 0,
-      leads: 0,
-      transactions: 0,
-      transactions_first: 0,
-      revenue: 0,
-      revenue_first: 0,
-      pixel_transactions: 0,
-      pixel_revenue: 0,
-      fsm_transactions: 0
-    })
-    
-    const avgCTR = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0
-    const avgCPC = totals.clicks > 0 ? totals.cost / totals.clicks : 0
-    const avgCPV = totals.transactions > 0 ? totals.cost / totals.transactions : 0
-    const avgCPA = totals.transactions_first > 0 ? totals.cost / totals.transactions_first : 0
-    const avgROAS = totals.cost > 0 ? totals.revenue / totals.cost : 0
-    const avgROASFirst = totals.cost > 0 ? totals.revenue_first / totals.cost : 0
-    
-    return {
-      ...totals,
-      avg_ctr: avgCTR,
-      avg_cpc: avgCPC,
-      avg_cpv: avgCPV,
-      avg_cpa: avgCPA,
-      avg_roas: avgROAS,
-      avg_roas_first: avgROASFirst
-    }
-  }
-  
-  const defaultVisibleColumns = {
-    platform: true,
-    campaign_name: true,
-    cost: true,
-    impressions: false,
-    clicks: false,
-    ctr: false,
-    cpc: false,
-    leads: false,
-    transactions: true,
-    transactions_first: false,
-    pixel_transactions: true,
-    pixel_delta: true,
-    transactions_delta: true,
-    new_customers_percentage: true,
-    revenue: true,
-    revenue_first: false,
-    pixel_revenue: true,
-    roas: true,
-    roas_first: false,
-    cpv: false,
-    cpa: false,
-    cpa_delta: true
-  }
-
   // Carregar colunas visíveis do localStorage ou usar padrão
   const getInitialVisibleColumns = () => {
     const saved = localStorage.getItem('paidMediaVisibleColumns')
     if (saved) {
       try {
-        const parsed = JSON.parse(saved)
-        return { ...defaultVisibleColumns, ...parsed }
+        return JSON.parse(saved)
       } catch {
-        return defaultVisibleColumns
+        return {
+          platform: true,
+          campaign_name: true,
+          cost: true,
+          impressions: false,
+          clicks: false,
+          ctr: false,
+          cpc: false,
+          leads: false,
+          transactions: true,
+          transactions_first: false,
+          transactions_delta: true,
+          new_customers_percentage: true,
+          revenue: true,
+          revenue_first: false,
+          roas: true,
+          roas_first: false,
+          cpv: false,
+          cpa: false,
+          cpa_delta: true
+        }
       }
     }
-    return defaultVisibleColumns
+    return {
+      platform: true,
+      campaign_name: true,
+      cost: true,
+      impressions: false,
+      clicks: false,
+      ctr: false,
+      cpc: false,
+      leads: false,
+      transactions: true,
+      transactions_first: false,
+      transactions_delta: true,
+      new_customers_percentage: true,
+      revenue: true,
+      revenue_first: false,
+      roas: true,
+      roas_first: false,
+      cpv: false,
+      cpa: false,
+          cpa_delta: true,
+          pixel_transactions: false,
+          pixel_revenue: false,
+          pixel_transactions_delta: false,
+          pixel_revenue_delta: false,
+          pixel_transactions_delta: false,
+          pixel_revenue_delta: false
+    }
   }
   
   const [visibleColumns, setVisibleColumns] = useState(getInitialVisibleColumns())
@@ -594,152 +948,65 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     return getNextDrilldownLevel() !== null
   }
 
+  // useEffect para iniciar processamento quando selectedTable mudar
   useEffect(() => {
-    const fetchAdsCampaigns = async () => {
-      try {
-        const token = localStorage.getItem('auth-token')
-        if (!token) {
-          console.log('❌ No token found')
-          setIsLoading(false)
-          return
-        }
-
-        if (!validateTableName(selectedTable)) {
-          console.log('❌ Invalid table name:', selectedTable)
-          setIsLoading(false)
-          return
-        }
-
-        setIsLoading(true)
-        console.log('🔄 ===== useEffect EXECUTADO =====')
-        console.log('🔄 Fetching ads campaigns for table:', selectedTable)
-        console.log('🔄 useCache mode:', useCache)
-        console.log('🔄 startDate:', startDate, 'endDate:', endDate)
-        
-        // Determinar se é primeiro load e/ou se o período mudou
-        const requestKey = `${selectedTable}::${startDate}::${endDate}`
-        const isFirstLoad = lastCampaignsKeyRef.current === null
-        const isNewDateRange = lastCampaignsKeyRef.current !== requestKey
-
-        let response: any = null
-        let cacheWorked = false
-
-        if (isFirstLoad) {
-          // Primeiro load da aba: tenta last_cache primeiro
-          try {
-            console.log('🔄 [Primeiro load] Tentando request com cache (last_cache: true)...')
-            response = await api.getAdsCampaigns(token, {
-              start_date: startDate,
-              end_date: endDate,
-              table_name: selectedTable,
-              last_cache: true,
-              force_refresh: false
-            })
-            if (response && response.data && response.data.length > 0) {
-              cacheWorked = true
-            }
-          } catch (cacheError) {
-            cacheWorked = false
-          }
-          if (!cacheWorked) {
-            try {
-              response = await api.getAdsCampaigns(token, {
-                start_date: startDate,
-                end_date: endDate,
-                table_name: selectedTable,
-                last_cache: false,
-                force_refresh: false
-              })
-            } catch (error) {
-              console.error('❌ Error fetching ads campaigns (primeiro load sem cache):', error)
-              setCampaignData([])
-              setIsLoading(false)
-              return
-            }
-          }
-        } else if (isNewDateRange) {
-          // Mudança de data: não usar last_cache, fazer request normal sem cache
-          try {
-            console.log('🚀 [Mudança de data] Request sem cache (sem force_refresh)')
-            response = await api.getAdsCampaigns(token, {
-              start_date: startDate,
-              end_date: endDate,
-              table_name: selectedTable,
-              last_cache: false,
-              force_refresh: false
-            })
-          } catch (error) {
-            console.error('❌ Error fetching ads campaigns (force refresh após mudança de data):', error)
-            setCampaignData([])
-            setIsLoading(false)
-            return
-          }
-        } else {
-          // Sem mudança de data: pode tentar cache primeiro normalmente
-          try {
-            console.log('🔄 [Mesmo período] Tentando cache...')
-            response = await api.getAdsCampaigns(token, {
-              start_date: startDate,
-              end_date: endDate,
-              table_name: selectedTable,
-              last_cache: true,
-              force_refresh: false
-            })
-            if (response && response.data && response.data.length > 0) {
-              cacheWorked = true
-            }
-          } catch {}
-          if (!cacheWorked) {
-            try {
-              response = await api.getAdsCampaigns(token, {
-                start_date: startDate,
-                end_date: endDate,
-                table_name: selectedTable,
-                last_cache: false,
-                force_refresh: false
-              })
-            } catch (error) {
-              console.error('❌ Error fetching ads campaigns (fallback sem cache):', error)
-              setCampaignData([])
-              setIsLoading(false)
-              return
-            }
-          }
-        }
-
-        console.log('✅ Response final:', response)
-        console.log('✅ Dados recebidos:', response?.data?.length || 0, 'campanhas')
-        console.log('✅ Primeira campanha:', response?.data?.[0])
-        console.log('🔍 Plataformas nos dados da API:', [...new Set((response?.data || []).map(item => item.platform))])
-        console.log('🔍 Amostra dos dados da API:', (response?.data || []).slice(0, 5).map(item => ({ 
-          platform: item.platform, 
-          campaign: item.campaign_name,
-          cost: item.cost 
-        })))
-        console.log('🔍 Contagem por plataforma na API:', {
-          google_ads: (response?.data || []).filter(item => item.platform === 'google_ads').length,
-          meta_ads: (response?.data || []).filter(item => item.platform === 'meta_ads').length,
-          total: (response?.data || []).length
-        })
-        
-        setCampaignData(response?.data || [])
-        setCacheInfo(response?.cache_info || null)
-        setSummary(response?.summary || null)
-        setUsedFallback(!cacheWorked)
-
-        // Atualiza a chave do último request bem-sucedido
-        lastCampaignsKeyRef.current = requestKey
-      } catch (error) {
-        console.error('❌ Error fetching ads campaigns:', error)
-        setCampaignData([])
-      } finally {
-        setIsLoading(false)
-        console.log('🔄 ===== useEffect FINALIZADO =====')
-      }
+    if (!selectedTable || !validateTableName(selectedTable)) {
+      return
     }
 
-    fetchAdsCampaigns()
-  }, [selectedTable, attributionModel, startDate, endDate, reloadNonce])
+    // Verificar ambas as flags para evitar execuções duplicadas
+    if (hasStartedProcessingRef.current === selectedTable || isProcessingRef.current) {
+      console.log('⚠️ Processamento já iniciado ou em andamento para:', selectedTable)
+      return
+    }
+    
+    // Limpar polling anterior se houver
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+      pollingIntervalRef.current = null
+    }
+    if (additionalPollRef.current) {
+      clearInterval(additionalPollRef.current)
+      additionalPollRef.current = null
+    }
+    
+    // Marcar que o processamento foi iniciado para este selectedTable ANTES de chamar
+    // Isso previne que a segunda execução do Strict Mode passe pela verificação
+    hasStartedProcessingRef.current = selectedTable
+    
+    console.log('🚀 Iniciando processamento para:', selectedTable)
+    startProcessing()
+    
+    // Cleanup ao desmontar ou mudar selectedTable
+    return () => {
+      // Resetar a ref quando selectedTable mudar
+      if (hasStartedProcessingRef.current === selectedTable) {
+        hasStartedProcessingRef.current = null
+      }
+      
+      // Resetar flag de processamento apenas se não estiver mais processando
+      // (pode estar processando outro selectedTable)
+      if (hasStartedProcessingRef.current !== selectedTable) {
+        isProcessingRef.current = false
+      }
+      
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current)
+        pollingIntervalRef.current = null
+      }
+      if (additionalPollRef.current) {
+        clearInterval(additionalPollRef.current)
+        additionalPollRef.current = null
+      }
+    }
+  }, [selectedTable]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // useEffect para filtrar dados quando startDate ou endDate mudarem (sem fazer novo request)
+  useEffect(() => {
+    if (allCampaignData.length > 0 && startDate && endDate) {
+      filterDataByDateRange(allCampaignData, startDate, endDate)
+    }
+  }, [startDate, endDate, allCampaignData, filterDataByDateRange])
 
   // useEffect para buscar dados de criativos quando a aba mudar
   useEffect(() => {
@@ -751,35 +1018,6 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       lastCreativesKeyRef.current = requestKey
     }
   }, [activeTab, selectedTable, startDate, endDate, token])
-
-  // useEffect para buscar dados de tendência quando a aba mudar
-  useEffect(() => {
-    if (activeTab === 'trend') {
-      const fetchTrendData = async () => {
-        try {
-          if (!token || !selectedTable) return
-          if (!validateTableName(selectedTable)) return
-
-          setIsLoadingTrend(true)
-          console.log('📈 Fetching trend data for table:', selectedTable)
-
-          const response = await api.getAdsCampaignsTrend(token, {
-            table_name: selectedTable
-          })
-
-          console.log('✅ Trend data received:', response?.data?.length || 0, 'campanhas')
-          setTrendData(response?.data || [])
-        } catch (error) {
-          console.error('❌ Error fetching trend data:', error)
-          setTrendData([])
-        } finally {
-          setIsLoadingTrend(false)
-        }
-      }
-
-      fetchTrendData()
-    }
-  }, [activeTab, selectedTable, token])
 
   // Função para verificar se o cache é antigo (mais de 4 horas)
   const isCacheOld = () => {
@@ -949,26 +1187,41 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     acc[key].clicks += item.clicks
     acc[key].leads += item.leads
     
-    // Usar as métricas corretas baseado no modelo de atribuição
+    // Os dados já foram convertidos pela função convertPaidMediaToAdsCampaignData
+    // Usar os campos já convertidos (não mais os campos originais da API)
+    const transactionsLND = toNumber(item.transactions ?? 0) // last_non_direct
+    const revenueLND = toNumber(item.revenue ?? 0) // last_non_direct
+    const transactionsFirstLND = toNumber(item.transactions_first ?? 0)
+    const revenueFirstLND = toNumber(item.revenue_first ?? 0)
+    
+    const transactionsOS = toNumber(item.transactions_origin_stack ?? 0) // origin_stack (fsm_*)
+    const revenueOS = toNumber(item.revenue_origin_stack ?? 0) // origin_stack (fsm_*)
+    const transactionsFirstOS = toNumber(item.transactions_first_origin_stack ?? 0)
+    const revenueFirstOS = toNumber(item.revenue_first_origin_stack ?? 0)
+    
+    // Usar as métricas corretas baseado no modelo de atribuição selecionado
     if (attributionModel === 'origin_stack') {
-      acc[key].transactions += item.transactions_origin_stack
-      acc[key].revenue += item.revenue_origin_stack
-      acc[key].transactions_first += item.transactions_first_origin_stack
-      acc[key].revenue_first += item.revenue_first_origin_stack
+      acc[key].transactions += transactionsOS
+      acc[key].revenue += revenueOS
+      acc[key].transactions_first += transactionsFirstOS
+      acc[key].revenue_first += revenueFirstOS
     } else {
-      acc[key].transactions += item.transactions
-      acc[key].revenue += item.revenue
-      acc[key].transactions_first += item.transactions_first
-      acc[key].revenue_first += item.revenue_first
+      acc[key].transactions += transactionsLND
+      acc[key].revenue += revenueLND
+      acc[key].transactions_first += transactionsFirstLND
+      acc[key].revenue_first += revenueFirstLND
     }
     
-    acc[key].transactions_origin_stack += item.transactions_origin_stack
-    acc[key].revenue_origin_stack += item.revenue_origin_stack
-    acc[key].transactions_first_origin_stack += item.transactions_first_origin_stack
-    acc[key].revenue_first_origin_stack += item.revenue_first_origin_stack
-    acc[key].fsm_transactions += (item.fsm_transactions || 0)
-    acc[key].pixel_transactions += item.pixel_transactions || 0
-    acc[key].pixel_revenue += item.pixel_revenue || 0
+    // Sempre armazenar ambos os modelos para calcular deltas
+    acc[key].transactions_origin_stack += transactionsOS
+    acc[key].revenue_origin_stack += revenueOS
+    acc[key].transactions_first_origin_stack += transactionsFirstOS
+    acc[key].revenue_first_origin_stack += revenueFirstOS
+    
+    // Adicionar métricas de pixel
+    acc[key].pixel_transactions += toNumber(item.pixel_transactions || 0)
+    acc[key].pixel_revenue += toNumber(item.pixel_revenue || 0)
+    
     acc[key].records.push(item)
     
     return acc
@@ -1023,18 +1276,6 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
           aValue = a.transactions_first
           bValue = b.transactions_first
           break
-        case 'pixel_transactions':
-          aValue = a.pixel_transactions || 0
-          bValue = b.pixel_transactions || 0
-          break
-        case 'pixel_delta':
-          aValue = (a.pixel_transactions || 0) - (attributionModel === 'origin_stack'
-            ? (a.transactions_origin_stack || a.transactions)
-            : a.transactions)
-          bValue = (b.pixel_transactions || 0) - (attributionModel === 'origin_stack'
-            ? (b.transactions_origin_stack || b.transactions)
-            : b.transactions)
-          break
         case 'transactions_delta':
           // Usar valores originais (não afetados pelo filtro de atribuição)
           const aRevenueLND = a.records && a.records.length > 0 
@@ -1073,10 +1314,6 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
           aValue = a.revenue_first
           bValue = b.revenue_first
           break
-        case 'pixel_revenue':
-          aValue = a.pixel_revenue || 0
-          bValue = b.pixel_revenue || 0
-          break
         case 'roas':
           aValue = a.cost > 0 ? a.revenue / a.cost : 0
           bValue = b.cost > 0 ? b.revenue / b.cost : 0
@@ -1114,6 +1351,42 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
           const bCPALND = bTransactionsFirstLND > 0 ? b.cost / bTransactionsFirstLND : 0
           const bCPAOS = bTransactionsFirstOS > 0 ? b.cost / bTransactionsFirstOS : 0
           bValue = bCPALND > 0 ? ((bCPALND - bCPAOS) / bCPALND) * 100 : 0
+          break
+        case 'pixel_transactions_delta':
+          // Calcular delta entre pixel_transactions e transactions_origin_stack
+          const aPixelTransactions = a.pixel_transactions || 0
+          const aOriginStackTransactions = a.records && a.records.length > 0 
+            ? a.records.reduce((sum: number, record: any) => sum + (record.transactions_origin_stack || 0), 0)
+            : a.transactions_origin_stack || 0
+          aValue = aOriginStackTransactions > 0 
+            ? ((aPixelTransactions - aOriginStackTransactions) / aOriginStackTransactions) * 100 
+            : 0
+          
+          const bPixelTransactions = b.pixel_transactions || 0
+          const bOriginStackTransactions = b.records && b.records.length > 0 
+            ? b.records.reduce((sum: number, record: any) => sum + (record.transactions_origin_stack || 0), 0)
+            : b.transactions_origin_stack || 0
+          bValue = bOriginStackTransactions > 0 
+            ? ((bPixelTransactions - bOriginStackTransactions) / bOriginStackTransactions) * 100 
+            : 0
+          break
+        case 'pixel_revenue_delta':
+          // Calcular delta entre pixel_revenue e revenue_origin_stack
+          const aPixelRevenue = a.pixel_revenue || 0
+          const aOriginStackRevenue = a.records && a.records.length > 0 
+            ? a.records.reduce((sum: number, record: any) => sum + (record.revenue_origin_stack || 0), 0)
+            : a.revenue_origin_stack || 0
+          aValue = aOriginStackRevenue > 0 
+            ? ((aPixelRevenue - aOriginStackRevenue) / aOriginStackRevenue) * 100 
+            : 0
+          
+          const bPixelRevenue = b.pixel_revenue || 0
+          const bOriginStackRevenue = b.records && b.records.length > 0 
+            ? b.records.reduce((sum: number, record: any) => sum + (record.revenue_origin_stack || 0), 0)
+            : b.revenue_origin_stack || 0
+          bValue = bOriginStackRevenue > 0 
+            ? ((bPixelRevenue - bOriginStackRevenue) / bOriginStackRevenue) * 100 
+            : 0
           break
         default:
           aValue = a.cost
@@ -1265,22 +1538,44 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
             revenue_origin_stack: 0,
             transactions_first_origin_stack: 0,
             revenue_first_origin_stack: 0,
-            fsm_transactions: 0
           }
         }
         acc[key].cost += item.cost
         acc[key].impressions += item.impressions
         acc[key].clicks += item.clicks
         acc[key].leads += item.leads
-        acc[key].transactions += item.transactions
-        acc[key].revenue += item.revenue
-        acc[key].transactions_first += item.transactions_first
-        acc[key].revenue_first += item.revenue_first
-        acc[key].transactions_origin_stack += item.transactions_origin_stack
-        acc[key].revenue_origin_stack += item.revenue_origin_stack
-        acc[key].transactions_first_origin_stack += item.transactions_first_origin_stack
-        acc[key].revenue_first_origin_stack += item.revenue_first_origin_stack
-        acc[key].fsm_transactions += (item.fsm_transactions || 0)
+        
+        // API 2.0: fsm_* = origin_stack, campos normais = last_non_direct
+        // Os dados já foram convertidos pela função convertPaidMediaToAdsCampaignData
+        // Usar os campos já convertidos (não mais os campos originais da API)
+        const transactionsLND = toNumber(item.transactions ?? 0) // last_non_direct
+        const revenueLND = toNumber(item.revenue ?? 0) // last_non_direct
+        const transactionsFirstLND = toNumber(item.transactions_first ?? 0)
+        const revenueFirstLND = toNumber(item.revenue_first ?? 0)
+        
+        const transactionsOS = toNumber(item.transactions_origin_stack ?? 0) // origin_stack (fsm_*)
+        const revenueOS = toNumber(item.revenue_origin_stack ?? 0) // origin_stack (fsm_*)
+        const transactionsFirstOS = toNumber(item.transactions_first_origin_stack ?? 0)
+        const revenueFirstOS = toNumber(item.revenue_first_origin_stack ?? 0)
+        
+        // Usar as métricas corretas baseado no modelo de atribuição selecionado
+        if (attributionModel === 'origin_stack') {
+          acc[key].transactions += transactionsOS
+          acc[key].revenue += revenueOS
+          acc[key].transactions_first += transactionsFirstOS
+          acc[key].revenue_first += revenueFirstOS
+        } else {
+          acc[key].transactions += transactionsLND
+          acc[key].revenue += revenueLND
+          acc[key].transactions_first += transactionsFirstLND
+          acc[key].revenue_first += revenueFirstLND
+        }
+        
+        // Sempre armazenar ambos os modelos para calcular deltas
+        acc[key].transactions_origin_stack += transactionsOS
+        acc[key].revenue_origin_stack += revenueOS
+        acc[key].transactions_first_origin_stack += transactionsFirstOS
+        acc[key].revenue_first_origin_stack += revenueFirstOS
         return acc
       }, {} as Record<string, any>)
       
@@ -1321,22 +1616,44 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
             revenue_origin_stack: 0,
             transactions_first_origin_stack: 0,
             revenue_first_origin_stack: 0,
-            fsm_transactions: 0
           }
         }
         acc[key].cost += item.cost
         acc[key].impressions += item.impressions
         acc[key].clicks += item.clicks
         acc[key].leads += item.leads
-        acc[key].transactions += item.transactions
-        acc[key].revenue += item.revenue
-        acc[key].transactions_first += item.transactions_first
-        acc[key].revenue_first += item.revenue_first
-        acc[key].transactions_origin_stack += item.transactions_origin_stack
-        acc[key].revenue_origin_stack += item.revenue_origin_stack
-        acc[key].transactions_first_origin_stack += item.transactions_first_origin_stack
-        acc[key].revenue_first_origin_stack += item.revenue_first_origin_stack
-        acc[key].fsm_transactions += (item.fsm_transactions || 0)
+        
+        // API 2.0: fsm_* = origin_stack, campos normais = last_non_direct
+        // Os dados já foram convertidos pela função convertPaidMediaToAdsCampaignData
+        // Usar os campos já convertidos (não mais os campos originais da API)
+        const transactionsLND = toNumber(item.transactions ?? 0) // last_non_direct
+        const revenueLND = toNumber(item.revenue ?? 0) // last_non_direct
+        const transactionsFirstLND = toNumber(item.transactions_first ?? 0)
+        const revenueFirstLND = toNumber(item.revenue_first ?? 0)
+        
+        const transactionsOS = toNumber(item.transactions_origin_stack ?? 0) // origin_stack (fsm_*)
+        const revenueOS = toNumber(item.revenue_origin_stack ?? 0) // origin_stack (fsm_*)
+        const transactionsFirstOS = toNumber(item.transactions_first_origin_stack ?? 0)
+        const revenueFirstOS = toNumber(item.revenue_first_origin_stack ?? 0)
+        
+        // Usar as métricas corretas baseado no modelo de atribuição selecionado
+        if (attributionModel === 'origin_stack') {
+          acc[key].transactions += transactionsOS
+          acc[key].revenue += revenueOS
+          acc[key].transactions_first += transactionsFirstOS
+          acc[key].revenue_first += revenueFirstOS
+        } else {
+          acc[key].transactions += transactionsLND
+          acc[key].revenue += revenueLND
+          acc[key].transactions_first += transactionsFirstLND
+          acc[key].revenue_first += revenueFirstLND
+        }
+        
+        // Sempre armazenar ambos os modelos para calcular deltas
+        acc[key].transactions_origin_stack += transactionsOS
+        acc[key].revenue_origin_stack += revenueOS
+        acc[key].transactions_first_origin_stack += transactionsFirstOS
+        acc[key].revenue_first_origin_stack += revenueFirstOS
         return acc
       }, {} as Record<string, any>)
       
@@ -1375,22 +1692,44 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
             revenue_origin_stack: 0,
             transactions_first_origin_stack: 0,
             revenue_first_origin_stack: 0,
-            fsm_transactions: 0
           }
         }
         acc[key].cost += item.cost
         acc[key].impressions += item.impressions
         acc[key].clicks += item.clicks
         acc[key].leads += item.leads
-        acc[key].transactions += item.transactions
-        acc[key].revenue += item.revenue
-        acc[key].transactions_first += item.transactions_first
-        acc[key].revenue_first += item.revenue_first
-        acc[key].transactions_origin_stack += item.transactions_origin_stack
-        acc[key].revenue_origin_stack += item.revenue_origin_stack
-        acc[key].transactions_first_origin_stack += item.transactions_first_origin_stack
-        acc[key].revenue_first_origin_stack += item.revenue_first_origin_stack
-        acc[key].fsm_transactions += (item.fsm_transactions || 0)
+        
+        // API 2.0: fsm_* = origin_stack, campos normais = last_non_direct
+        // Os dados já foram convertidos pela função convertPaidMediaToAdsCampaignData
+        // Usar os campos já convertidos (não mais os campos originais da API)
+        const transactionsLND = toNumber(item.transactions ?? 0) // last_non_direct
+        const revenueLND = toNumber(item.revenue ?? 0) // last_non_direct
+        const transactionsFirstLND = toNumber(item.transactions_first ?? 0)
+        const revenueFirstLND = toNumber(item.revenue_first ?? 0)
+        
+        const transactionsOS = toNumber(item.transactions_origin_stack ?? 0) // origin_stack (fsm_*)
+        const revenueOS = toNumber(item.revenue_origin_stack ?? 0) // origin_stack (fsm_*)
+        const transactionsFirstOS = toNumber(item.transactions_first_origin_stack ?? 0)
+        const revenueFirstOS = toNumber(item.revenue_first_origin_stack ?? 0)
+        
+        // Usar as métricas corretas baseado no modelo de atribuição selecionado
+        if (attributionModel === 'origin_stack') {
+          acc[key].transactions += transactionsOS
+          acc[key].revenue += revenueOS
+          acc[key].transactions_first += transactionsFirstOS
+          acc[key].revenue_first += revenueFirstOS
+        } else {
+          acc[key].transactions += transactionsLND
+          acc[key].revenue += revenueLND
+          acc[key].transactions_first += transactionsFirstLND
+          acc[key].revenue_first += revenueFirstLND
+        }
+        
+        // Sempre armazenar ambos os modelos para calcular deltas
+        acc[key].transactions_origin_stack += transactionsOS
+        acc[key].revenue_origin_stack += revenueOS
+        acc[key].transactions_first_origin_stack += transactionsFirstOS
+        acc[key].revenue_first_origin_stack += revenueFirstOS
         return acc
       }, {} as Record<string, any>)
       
@@ -1423,7 +1762,7 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     sampleGrouped: Object.values(groupedCreativeData).slice(0, 2)
   })
 
-  // Calcular totais
+  // Calcular totais - usar campaignSummaries se disponível, senão calcular diretamente de filteredData
   const totals = campaignSummaries.length > 0 ? campaignSummaries.reduce((acc, item) => ({
     cost: acc.cost + item.cost,
     impressions: acc.impressions + item.impressions,
@@ -1433,8 +1772,6 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     revenue: acc.revenue + (attributionModel === 'origin_stack' ? (item.revenue_origin_stack || item.revenue) : item.revenue),
     transactions_first: acc.transactions_first + (attributionModel === 'origin_stack' ? (item.transactions_first_origin_stack || item.transactions_first) : item.transactions_first),
     revenue_first: acc.revenue_first + (attributionModel === 'origin_stack' ? (item.revenue_first_origin_stack || item.revenue_first) : item.revenue_first),
-    pixel_transactions: acc.pixel_transactions + (item.pixel_transactions || 0),
-    pixel_revenue: acc.pixel_revenue + (item.pixel_revenue || 0),
   }), {
     cost: 0,
     impressions: 0,
@@ -1444,8 +1781,24 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     revenue: 0,
     transactions_first: 0,
     revenue_first: 0,
-    pixel_transactions: 0,
-    pixel_revenue: 0,
+  }) : filteredData.length > 0 ? filteredData.reduce((acc, item) => ({
+    cost: acc.cost + item.cost,
+    impressions: acc.impressions + item.impressions,
+    clicks: acc.clicks + item.clicks,
+    leads: acc.leads + item.leads,
+    transactions: acc.transactions + (attributionModel === 'origin_stack' ? (item.transactions_origin_stack || item.transactions) : item.transactions),
+    revenue: acc.revenue + (attributionModel === 'origin_stack' ? (item.revenue_origin_stack || item.revenue) : item.revenue),
+    transactions_first: acc.transactions_first + (attributionModel === 'origin_stack' ? (item.transactions_first_origin_stack || item.transactions_first) : item.transactions_first),
+    revenue_first: acc.revenue_first + (attributionModel === 'origin_stack' ? (item.revenue_first_origin_stack || item.revenue_first) : item.revenue_first),
+  }), {
+    cost: 0,
+    impressions: 0,
+    clicks: 0,
+    leads: 0,
+    transactions: 0,
+    revenue: 0,
+    transactions_first: 0,
+    revenue_first: 0,
   }) : {
     cost: 0,
     impressions: 0,
@@ -1455,8 +1808,6 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     revenue: 0,
     transactions_first: 0,
     revenue_first: 0,
-    pixel_transactions: 0,
-    pixel_revenue: 0,
   }
 
   // Calcular totais para criativos
@@ -1486,7 +1837,6 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     revenue_origin_stack: 0,
     transactions_first_origin_stack: 0,
     revenue_first_origin_stack: 0,
-    fsm_transactions: 0,
   }) : {
     cost: 0,
     impressions: 0,
@@ -1500,7 +1850,6 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     revenue_origin_stack: 0,
     transactions_first_origin_stack: 0,
     revenue_first_origin_stack: 0,
-    fsm_transactions: 0,
   }
 
   // Calcular totais separados para o comparativo
@@ -1547,29 +1896,6 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
   const avgCPM = totals.impressions > 0 ? (totals.cost / totals.impressions) * 1000 : 0
   const totalROAS = totals.cost > 0 ? totals.revenue / totals.cost : 0
   const totalROASFirst = totals.cost > 0 ? totals.revenue_first / totals.cost : 0
-  const hasPixelTotals = (totals.pixel_transactions || 0) > 0
-  const pixelShare = totals.transactions > 0 && hasPixelTotals
-    ? (totals.pixel_transactions / totals.transactions) * 100
-    : 0
-  const pixelROAS = totals.cost > 0 && hasPixelTotals ? totals.pixel_revenue / totals.cost : 0
-  const pixelAOV = hasPixelTotals ? totals.pixel_revenue / totals.pixel_transactions : 0
-  const pixelDelta = hasPixelTotals ? (totals.pixel_transactions || 0) - totals.transactions : null
-  const pixelDeltaPercent = hasPixelTotals && totals.transactions > 0 && pixelDelta !== null
-    ? (pixelDelta / totals.transactions) * 100
-    : null
-  const pixelDeltaPercentages = campaignSummaries
-    .filter(item => (item.pixel_transactions || 0) > 0)
-    .map(item => {
-      const modelTransactions = attributionModel === 'origin_stack'
-        ? (item.transactions_origin_stack || item.transactions)
-        : item.transactions
-      return modelTransactions > 0
-        ? (((item.pixel_transactions || 0) - modelTransactions) / modelTransactions) * 100
-        : 0
-    })
-  const pixelDeltaPercentAverage = pixelDeltaPercentages.length > 0
-    ? pixelDeltaPercentages.reduce((acc, val) => acc + val, 0) / pixelDeltaPercentages.length
-    : null
 
   // Obter plataformas únicas (usar dados filtrados)
   const platforms = [...new Set(filteredData.map(item => item.platform))]
@@ -1806,76 +2132,6 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     }
   }
 
-  // Função para download XLSX da aba de Tendência
-  const handleDownloadTrendXLSX = () => {
-    try {
-      // Preparar dados para exportação
-      const dataToExport = trendData.map(item => ({
-        'Campanha': item.campaign_name,
-        'Plataforma': item.platform === 'meta_ads' ? 'Meta Ads' : 'Google Ads',
-        'Custo W1': item.cost_w1,
-        'Custo W2': item.cost_w2,
-        'Custo W3': item.cost_w3,
-        'Custo W4': item.cost_w4,
-        'Receita W1': item.revenue_w1,
-        'Receita W2': item.revenue_w2,
-        'Receita W3': item.revenue_w3,
-        'Receita W4': item.revenue_w4,
-        'ROAS W1': item.roas_w1,
-        'ROAS W2': item.roas_w2,
-        'ROAS W3': item.roas_w3,
-        'ROAS W4': item.roas_w4,
-        'Crescimento ROAS W2 vs W1 (%)': item.roas_growth_w2_vs_w1_pct,
-        'Crescimento ROAS W3 vs W2 (%)': item.roas_growth_w3_vs_w2_pct,
-        'Crescimento ROAS W4 vs W3 (%)': item.roas_growth_w4_vs_w3_pct,
-        'Tendência ROAS': item.roas_trend,
-        'Custo Médio Diário W4': item.avg_daily_cost_w4
-      }))
-
-      // Criar workbook e worksheet
-      const wb = XLSX.utils.book_new()
-      const ws = XLSX.utils.json_to_sheet(dataToExport)
-
-      // Ajustar largura das colunas
-      const colWidths = [
-        { wch: 40 }, // Campanha
-        { wch: 15 }, // Plataforma
-        { wch: 12 }, // Custo W1
-        { wch: 12 }, // Custo W2
-        { wch: 12 }, // Custo W3
-        { wch: 12 }, // Custo W4
-        { wch: 12 }, // Receita W1
-        { wch: 12 }, // Receita W2
-        { wch: 12 }, // Receita W3
-        { wch: 12 }, // Receita W4
-        { wch: 10 }, // ROAS W1
-        { wch: 10 }, // ROAS W2
-        { wch: 10 }, // ROAS W3
-        { wch: 10 }, // ROAS W4
-        { wch: 25 }, // Crescimento W2 vs W1
-        { wch: 25 }, // Crescimento W3 vs W2
-        { wch: 25 }, // Crescimento W4 vs W3
-        { wch: 20 }, // Tendência ROAS
-        { wch: 20 }  // Custo Médio Diário W4
-      ]
-      ws['!cols'] = colWidths
-
-      // Adicionar worksheet ao workbook
-      XLSX.utils.book_append_sheet(wb, ws, 'Tendência')
-
-      // Gerar nome do arquivo com data
-      const today = new Date()
-      const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-      const filename = `tendencia-campanhas-${selectedTable}-${dateStr}.xlsx`
-
-      // Download do arquivo
-      XLSX.writeFile(wb, filename)
-    } catch (error) {
-      console.error('Erro ao gerar XLSX de tendência:', error)
-      alert('Erro ao gerar arquivo Excel. Por favor, tente novamente.')
-    }
-  }
-
   // Função para download XLSX
   const handleDownloadXLSX = () => {
     try {
@@ -1891,16 +2147,9 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         'Leads': campaign.leads,
         'Transações': campaign.transactions,
         'Transações 1ª Compra': campaign.transactions_first,
-        'Conversões Pixel': campaign.pixel_transactions || 0,
-        'Δ Pixel vs Modelo (%)': campaign.pixel_transactions && campaign.transactions > 0
-          ? (((campaign.pixel_transactions - (attributionModel === 'origin_stack'
-                ? (campaign.transactions_origin_stack || campaign.transactions)
-                : campaign.transactions)) / campaign.transactions) * 100).toFixed(1)
-          : '',
         '% Novos Clientes': campaign.transactions > 0 ? ((campaign.transactions_first / campaign.transactions) * 100).toFixed(1) : '0.0',
         'Receita': campaign.revenue,
         'Receita 1ª Compra': campaign.revenue_first,
-        'Receita Pixel': campaign.pixel_revenue || 0,
         'ROAS': campaign.cost > 0 ? (campaign.revenue / campaign.cost).toFixed(2) : '0.00',
         'ROAS 1ª Compra': campaign.cost > 0 ? (campaign.revenue_first / campaign.cost).toFixed(2) : '0.00',
         'CPV': campaign.transactions > 0 ? campaign.cost / campaign.transactions : 0,
@@ -1923,12 +2172,9 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         { wch: 10 }, // Leads
         { wch: 12 }, // Transações
         { wch: 18 }, // Transações 1ª
-        { wch: 18 }, // Conversões Pixel
-        { wch: 18 }, // Delta Pixel
         { wch: 15 }, // % Novos
         { wch: 15 }, // Receita
         { wch: 18 }, // Receita 1ª
-        { wch: 18 }, // Receita Pixel
         { wch: 10 }, // ROAS
         { wch: 15 }, // ROAS 1ª
         { wch: 12 }, // CPV
@@ -2253,6 +2499,62 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         </div>
       </div>
 
+      {/* Status do Polling */}
+      {(isLoading || isPolling || jobStatus === 'completed' || jobStatus === 'processing') && (
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
+          <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+            {jobStatus === 'processing' || isPolling ? (
+              <div className="flex items-center gap-3">
+                <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-900">
+                    {jobProgress || 'Processando dados de campanhas...'}
+                  </p>
+                  <div className="flex items-center gap-4 mt-1 flex-wrap">
+                    {jobId && (
+                      <p className="text-xs text-gray-500">
+                        Job ID: <span className="font-mono font-medium">{jobId}</span>
+                      </p>
+                    )}
+                    {elapsedSeconds !== null && (
+                      <p className="text-xs text-gray-500">
+                        Tempo decorrido: <span className="font-medium">{Math.round(elapsedSeconds)}s</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : jobStatus === 'completed' ? (
+              <div className="flex items-center gap-3">
+                <CheckCircle className="w-5 h-5 text-green-600" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-900">
+                    {jobProgress || 'Dados carregados com sucesso!'}
+                  </p>
+                  {elapsedSeconds !== null && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Processamento concluído em {Math.round(elapsedSeconds)}s
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : jobStatus === 'error' ? (
+              <div className="flex items-center gap-3">
+                <div className="w-5 h-5 text-red-600">⚠️</div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-red-900">
+                    Erro ao processar dados
+                  </p>
+                  <p className="text-xs text-red-600 mt-1">
+                    {jobProgress || 'Tente atualizar os dados novamente'}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
+
       {/* Seletor de Modelo de Atribuição */}
       <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
         <div className="flex items-center justify-between">
@@ -2309,17 +2611,6 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
             >
               <Layers className="h-4 w-4" />
               <span>Criativos</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('trend')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
-                activeTab === 'trend'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <TrendingUp className="h-4 w-4" />
-              <span>Tendência</span>
             </button>
           </nav>
         </div>
@@ -2528,76 +2819,6 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
             }`}>
               ROAS 1ª: {totalROASFirst.toFixed(2)}x
             </span>
-          </div>
-
-          {/* Conversões Pixel */}
-          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <p className="text-xs font-medium text-gray-600 mb-1">Conversões Pixel</p>
-                <p className="text-xl font-bold text-gray-900">{formatNumber(totals.pixel_transactions || 0)}</p>
-              </div>
-              <div className="p-2 bg-pink-50 rounded-lg">
-                <Activity className="w-5 h-5 text-pink-600" />
-              </div>
-            </div>
-            <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
-              {totals.transactions > 0 ? `${pixelShare.toFixed(1)}% das transações` : 'Aguardando dados'}
-            </span>
-          </div>
-
-          {/* Receita Pixel */}
-          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <p className="text-xs font-medium text-gray-600 mb-1">Receita Pixel</p>
-                <p className="text-xl font-bold text-gray-900">{formatCurrency(totals.pixel_revenue || 0)}</p>
-              </div>
-              <div className="p-2 bg-pink-50 rounded-lg">
-                <Cpu className="w-5 h-5 text-pink-600" />
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2 text-xs text-gray-700">
-              <span className="bg-gray-100 px-2 py-1 rounded">ROAS Pixel: {pixelROAS.toFixed(2)}x</span>
-              <span className="bg-gray-100 px-2 py-1 rounded">Ticket Médio: {pixelAOV > 0 ? formatCurrency(pixelAOV) : '—'}</span>
-            </div>
-          </div>
-
-          {/* Delta Pixel x Modelo */}
-          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <p className="text-xs font-medium text-gray-600 mb-1">Δ Conv. Pixel</p>
-                {pixelDeltaPercent !== null ? (
-                  <p className={`text-xl font-bold ${
-                    pixelDeltaPercentAverage !== null
-                      ? (pixelDeltaPercent >= pixelDeltaPercentAverage ? 'text-red-600' : 'text-green-600')
-                      : (pixelDeltaPercent >= 0 ? 'text-red-600' : 'text-green-600')
-                  }`}>
-                    {pixelDeltaPercent >= 0 ? '+' : ''}{pixelDeltaPercent.toFixed(1)}%
-                  </p>
-                ) : (
-                  <p className="text-xl font-bold text-gray-400">—</p>
-                )}
-              </div>
-              <div className="p-2 bg-slate-50 rounded-lg">
-                <TrendingUp className="w-5 h-5 text-slate-600" />
-              </div>
-            </div>
-            {pixelDeltaPercent !== null ? (
-              <div className="flex flex-col gap-1">
-                {pixelDeltaPercentAverage !== null && (
-                  <span className="text-[11px] text-gray-500">
-                    Média do período: {pixelDeltaPercentAverage >= 0 ? '+' : ''}{pixelDeltaPercentAverage.toFixed(1)}%
-                  </span>
-                )}
-                <span className="text-[11px] text-gray-500">
-                  Δ acima da média = menor incrementalidade • Δ abaixo = melhor incrementalidade
-                </span>
-              </div>
-            ) : (
-              <span className="text-xs text-gray-500">Sem dados de pixel para comparar</span>
-            )}
           </div>
         </div>
       </div>
@@ -3880,12 +4101,10 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                         { key: 'leads', label: 'Leads', icon: '🎯' },
                         { key: 'transactions', label: 'Transações', icon: '🛒' },
                         { key: 'transactions_first', label: 'Trans. 1ª Compra', icon: '🆕' },
-                        { key: 'pixel_transactions', label: 'Conversões Pixel', icon: '✨' },
                         { key: 'transactions_delta', label: 'Δ ROAS %', icon: '📊' },
                         { key: 'new_customers_percentage', label: '% Novos Clientes', icon: '👥' },
                         { key: 'revenue', label: 'Receita', icon: '💵' },
                         { key: 'revenue_first', label: 'Receita 1ª Compra', icon: '💎' },
-                        { key: 'pixel_revenue', label: 'Receita Pixel', icon: '💗' },
                         { key: 'roas', label: 'ROAS', icon: '📈' },
                         { key: 'roas_first', label: 'ROAS 1ª Compra', icon: '🚀' },
                         { key: 'cpv', label: 'CPV', icon: '💳' },
@@ -4008,12 +4227,13 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                         { key: 'leads', label: 'Leads', icon: '🎯' },
                         { key: 'transactions', label: 'Transações', icon: '🛒' },
                         { key: 'transactions_first', label: 'Trans. 1ª Compra', icon: '🆕' },
-                        { key: 'pixel_transactions', label: 'Conversões Pixel', icon: '✨' },
-                        { key: 'pixel_delta', label: 'Δ Pixel x Modelo', icon: '⚖️' },
                         { key: 'transactions_delta', label: 'Δ ROAS %', icon: '📊' },
                         { key: 'revenue', label: 'Receita', icon: '💵' },
                         { key: 'revenue_first', label: 'Receita 1ª Compra', icon: '💎' },
-                        { key: 'pixel_revenue', label: 'Receita Pixel', icon: '💗' }
+                        { key: 'pixel_transactions', label: 'Trans. Pixel', icon: '📱' },
+                        { key: 'pixel_revenue', label: 'Receita Pixel', icon: '💰' },
+                        { key: 'pixel_transactions_delta', label: 'Δ Trans. Pixel %', icon: '📊' },
+                        { key: 'pixel_revenue_delta', label: 'Δ Receita Pixel %', icon: '📊' }
                       ].filter(metric => 
                         !metricSearchTerm || 
                         metric.label.toLowerCase().includes(metricSearchTerm.toLowerCase()) ||
@@ -4110,18 +4330,12 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                           leads: true,
                           transactions: true,
                           transactions_first: true,
-                          pixel_transactions: true,
-                          pixel_delta: true,
-                          transactions_delta: true,
-                          new_customers_percentage: true,
                           revenue: true,
                           revenue_first: true,
-                          pixel_revenue: true,
                           roas: true,
                           roas_first: true,
                           cpv: true,
-                          cpa: true,
-                          cpa_delta: true
+                          cpa: true
                         })}
                         className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-2"
                       >
@@ -4142,18 +4356,12 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                           leads: false,
                           transactions: false,
                           transactions_first: false,
-                          pixel_transactions: false,
-                          pixel_delta: false,
-                          transactions_delta: false,
-                          new_customers_percentage: false,
                           revenue: false,
                           revenue_first: false,
-                          pixel_revenue: false,
                           roas: false,
                           roas_first: false,
                           cpv: false,
-                          cpa: false,
-                          cpa_delta: false
+                          cpa: false
                         })}
                         className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2"
                       >
@@ -4279,26 +4487,6 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                   Trans. 1ª Compra
                 </SortableHeader>
                 )}
-                {visibleColumns.pixel_transactions && (
-                <SortableHeader
-                  field="pixel_transactions"
-                  currentSortField={sortField}
-                  currentSortDirection={sortDirection}
-                  onSort={handleSort}
-                >
-                  Conv. Pixel
-                </SortableHeader>
-                )}
-                {visibleColumns.pixel_delta && (
-                <SortableHeader
-                  field="pixel_delta"
-                  currentSortField={sortField}
-                  currentSortDirection={sortDirection}
-                  onSort={handleSort}
-                >
-                  Δ Pixel
-                </SortableHeader>
-                )}
                 {visibleColumns.transactions_delta && (
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider relative">
                   <div className="flex items-center gap-2">
@@ -4374,6 +4562,16 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                   Receita 1ª Compra
                 </SortableHeader>
                 )}
+                {visibleColumns.pixel_transactions && (
+                <SortableHeader
+                  field="pixel_transactions"
+                  currentSortField={sortField}
+                  currentSortDirection={sortDirection}
+                  onSort={handleSort}
+                >
+                  Trans. Pixel
+                </SortableHeader>
+                )}
                 {visibleColumns.pixel_revenue && (
                 <SortableHeader
                   field="pixel_revenue"
@@ -4383,6 +4581,62 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                 >
                   Receita Pixel
                 </SortableHeader>
+                )}
+                {visibleColumns.pixel_transactions_delta && (
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider relative">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleSort('pixel_transactions_delta')}
+                      className="flex items-center gap-1 hover:text-gray-700 group"
+                    >
+                      <span>Δ Trans. Pixel %</span>
+                      <div className="flex flex-col">
+                        <svg 
+                          className={`w-3 h-3 ${sortField === 'pixel_transactions_delta' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} 
+                          fill="currentColor" 
+                          viewBox="0 0 20 20"
+                        >
+                          <path d="M5 10l5-5 5 5H5z" />
+                        </svg>
+                        <svg 
+                          className={`w-3 h-3 -mt-1 ${sortField === 'pixel_transactions_delta' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} 
+                          fill="currentColor" 
+                          viewBox="0 0 20 20"
+                        >
+                          <path d="M15 10l-5 5-5-5h10z" />
+                        </svg>
+                      </div>
+                    </button>
+                  </div>
+                </th>
+                )}
+                {visibleColumns.pixel_revenue_delta && (
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider relative">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleSort('pixel_revenue_delta')}
+                      className="flex items-center gap-1 hover:text-gray-700 group"
+                    >
+                      <span>Δ Receita Pixel %</span>
+                      <div className="flex flex-col">
+                        <svg 
+                          className={`w-3 h-3 ${sortField === 'pixel_revenue_delta' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} 
+                          fill="currentColor" 
+                          viewBox="0 0 20 20"
+                        >
+                          <path d="M5 10l5-5 5 5H5z" />
+                        </svg>
+                        <svg 
+                          className={`w-3 h-3 -mt-1 ${sortField === 'pixel_revenue_delta' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} 
+                          fill="currentColor" 
+                          viewBox="0 0 20 20"
+                        >
+                          <path d="M15 10l-5 5-5-5h10z" />
+                        </svg>
+                      </div>
+                    </button>
+                  </div>
+                </th>
                 )}
                 {visibleColumns.roas && (
                 <SortableHeader
@@ -4589,35 +4843,6 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                       {formatNumber(campaign.transactions_first)}
                     </td>
                     )}
-                    {visibleColumns.pixel_transactions && (
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-pink-600">
-                      {formatNumber(campaign.pixel_transactions || 0)}
-                    </td>
-                    )}
-                    {visibleColumns.pixel_delta && (
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      {(() => {
-                        const pixelTransactions = campaign.pixel_transactions || 0
-                        if (!pixelTransactions || currentTransactions === 0) {
-                          return <span className="text-gray-400">—</span>
-                        }
-                        const pixelDeltaValue = pixelTransactions - currentTransactions
-                        const deltaPercent = (pixelDeltaValue / currentTransactions) * 100
-                        const compareWithAvg = pixelDeltaPercentAverage !== null
-                        const higherDelta = compareWithAvg ? deltaPercent >= pixelDeltaPercentAverage : deltaPercent >= 0
-                        return (
-                          <div className={`inline-flex flex-col rounded px-2 py-1 ${higherDelta ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
-                            <span>{higherDelta ? '+' : ''}{deltaPercent.toFixed(1)}%</span>
-                            {compareWithAvg && (
-                              <span className="text-[10px] text-gray-500">
-                                média {pixelDeltaPercentAverage >= 0 ? '+' : ''}{pixelDeltaPercentAverage.toFixed(1)}%
-                              </span>
-                            )}
-                          </div>
-                        )
-                      })()}
-                    </td>
-                    )}
                     {visibleColumns.transactions_delta && (
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       {(() => {
@@ -4697,9 +4922,110 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                       {formatCurrency(campaign.revenue_first)}
                     </td>
                     )}
+                    {visibleColumns.pixel_transactions && (
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">
+                      {formatNumber(Math.round(campaign.pixel_transactions || 0))}
+                    </td>
+                    )}
                     {visibleColumns.pixel_revenue && (
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-rose-600">
-                      {formatCurrency(campaign.pixel_revenue || 0)}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-purple-600">
+                      {formatCurrency(Math.round((campaign.pixel_revenue || 0) * 100) / 100)}
+                    </td>
+                    )}
+                    {visibleColumns.pixel_transactions_delta && (
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      {(() => {
+                        // Calcular delta entre pixel_transactions e transactions_origin_stack
+                        const pixelTransactions = campaign.pixel_transactions || 0
+                        const originStackTransactions = campaign.records && campaign.records.length > 0 
+                          ? campaign.records.reduce((sum: number, record: any) => sum + (record.transactions_origin_stack || 0), 0)
+                          : campaign.transactions_origin_stack || 0
+                        
+                        // Delta percentual: ((pixel - origin_stack) / origin_stack) * 100
+                        const deltaValue = originStackTransactions > 0 
+                          ? ((pixelTransactions - originStackTransactions) / originStackTransactions) * 100 
+                          : null
+                        const deltaPercentage = deltaValue !== null ? deltaValue.toFixed(1) : '-'
+                        const isPositive = deltaValue !== null && deltaValue > 0
+                        const isNegative = deltaValue !== null && deltaValue < 0
+                        
+                        // Cores baseadas no delta
+                        let bgColor = ''
+                        let textColor = ''
+                        
+                        if (deltaValue !== null) {
+                          if (deltaValue > 20) {
+                            bgColor = 'bg-green-100'
+                            textColor = 'text-green-700'
+                          } else if (deltaValue > 0) {
+                            bgColor = 'bg-green-50'
+                            textColor = 'text-green-600'
+                          } else if (deltaValue < -20) {
+                            bgColor = 'bg-red-100'
+                            textColor = 'text-red-700'
+                          } else if (deltaValue < 0) {
+                            bgColor = 'bg-red-50'
+                            textColor = 'text-red-600'
+                          } else {
+                            textColor = 'text-gray-600'
+                          }
+                        }
+                        
+                        const sign = isPositive ? '+' : ''
+                        return (
+                          <div className={`${bgColor} ${textColor} rounded px-2 py-1 inline-block font-medium`}>
+                            {deltaPercentage !== '-' ? `${sign}${deltaPercentage}%` : '-'}
+                          </div>
+                        )
+                      })()}
+                    </td>
+                    )}
+                    {visibleColumns.pixel_revenue_delta && (
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      {(() => {
+                        // Calcular delta entre pixel_revenue e revenue_origin_stack
+                        const pixelRevenue = campaign.pixel_revenue || 0
+                        const originStackRevenue = campaign.records && campaign.records.length > 0 
+                          ? campaign.records.reduce((sum: number, record: any) => sum + (record.revenue_origin_stack || 0), 0)
+                          : campaign.revenue_origin_stack || 0
+                        
+                        // Delta percentual: ((pixel - origin_stack) / origin_stack) * 100
+                        const deltaValue = originStackRevenue > 0 
+                          ? ((pixelRevenue - originStackRevenue) / originStackRevenue) * 100 
+                          : null
+                        const deltaPercentage = deltaValue !== null ? deltaValue.toFixed(1) : '-'
+                        const isPositive = deltaValue !== null && deltaValue > 0
+                        const isNegative = deltaValue !== null && deltaValue < 0
+                        
+                        // Cores baseadas no delta
+                        let bgColor = ''
+                        let textColor = ''
+                        
+                        if (deltaValue !== null) {
+                          if (deltaValue > 20) {
+                            bgColor = 'bg-green-100'
+                            textColor = 'text-green-700'
+                          } else if (deltaValue > 0) {
+                            bgColor = 'bg-green-50'
+                            textColor = 'text-green-600'
+                          } else if (deltaValue < -20) {
+                            bgColor = 'bg-red-100'
+                            textColor = 'text-red-700'
+                          } else if (deltaValue < 0) {
+                            bgColor = 'bg-red-50'
+                            textColor = 'text-red-600'
+                          } else {
+                            textColor = 'text-gray-600'
+                          }
+                        }
+                        
+                        const sign = isPositive ? '+' : ''
+                        return (
+                          <div className={`${bgColor} ${textColor} rounded px-2 py-1 inline-block font-medium`}>
+                            {deltaPercentage !== '-' ? `${sign}${deltaPercentage}%` : '-'}
+                          </div>
+                        )
+                      })()}
                     </td>
                     )}
                     {visibleColumns.roas && (
@@ -5299,31 +5625,23 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                         const cpaDeltas: number[] = []
                         
                         sortedCreativeData.slice(0, 20).forEach((item: any) => {
-                          // Delta ROAS
-                          const revenueLND = item.records && item.records.length > 0 
-                            ? item.records.reduce((sum: number, record: any) => sum + record.revenue, 0)
-                            : item.revenue;
-                          const revenueOS = item.records && item.records.length > 0 
-                            ? item.records.reduce((sum: number, record: any) => sum + (record.revenue_origin_stack || 0), 0)
-                            : item.revenue_origin_stack;
-                          const roasLND = item.cost > 0 ? revenueLND / item.cost : 0;
-                          const roasOS = item.cost > 0 ? revenueOS / item.cost : 0;
-                          if (roasLND > 0) {
-                            roasDeltas.push(((roasOS - roasLND) / roasLND) * 100)
-                          }
-                          
-                          // Delta CPA
-                          const transactionsLND = item.records && item.records.length > 0 
-                            ? item.records.reduce((sum: number, record: any) => sum + record.transactions_first, 0)
-                            : item.transactions_first;
-                          const transactionsOS = item.records && item.records.length > 0 
-                            ? item.records.reduce((sum: number, record: any) => sum + (record.transactions_first_origin_stack || 0), 0)
-                            : item.transactions_first_origin_stack;
-                          const cpaLND = transactionsLND > 0 ? item.cost / transactionsLND : 0;
-                          const cpaOS = transactionsOS > 0 ? item.cost / transactionsOS : 0;
-                          if (cpaLND > 0) {
-                            cpaDeltas.push(((cpaLND - cpaOS) / cpaLND) * 100)
-                          }
+                        // Delta ROAS - API 2.0: fsm_* = origin_stack
+                        const revenueLND = toNumber(item.revenue || 0)
+                        const revenueOS = toNumber(item.revenue_origin_stack || 0)
+                        const roasLND = item.cost > 0 ? revenueLND / item.cost : 0;
+                        const roasOS = item.cost > 0 ? revenueOS / item.cost : 0;
+                        if (roasLND > 0 && revenueOS > 0) {
+                          roasDeltas.push(((roasOS - roasLND) / roasLND) * 100)
+                        }
+                        
+                        // Delta CPA - API 2.0: fsm_* = origin_stack
+                        const transactionsLND = toNumber(item.transactions_first || 0)
+                        const transactionsOS = toNumber(item.transactions_first_origin_stack || 0)
+                        const cpaLND = transactionsLND > 0 ? item.cost / transactionsLND : 0;
+                        const cpaOS = transactionsOS > 0 ? item.cost / transactionsOS : 0;
+                        if (cpaLND > 0 && transactionsOS > 0) {
+                          cpaDeltas.push(((cpaLND - cpaOS) / cpaLND) * 100)
+                        }
                         })
                         
                         const avgRoasDelta = roasDeltas.length > 0 ? roasDeltas.reduce((a, b) => a + b, 0) / roasDeltas.length : 0
@@ -5374,17 +5692,23 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                             {creativeVisibleColumns.transactions_delta && (
                               <td className="px-4 py-3 text-sm">
                                 {(() => {
-                                  // ROAS Last Non-Direct: usar sempre os valores originais (não afetados pelo filtro)
-                                  const revenueLND = item.records && item.records.length > 0 
-                                    ? item.records.reduce((sum: number, record: any) => sum + record.revenue, 0)
-                                    : item.revenue;
-                                  const roasLND = item.cost > 0 ? revenueLND / item.cost : 0;
+                                  // API 2.0: fsm_* = origin_stack
+                                  // Usar valores agregados do item (já calculados no agrupamento)
+                                  const revenueLND = toNumber(item.revenue || 0)
+                                  const revenueOS = toNumber(item.revenue_origin_stack || 0)
                                   
-                                  // ROAS Origin Stack: usar sempre os valores originais
-                                  const revenueOS = item.records && item.records.length > 0 
-                                    ? item.records.reduce((sum: number, record: any) => sum + (record.revenue_origin_stack || 0), 0)
-                                    : item.revenue_origin_stack;
+                                  // Se não temos dados de ambos os modelos, não podemos calcular o delta
+                                  if (revenueOS === 0 && revenueLND === 0) {
+                                    return <span className="text-gray-400">—</span>
+                                  }
+                                  
+                                  const roasLND = item.cost > 0 ? revenueLND / item.cost : 0;
                                   const roasOS = item.cost > 0 ? revenueOS / item.cost : 0;
+                                  
+                                  // Se não temos ROAS LND, não podemos calcular o delta
+                                  if (roasLND === 0) {
+                                    return <span className="text-gray-400">—</span>
+                                  }
                                   
                                   // Delta percentual: ((ROAS_OS - ROAS_LND) / ROAS_LND) * 100
                                   const deltaValue = roasLND > 0 ? ((roasOS - roasLND) / roasLND) * 100 : null;
@@ -5447,17 +5771,23 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                             {creativeVisibleColumns.cpa_delta && (
                               <td className="px-4 py-3 text-sm">
                                 {(() => {
-                                  // CPA Last Non-Direct: usar sempre os valores originais (não afetados pelo filtro)
-                                  const transactionsLND = item.records && item.records.length > 0 
-                                    ? item.records.reduce((sum: number, record: any) => sum + record.transactions_first, 0)
-                                    : item.transactions_first;
-                                  const cpaLND = transactionsLND > 0 ? item.cost / transactionsLND : 0;
+                                  // API 2.0: fsm_* = origin_stack
+                                  // Usar valores agregados do item (já calculados no agrupamento)
+                                  const transactionsLND = toNumber(item.transactions_first || 0)
+                                  const transactionsOS = toNumber(item.transactions_first_origin_stack || 0)
                                   
-                                  // CPA Origin Stack: usar sempre os valores originais
-                                  const transactionsOS = item.records && item.records.length > 0 
-                                    ? item.records.reduce((sum: number, record: any) => sum + (record.transactions_first_origin_stack || 0), 0)
-                                    : item.transactions_first_origin_stack;
+                                  // Se não temos dados de ambos os modelos, não podemos calcular o delta
+                                  if (transactionsOS === 0 && transactionsLND === 0) {
+                                    return <span className="text-gray-400">—</span>
+                                  }
+                                  
+                                  const cpaLND = transactionsLND > 0 ? item.cost / transactionsLND : 0;
                                   const cpaOS = transactionsOS > 0 ? item.cost / transactionsOS : 0;
+                                  
+                                  // Se não temos CPA LND, não podemos calcular o delta
+                                  if (cpaLND === 0) {
+                                    return <span className="text-gray-400">—</span>
+                                  }
                                   
                                   // Delta percentual: ((CPA_LND - CPA_OS) / CPA_LND) * 100
                                   // CPA menor é melhor, então invertemos: se OS for menor, delta é positivo (verde)
@@ -5793,446 +6123,6 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                   </div>
                 </div>
               )}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Aba Tendência */}
-      {activeTab === 'trend' && (
-        <div className="space-y-6">
-          {isLoadingTrend ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              <span className="ml-3 text-gray-600">Carregando dados de tendência...</span>
-            </div>
-          ) : trendData.length === 0 ? (
-            <div className="bg-white rounded-lg shadow-sm border p-8 text-center">
-              <TrendingUp className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhum dado de tendência encontrado</h3>
-              <p className="text-gray-500">Não há dados de tendência disponíveis para este período.</p>
-            </div>
-          ) : (
-            <>
-              {/* Tabela de Tendência */}
-              <div className={`bg-white rounded-lg shadow-sm border overflow-hidden ${isFullWidth ? 'fixed inset-0 z-50 m-0 rounded-none' : ''}`}>
-                {/* Header com título e botões */}
-                <div className="px-6 py-3 border-b border-gray-200">
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-semibold text-gray-900">Tendência de Campanhas</h3>
-                      <div className="flex items-center gap-2">
-                        {/* Botão Download XLSX */}
-                        <button
-                          onClick={handleDownloadTrendXLSX}
-                          className="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 bg-green-600 text-white hover:bg-green-700 shadow-sm"
-                          title="Baixar dados de tendência em Excel"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
-                          <span>XLSX</span>
-                        </button>
-                        {/* Botão para mostrar todas as semanas */}
-                        <button
-                          onClick={() => setShowAllWeeks(!showAllWeeks)}
-                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
-                            showAllWeeks 
-                              ? 'bg-purple-600 text-white hover:bg-purple-700 shadow-sm' 
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
-                          }`}
-                        >
-                          {showAllWeeks ? (
-                            <>
-                              <ChevronUp className="w-4 h-4" />
-                              <span>Mostrar só W4</span>
-                            </>
-                          ) : (
-                            <>
-                              <ChevronDown className="w-4 h-4" />
-                              <span>Mostrar todas as semanas</span>
-                            </>
-                          )}
-                        </button>
-                        {/* Botão Full Width */}
-                        <button
-                          onClick={() => setIsFullWidth(!isFullWidth)}
-                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
-                            isFullWidth 
-                              ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm' 
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
-                          }`}
-                        >
-                          {isFullWidth ? (
-                            <>
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9V4.5M9 9H4.5M9 9L3.5 3.5M15 9V4.5M15 9h4.5M15 9l5.5-5.5M9 15v4.5M9 15H4.5M9 15l-5.5 5.5M15 15v4.5M15 15h4.5M15 15l5.5 5.5" />
-                              </svg>
-                              <span>Tela Normal</span>
-                            </>
-                          ) : (
-                            <>
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                              </svg>
-                              <span>Tela Cheia</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                    {/* Botões para expandir/colapsar áreas */}
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs font-medium text-gray-700">Exibir áreas:</span>
-                      <button
-                        onClick={() => setExpandedAreas(prev => ({ ...prev, custo: !prev.custo }))}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-200 flex items-center gap-1 ${
-                          expandedAreas.custo 
-                            ? 'bg-green-100 text-green-800 border border-green-300' 
-                            : 'bg-gray-100 text-gray-600 border border-gray-300'
-                        }`}
-                      >
-                        {expandedAreas.custo ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                        <span>Custo</span>
-                      </button>
-                      <button
-                        onClick={() => setExpandedAreas(prev => ({ ...prev, receita: !prev.receita }))}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-200 flex items-center gap-1 ${
-                          expandedAreas.receita 
-                            ? 'bg-blue-100 text-blue-800 border border-blue-300' 
-                            : 'bg-gray-100 text-gray-600 border border-gray-300'
-                        }`}
-                      >
-                        {expandedAreas.receita ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                        <span>Receita</span>
-                      </button>
-                      <button
-                        onClick={() => setExpandedAreas(prev => ({ ...prev, roas: !prev.roas }))}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-200 flex items-center gap-1 ${
-                          expandedAreas.roas 
-                            ? 'bg-purple-100 text-purple-800 border border-purple-300' 
-                            : 'bg-gray-100 text-gray-600 border border-gray-300'
-                        }`}
-                      >
-                        {expandedAreas.roas ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                        <span>ROAS</span>
-                      </button>
-                      <button
-                        onClick={() => setExpandedAreas(prev => ({ ...prev, crescimento: !prev.crescimento }))}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-200 flex items-center gap-1 ${
-                          expandedAreas.crescimento 
-                            ? 'bg-orange-100 text-orange-800 border border-orange-300' 
-                            : 'bg-gray-100 text-gray-600 border border-gray-300'
-                        }`}
-                      >
-                        {expandedAreas.crescimento ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                        <span>Crescimento</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                {!expandedAreas.custo && !expandedAreas.receita && !expandedAreas.roas && !expandedAreas.crescimento ? (
-                  <div className="p-8 text-center">
-                    <TrendingUp className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhuma área selecionada</h3>
-                    <p className="text-gray-500">Clique nos botões acima para expandir as áreas que deseja visualizar.</p>
-                  </div>
-                ) : (
-                  <div className={`overflow-x-auto ${isFullWidth ? 'h-[calc(100vh-120px)] overflow-y-auto' : ''}`}>
-                    <table className="min-w-full divide-y divide-gray-200">
-                    <thead className={`bg-gray-50 ${isFullWidth ? 'sticky top-0 z-20' : ''}`}>
-                      {/* Primeira linha: áreas principais */}
-                      <tr>
-                        <th rowSpan={2} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-300">
-                          Campanha
-                        </th>
-                        <th rowSpan={2} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-300">
-                          Plataforma
-                        </th>
-                        {/* Área Custo */}
-                        {expandedAreas.custo && (
-                          <>
-                            <th colSpan={showAllWeeks ? 4 : 1} className="px-6 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider bg-green-50 border-r border-gray-300">
-                              💰 Custo
-                            </th>
-                          </>
-                        )}
-                        {/* Área Receita */}
-                        {expandedAreas.receita && (
-                          <>
-                            <th colSpan={showAllWeeks ? 4 : 1} className="px-6 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider bg-blue-50 border-r border-gray-300">
-                              💵 Receita
-                            </th>
-                          </>
-                        )}
-                        {/* Área ROAS */}
-                        {expandedAreas.roas && (
-                          <>
-                            <th colSpan={showAllWeeks ? 4 : 1} className="px-6 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider bg-purple-50 border-r border-gray-300">
-                              📊 ROAS
-                            </th>
-                          </>
-                        )}
-                        {/* Área Crescimento */}
-                        {expandedAreas.crescimento && (
-                          <>
-                            <th colSpan={showAllWeeks ? 3 : 1} className="px-6 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider bg-orange-50 border-r border-gray-300">
-                              📈 Crescimento ROAS
-                            </th>
-                            <th className="px-6 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider bg-orange-50 border-r border-gray-300">
-                              Tendência
-                            </th>
-                          </>
-                        )}
-                        <th rowSpan={2} className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Custo Médio Diário W4
-                        </th>
-                      </tr>
-                      {/* Segunda linha: semanas individuais */}
-                      <tr>
-                        {/* Colunas de Custo */}
-                        {expandedAreas.custo && (
-                          <>
-                            {showAllWeeks && (
-                              <>
-                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-600 bg-green-50 border-r border-gray-200">
-                                  W1
-                                </th>
-                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-600 bg-green-50 border-r border-gray-200">
-                                  W2
-                                </th>
-                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-600 bg-green-50 border-r border-gray-200">
-                                  W3
-                                </th>
-                              </>
-                            )}
-                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-700 bg-green-50 border-r border-gray-200 font-semibold">
-                              W4
-                            </th>
-                          </>
-                        )}
-                        {/* Colunas de Receita */}
-                        {expandedAreas.receita && (
-                          <>
-                            {showAllWeeks && (
-                              <>
-                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-600 bg-blue-50 border-r border-gray-200">
-                                  W1
-                                </th>
-                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-600 bg-blue-50 border-r border-gray-200">
-                                  W2
-                                </th>
-                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-600 bg-blue-50 border-r border-gray-200">
-                                  W3
-                                </th>
-                              </>
-                            )}
-                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-700 bg-blue-50 border-r border-gray-200 font-semibold">
-                              W4
-                            </th>
-                          </>
-                        )}
-                        {/* Colunas de ROAS */}
-                        {expandedAreas.roas && (
-                          <>
-                            {showAllWeeks && (
-                              <>
-                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-600 bg-purple-50 border-r border-gray-200">
-                                  W1
-                                </th>
-                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-600 bg-purple-50 border-r border-gray-200">
-                                  W2
-                                </th>
-                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-600 bg-purple-50 border-r border-gray-200">
-                                  W3
-                                </th>
-                              </>
-                            )}
-                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-700 bg-purple-50 border-r border-gray-200 font-semibold">
-                              W4
-                            </th>
-                          </>
-                        )}
-                        {/* Colunas de Crescimento */}
-                        {expandedAreas.crescimento && (
-                          <>
-                            {showAllWeeks && (
-                              <>
-                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-600 bg-orange-50 border-r border-gray-200">
-                                  W2 vs W1
-                                </th>
-                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-600 bg-orange-50 border-r border-gray-200">
-                                  W3 vs W2
-                                </th>
-                              </>
-                            )}
-                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-700 bg-orange-50 border-r border-gray-200 font-semibold">
-                              W4 vs W3
-                            </th>
-                          </>
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {trendData.map((item, index) => (
-                        <tr key={index} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 border-r border-gray-200">
-                            {item.campaign_name}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 border-r border-gray-200">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                              item.platform === 'meta_ads' 
-                                ? 'bg-blue-100 text-blue-800' 
-                                : 'bg-green-100 text-green-800'
-                            }`}>
-                              {item.platform === 'meta_ads' ? 'Meta Ads' : 'Google Ads'}
-                            </span>
-                          </td>
-                          {/* Colunas de Custo */}
-                          {expandedAreas.custo && (
-                            <>
-                              {showAllWeeks && (
-                                <>
-                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 bg-green-50 border-r border-gray-200">
-                                    {item.cost_w1.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                  </td>
-                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 bg-green-50 border-r border-gray-200">
-                                    {item.cost_w2.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                  </td>
-                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 bg-green-50 border-r border-gray-200">
-                                    {item.cost_w3.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                  </td>
-                                </>
-                              )}
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 font-semibold bg-green-50 border-r border-gray-200">
-                                {item.cost_w4.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                              </td>
-                            </>
-                          )}
-                          {/* Colunas de Receita */}
-                          {expandedAreas.receita && (
-                            <>
-                              {showAllWeeks && (
-                                <>
-                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 bg-blue-50 border-r border-gray-200">
-                                    {item.revenue_w1.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                  </td>
-                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 bg-blue-50 border-r border-gray-200">
-                                    {item.revenue_w2.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                  </td>
-                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 bg-blue-50 border-r border-gray-200">
-                                    {item.revenue_w3.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                  </td>
-                                </>
-                              )}
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 font-semibold bg-blue-50 border-r border-gray-200">
-                                {item.revenue_w4.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                              </td>
-                            </>
-                          )}
-                          {/* Colunas de ROAS */}
-                          {expandedAreas.roas && (
-                            <>
-                              {showAllWeeks && (
-                                <>
-                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 bg-purple-50 border-r border-gray-200">
-                                    {item.roas_w1.toFixed(2)}
-                                  </td>
-                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 bg-purple-50 border-r border-gray-200">
-                                    {item.roas_w2.toFixed(2)}
-                                  </td>
-                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 bg-purple-50 border-r border-gray-200">
-                                    {item.roas_w3.toFixed(2)}
-                                  </td>
-                                </>
-                              )}
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-center text-gray-900 font-semibold bg-purple-50 border-r border-gray-200">
-                                {item.roas_w4.toFixed(2)}
-                              </td>
-                            </>
-                          )}
-                          {/* Colunas de Crescimento */}
-                          {expandedAreas.crescimento && (
-                            <>
-                              {showAllWeeks && (
-                                <>
-                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center bg-orange-50 border-r border-gray-200">
-                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                      item.roas_growth_w2_vs_w1_pct >= 0
-                                        ? 'bg-green-100 text-green-800'
-                                        : 'bg-red-100 text-red-800'
-                                    }`}>
-                                      {item.roas_growth_w2_vs_w1_pct >= 0 ? '+' : ''}{item.roas_growth_w2_vs_w1_pct.toFixed(2)}%
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-4 whitespace-nowrap text-sm text-center bg-orange-50 border-r border-gray-200">
-                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                      item.roas_growth_w3_vs_w2_pct >= 0
-                                        ? 'bg-green-100 text-green-800'
-                                        : 'bg-red-100 text-red-800'
-                                    }`}>
-                                      {item.roas_growth_w3_vs_w2_pct >= 0 ? '+' : ''}{item.roas_growth_w3_vs_w2_pct.toFixed(2)}%
-                                    </span>
-                                  </td>
-                                </>
-                              )}
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-center bg-orange-50 border-r border-gray-200">
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                  item.roas_growth_w4_vs_w3_pct >= 0
-                                    ? 'bg-green-100 text-green-800'
-                                    : 'bg-red-100 text-red-800'
-                                }`}>
-                                  {item.roas_growth_w4_vs_w3_pct >= 0 ? '+' : ''}{item.roas_growth_w4_vs_w3_pct.toFixed(2)}%
-                                </span>
-                              </td>
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-center bg-orange-50 border-r border-gray-200">
-                                <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                  {item.roas_trend}
-                                </span>
-                              </td>
-                            </>
-                          )}
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-900 font-semibold">
-                            {item.avg_daily_cost_w4.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  </div>
-                )}
-              </div>
-
-              {/* Resumo */}
-              <div className="bg-white rounded-lg shadow-sm border p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Resumo</h3>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="bg-blue-50 rounded-lg p-4">
-                    <div className="text-sm font-medium text-blue-600 mb-1">Total de Campanhas</div>
-                    <div className="text-2xl font-bold text-blue-900">{trendData.length}</div>
-                  </div>
-                  <div className="bg-green-50 rounded-lg p-4">
-                    <div className="text-sm font-medium text-green-600 mb-1">Custo Total W4</div>
-                    <div className="text-2xl font-bold text-green-900">
-                      {trendData.reduce((sum, item) => sum + item.cost_w4, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                    </div>
-                  </div>
-                  <div className="bg-purple-50 rounded-lg p-4">
-                    <div className="text-sm font-medium text-purple-600 mb-1">Receita Total W4</div>
-                    <div className="text-2xl font-bold text-purple-900">
-                      {trendData.reduce((sum, item) => sum + item.revenue_w4, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                    </div>
-                  </div>
-                  <div className="bg-orange-50 rounded-lg p-4">
-                    <div className="text-sm font-medium text-orange-600 mb-1">ROAS Médio W4</div>
-                    <div className="text-2xl font-bold text-orange-900">
-                      {trendData.length > 0 
-                        ? (trendData.reduce((sum, item) => sum + item.roas_w4, 0) / trendData.length).toFixed(2)
-                        : '0.00'}
-                    </div>
-                  </div>
-                </div>
-              </div>
             </>
           )}
         </div>

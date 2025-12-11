@@ -283,4 +283,47 @@ export interface AdsCampaignTrendRequest {
 
 export interface AdsCampaignTrendResponse {
   data: AdsCampaignTrendItem[]
+}
+
+// Tipos para Nova API de Campanhas de Mídia Paga (API 2.0)
+export interface PaidMediaCampaignResult {
+  campaign_id: number
+  campaign_name: string
+  clicks: number
+  cost: number
+  date: string
+  first_annual_revenue: number
+  first_annual_subscriptions: number
+  first_montly_revenue: number
+  first_montly_subscriptions: number
+  first_revenue: number
+  first_transaction: number
+  fsm_first_annual_revenue: number
+  fsm_first_annual_subscriptions: number
+  fsm_first_montly_revenue: number
+  fsm_first_montly_subscriptions: number
+  fsm_first_revenue: number
+  fsm_first_transaction: number
+  fsm_recurring_annual_revenue: number
+  fsm_recurring_annual_subscriptions: number
+  fsm_recurring_montly_revenue: number
+  fsm_recurring_montly_subscriptions: number
+  fsm_revenue: number
+  fsm_transactions: number
+  impressions: number
+  leads: number
+  pixel_revenue: number
+  pixel_transactions: number
+  platform: string
+  recurring_annual_revenue: number
+  recurring_annual_subscriptions: number
+  recurring_montly_revenue: number
+  recurring_montly_subscriptions: number
+  revenue: number
+  transactions: number
+}
+
+export interface PaidMediaCampaignsResponse {
+  count?: number
+  data: PaidMediaCampaignResult[]
 } 
