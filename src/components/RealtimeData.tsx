@@ -696,8 +696,8 @@ const RealtimeData = ({ selectedTable }: RealtimeDataProps) => {
                     >
                       ×
                     </button>
-                </span>
-              )}
+                  </span>
+                )}
                 {activeFilters.sourceMedium && (
                   <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
                     Origem: {activeFilters.sourceMedium.source} / {activeFilters.sourceMedium.medium}
