@@ -637,9 +637,9 @@ const ProductsFunnel = ({ selectedTable }: ProductsFunnelProps) => {
     }
   }
 
-  // Limpar dados: substituir NaN por null
+  // Limpar dados: substituir NaN por null e normalizar strings
   const cleanData = (items: ProductsFunnelDataItem[]): ProductsFunnelDataItem[] => {
-    return items.map(item => ({
+    const cleaned = items.map(item => ({
       ...item,
       add_payment_info: isNaN(item.add_payment_info) ? 0 : item.add_payment_info,
       add_shipping_info: isNaN(item.add_shipping_info) ? 0 : item.add_shipping_info,
@@ -662,6 +662,31 @@ const ProductsFunnel = ({ selectedTable }: ProductsFunnelProps) => {
       item_id: item.item_id === null || item.item_id === undefined || item.item_id === 'undefined' ? '(not set)' : String(item.item_id),
       item_name: item.item_name === null || item.item_name === undefined || item.item_name === '(not set)' ? '(not set)' : String(item.item_name)
     }))
+
+    // Agrupar por item_id e somar valores numéricos
+    const groupedMap = new Map<string, ProductsFunnelDataItem>()
+
+    cleaned.forEach(item => {
+      const itemId = item.item_id || '(not set)'
+      const existing = groupedMap.get(itemId)
+
+      if (!existing) {
+        // Primeira ocorrência deste item_id
+        groupedMap.set(itemId, { ...item })
+      } else {
+        // Agregar valores numéricos
+        existing.add_payment_info += item.add_payment_info
+        existing.add_shipping_info += item.add_shipping_info
+        existing.add_to_cart += item.add_to_cart
+        existing.begin_checkout += item.begin_checkout
+        existing.purchase += item.purchase
+        existing.quantity = (existing.quantity || 0) + (item.quantity || 0)
+        existing.revenue += item.revenue
+        existing.view_item += item.view_item
+      }
+    })
+
+    return Array.from(groupedMap.values())
   }
 
   const handleMultiSelectChange = (
