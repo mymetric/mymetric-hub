@@ -49,6 +49,7 @@ import WhatsAppFunnel from './WhatsAppFunnel'
 import PaidMediaDashboard from './PaidMediaDashboard'
 import FreteDashboard from './FreteDashboard'
 import RealtimeData from './RealtimeData'
+import InfluencersDashboard from './InfluencersDashboard'
 import SessionStatus from './SessionStatus'
 import Configuracao from './UsersConfig'
 import TokenDebug from './TokenDebug'
@@ -643,8 +644,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   useEffect(() => {
     const fetchMetrics = async () => {
       try {
-        // Evitar buscar dados básicos quando a aba for Mídia Paga
-        if (activeTab === 'midia-paga') {
+        // Evitar buscar dados básicos quando a aba for Mídia Paga ou Influencers
+        if (activeTab === 'midia-paga' || activeTab === 'influencers') {
           return
         }
         const token = localStorage.getItem('auth-token')
@@ -1717,6 +1718,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   const submenuTabs = [
     ...(selectedTable === 'havaianas' ? ['havaianas'] : []),
     ...(selectedTable === 'coroasparavelorio' ? ['funil-whatsapp'] : []),
+    ...(selectedTable === 'iwannasleep' ? ['influencers'] : []),
     'dados-detalhados',
     'frete',
     'ab-testing',
@@ -1890,7 +1892,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 'frete': { label: 'Frete', icon: Truck },
                 'tempo-real': { label: 'Tempo Real', icon: Activity },
                 'pedidos': { label: 'Pedidos', icon: ShoppingBag },
-                'leads': { label: 'Leads', icon: User }
+                'leads': { label: 'Leads', icon: User },
+                'influencers': { label: 'Influencers', icon: Users2 }
               }[tabId]
 
               if (!tabConfig) return null
@@ -1938,6 +1941,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       const tabConfig = {
                         'havaianas': { label: 'Product Scoring', icon: Package },
                         'funil-whatsapp': { label: 'Funil de Vendas por WhatsApp', icon: MessageSquare },
+                        'influencers': { label: 'Influencers', icon: Users2 },
                         'dados-detalhados': { label: 'Dados Detalhados', icon: Database },
                         'frete': { label: 'Frete', icon: Truck },
                         'ab-testing': { label: 'Testes A/B', icon: Target },
@@ -1987,6 +1991,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   {activeTab === 'frete' && 'Frete'}
                   {activeTab === 'funil-whatsapp' && 'Funil de Vendas por WhatsApp'}
                   {activeTab === 'havaianas' && 'Product Scoring'}
+                  {activeTab === 'influencers' && 'Influencers'}
                   {activeTab === 'produtos' && (
                     productsSubTab === null 
                       ? 'Produtos' 
@@ -2265,6 +2270,28 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                         )}
                       </div>
                     </button>
+
+                    {selectedTable === 'iwannasleep' && (
+                      <button
+                        onClick={() => {
+                          handleTabChange('influencers')
+                          setShowMobileTabMenu(false)
+                        }}
+                        className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                          activeTab === 'influencers'
+                            ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                            : 'text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Users2 className="w-5 h-5" />
+                          <span>Influencers</span>
+                          {activeTab === 'influencers' && (
+                            <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full"></div>
+                          )}
+                        </div>
+                      </button>
+                    )}
                   </div>
                 </div>
               </>
@@ -4562,6 +4589,15 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         {activeTab === 'midia-paga' && (
           <PaidMediaDashboard 
             selectedTable={selectedTable}
+            startDate={startDate}
+            endDate={endDate}
+            token={authToken}
+          />
+        )}
+
+        {/* Influencers Tab - apenas para iwannasleep */}
+        {activeTab === 'influencers' && selectedTable === 'iwannasleep' && (
+          <InfluencersDashboard 
             startDate={startDate}
             endDate={endDate}
             token={authToken}

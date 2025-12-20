@@ -114,6 +114,11 @@ export const getDefaultPeriodForTab = (tab: string) => {
         start: presets.last12months.start,
         end: presets.last12months.end
       }
+    case 'influencers':
+      return {
+        start: presets.thisMonth.start,
+        end: presets.thisMonth.end
+      }
     default:
       return {
         start: presets.thisMonth.start,

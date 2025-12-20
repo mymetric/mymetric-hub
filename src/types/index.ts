@@ -334,4 +334,31 @@ export interface PaidMediaCampaignResult {
 export interface PaidMediaCampaignsResponse {
   count?: number
   data: PaidMediaCampaignResult[]
+}
+
+// Tipos para Influencers (iwannasleep)
+export interface InfluencerData {
+  event_date: string | null
+  created_at: string | null
+  transaction_id: string | null
+  gross_value: number | null
+  net_value: number | null
+  source: string | null
+  medium: string | null
+  influencer_name: string | null
+  coupon: string | null
+  type: string | null
+  youtube: string | null
+  instagram: string | null
+  tiktok: string | null
+}
+
+export interface InfluencersRequest {
+  start_date?: string
+  end_date?: string
+}
+
+export interface InfluencersResponse {
+  count?: number
+  data: InfluencerData[]
 } 
