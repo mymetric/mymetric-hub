@@ -1194,6 +1194,8 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     metaAdsCount: campaignData.filter(item => item.platform === 'meta_ads').length
   })
 
+  // Para coffeemais: excluir recorrências mensais da receita e ROAS
+  const isCoffeemais = selectedTable === 'coffeemais'
 
   // Agrupar dados por campanha
   const groupedData = filteredData.length > 0 ? filteredData.reduce((acc, item) => {
@@ -1898,14 +1900,11 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
   })
 
   // Calcular totais - usar campaignSummaries se disponível, senão calcular diretamente de filteredData
-  // Para coffeemais: excluir recorrências mensais da receita e ROAS
-  const isCoffeemais = selectedTable === 'coffeemais'
+  // NOTA: campaignSummaries já vem de groupedData onde recurring_montly_revenue já foi subtraído para coffeemais
   const totals = campaignSummaries.length > 0 ? campaignSummaries.reduce((acc, item) => {
     const baseRevenue = attributionModel === 'origin_stack' ? (item.revenue_origin_stack || item.revenue) : item.revenue
-    // Para coffeemais, excluir recorrências mensais da receita (mas manter primeira mensal, primeira anual e recorrências anuais)
-    const revenue = isCoffeemais 
-      ? baseRevenue - (item.recurring_montly_revenue || 0)
-      : baseRevenue
+    // Para campaignSummaries, a receita já foi ajustada no groupedData, então não subtrair novamente
+    const revenue = baseRevenue
     
     return {
       cost: acc.cost + item.cost,
