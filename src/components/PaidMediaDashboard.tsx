@@ -795,7 +795,11 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
       }
       if (filteredData && filteredData.length > 0) {
         const totalCost = filteredData.reduce((sum, campaign) => sum + campaign.cost, 0)
-        const totalRevenue = filteredData.reduce((sum, campaign) => sum + campaign.revenue, 0)
+        // Para coffeemais, excluir recorrências mensais da receita no cálculo do ROAS do título
+        const totalRevenue = filteredData.reduce((sum, campaign) => {
+          const baseRevenue = campaign.revenue || 0
+          return sum + (isCoffeemais ? baseRevenue - (campaign.recurring_montly_revenue || 0) : baseRevenue)
+        }, 0)
         const roas = totalCost > 0 ? (totalRevenue / totalCost).toFixed(1) : '0.0'
         
         // Formata as datas para exibição
@@ -1241,22 +1245,30 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     const transactionsFirstOS = toNumber(item.transactions_first_origin_stack ?? 0)
     const revenueFirstOS = toNumber(item.revenue_first_origin_stack ?? 0)
     
+    // Para coffeemais, excluir recorrências mensais da receita
+    const adjustedRevenueOS = isCoffeemais 
+      ? revenueOS - (toNumber(item.recurring_montly_revenue || 0))
+      : revenueOS
+    const adjustedRevenueLND = isCoffeemais 
+      ? revenueLND - (toNumber(item.recurring_montly_revenue || 0))
+      : revenueLND
+    
     // Usar as métricas corretas baseado no modelo de atribuição selecionado
     if (attributionModel === 'origin_stack') {
       acc[key].transactions += transactionsOS
-      acc[key].revenue += revenueOS
+      acc[key].revenue += adjustedRevenueOS
       acc[key].transactions_first += transactionsFirstOS
       acc[key].revenue_first += revenueFirstOS
     } else {
       acc[key].transactions += transactionsLND
-      acc[key].revenue += revenueLND
+      acc[key].revenue += adjustedRevenueLND
       acc[key].transactions_first += transactionsFirstLND
       acc[key].revenue_first += revenueFirstLND
     }
     
-    // Sempre armazenar ambos os modelos para calcular deltas
+    // Sempre armazenar ambos os modelos para calcular deltas (ajustado para coffeemais)
     acc[key].transactions_origin_stack += transactionsOS
-    acc[key].revenue_origin_stack += revenueOS
+    acc[key].revenue_origin_stack += adjustedRevenueOS
     acc[key].transactions_first_origin_stack += transactionsFirstOS
     acc[key].revenue_first_origin_stack += revenueFirstOS
     
@@ -1332,21 +1344,34 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
           break
         case 'transactions_delta':
           // Usar valores originais (não afetados pelo filtro de atribuição)
+          // Ajustado para coffeemais: excluir recorrências mensais
           const aRevenueLND = a.records && a.records.length > 0 
-            ? a.records.reduce((sum: number, record: any) => sum + record.revenue, 0)
+            ? a.records.reduce((sum: number, record: any) => {
+                const baseRevenue = record.revenue || 0
+                return sum + (isCoffeemais ? baseRevenue - (record.recurring_montly_revenue || 0) : baseRevenue)
+              }, 0)
             : a.revenue;
           const aRevenueOS = a.records && a.records.length > 0 
-            ? a.records.reduce((sum: number, record: any) => sum + (record.revenue_origin_stack || 0), 0)
+            ? a.records.reduce((sum: number, record: any) => {
+                const baseRevenueOS = record.revenue_origin_stack || 0
+                return sum + (isCoffeemais ? baseRevenueOS - (record.recurring_montly_revenue || 0) : baseRevenueOS)
+              }, 0)
             : a.revenue_origin_stack;
           const aRoasLND = a.cost > 0 ? aRevenueLND / a.cost : 0
           const aRoasOS = a.cost > 0 ? aRevenueOS / a.cost : 0
           aValue = aRoasLND > 0 ? ((aRoasOS - aRoasLND) / aRoasLND) * 100 : 0
           
           const bRevenueLND = b.records && b.records.length > 0 
-            ? b.records.reduce((sum: number, record: any) => sum + record.revenue, 0)
+            ? b.records.reduce((sum: number, record: any) => {
+                const baseRevenue = record.revenue || 0
+                return sum + (isCoffeemais ? baseRevenue - (record.recurring_montly_revenue || 0) : baseRevenue)
+              }, 0)
             : b.revenue;
           const bRevenueOS = b.records && b.records.length > 0 
-            ? b.records.reduce((sum: number, record: any) => sum + (record.revenue_origin_stack || 0), 0)
+            ? b.records.reduce((sum: number, record: any) => {
+                const baseRevenueOS = record.revenue_origin_stack || 0
+                return sum + (isCoffeemais ? baseRevenueOS - (record.recurring_montly_revenue || 0) : baseRevenueOS)
+              }, 0)
             : b.revenue_origin_stack;
           const bRoasLND = b.cost > 0 ? bRevenueLND / b.cost : 0
           const bRoasOS = b.cost > 0 ? bRevenueOS / b.cost : 0
@@ -1644,22 +1669,30 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         const transactionsFirstOS = toNumber(item.transactions_first_origin_stack ?? 0)
         const revenueFirstOS = toNumber(item.revenue_first_origin_stack ?? 0)
         
+        // Para coffeemais, excluir recorrências mensais da receita
+        const adjustedRevenueOS = isCoffeemais 
+          ? revenueOS - (toNumber(item.recurring_montly_revenue || 0))
+          : revenueOS
+        const adjustedRevenueLND = isCoffeemais 
+          ? revenueLND - (toNumber(item.recurring_montly_revenue || 0))
+          : revenueLND
+        
         // Usar as métricas corretas baseado no modelo de atribuição selecionado
         if (attributionModel === 'origin_stack') {
           acc[key].transactions += transactionsOS
-          acc[key].revenue += revenueOS
+          acc[key].revenue += adjustedRevenueOS
           acc[key].transactions_first += transactionsFirstOS
           acc[key].revenue_first += revenueFirstOS
         } else {
           acc[key].transactions += transactionsLND
-          acc[key].revenue += revenueLND
+          acc[key].revenue += adjustedRevenueLND
           acc[key].transactions_first += transactionsFirstLND
           acc[key].revenue_first += revenueFirstLND
         }
         
-        // Sempre armazenar ambos os modelos para calcular deltas
+        // Sempre armazenar ambos os modelos para calcular deltas (ajustado para coffeemais)
         acc[key].transactions_origin_stack += transactionsOS
-        acc[key].revenue_origin_stack += revenueOS
+        acc[key].revenue_origin_stack += adjustedRevenueOS
         acc[key].transactions_first_origin_stack += transactionsFirstOS
         acc[key].revenue_first_origin_stack += revenueFirstOS
         return acc
@@ -1722,22 +1755,30 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         const transactionsFirstOS = toNumber(item.transactions_first_origin_stack ?? 0)
         const revenueFirstOS = toNumber(item.revenue_first_origin_stack ?? 0)
         
+        // Para coffeemais, excluir recorrências mensais da receita
+        const adjustedRevenueOS = isCoffeemais 
+          ? revenueOS - (toNumber(item.recurring_montly_revenue || 0))
+          : revenueOS
+        const adjustedRevenueLND = isCoffeemais 
+          ? revenueLND - (toNumber(item.recurring_montly_revenue || 0))
+          : revenueLND
+        
         // Usar as métricas corretas baseado no modelo de atribuição selecionado
         if (attributionModel === 'origin_stack') {
           acc[key].transactions += transactionsOS
-          acc[key].revenue += revenueOS
+          acc[key].revenue += adjustedRevenueOS
           acc[key].transactions_first += transactionsFirstOS
           acc[key].revenue_first += revenueFirstOS
         } else {
           acc[key].transactions += transactionsLND
-          acc[key].revenue += revenueLND
+          acc[key].revenue += adjustedRevenueLND
           acc[key].transactions_first += transactionsFirstLND
           acc[key].revenue_first += revenueFirstLND
         }
         
-        // Sempre armazenar ambos os modelos para calcular deltas
+        // Sempre armazenar ambos os modelos para calcular deltas (ajustado para coffeemais)
         acc[key].transactions_origin_stack += transactionsOS
-        acc[key].revenue_origin_stack += revenueOS
+        acc[key].revenue_origin_stack += adjustedRevenueOS
         acc[key].transactions_first_origin_stack += transactionsFirstOS
         acc[key].revenue_first_origin_stack += revenueFirstOS
         return acc
@@ -1798,22 +1839,30 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
         const transactionsFirstOS = toNumber(item.transactions_first_origin_stack ?? 0)
         const revenueFirstOS = toNumber(item.revenue_first_origin_stack ?? 0)
         
+        // Para coffeemais, excluir recorrências mensais da receita
+        const adjustedRevenueOS = isCoffeemais 
+          ? revenueOS - (toNumber(item.recurring_montly_revenue || 0))
+          : revenueOS
+        const adjustedRevenueLND = isCoffeemais 
+          ? revenueLND - (toNumber(item.recurring_montly_revenue || 0))
+          : revenueLND
+        
         // Usar as métricas corretas baseado no modelo de atribuição selecionado
         if (attributionModel === 'origin_stack') {
           acc[key].transactions += transactionsOS
-          acc[key].revenue += revenueOS
+          acc[key].revenue += adjustedRevenueOS
           acc[key].transactions_first += transactionsFirstOS
           acc[key].revenue_first += revenueFirstOS
         } else {
           acc[key].transactions += transactionsLND
-          acc[key].revenue += revenueLND
+          acc[key].revenue += adjustedRevenueLND
           acc[key].transactions_first += transactionsFirstLND
           acc[key].revenue_first += revenueFirstLND
         }
         
-        // Sempre armazenar ambos os modelos para calcular deltas
+        // Sempre armazenar ambos os modelos para calcular deltas (ajustado para coffeemais)
         acc[key].transactions_origin_stack += transactionsOS
-        acc[key].revenue_origin_stack += revenueOS
+        acc[key].revenue_origin_stack += adjustedRevenueOS
         acc[key].transactions_first_origin_stack += transactionsFirstOS
         acc[key].revenue_first_origin_stack += revenueFirstOS
         return acc
@@ -1849,24 +1898,34 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
   })
 
   // Calcular totais - usar campaignSummaries se disponível, senão calcular diretamente de filteredData
-  const totals = campaignSummaries.length > 0 ? campaignSummaries.reduce((acc, item) => ({
-    cost: acc.cost + item.cost,
-    impressions: acc.impressions + item.impressions,
-    clicks: acc.clicks + item.clicks,
-    leads: acc.leads + item.leads,
-    transactions: acc.transactions + (attributionModel === 'origin_stack' ? (item.transactions_origin_stack || item.transactions) : item.transactions),
-    revenue: acc.revenue + (attributionModel === 'origin_stack' ? (item.revenue_origin_stack || item.revenue) : item.revenue),
-    transactions_first: acc.transactions_first + (attributionModel === 'origin_stack' ? (item.transactions_first_origin_stack || item.transactions_first) : item.transactions_first),
-    revenue_first: acc.revenue_first + (attributionModel === 'origin_stack' ? (item.revenue_first_origin_stack || item.revenue_first) : item.revenue_first),
-    recurring_annual_revenue: acc.recurring_annual_revenue + (item.recurring_annual_revenue || 0),
-    recurring_annual_subscriptions: acc.recurring_annual_subscriptions + (item.recurring_annual_subscriptions || 0),
-    recurring_montly_revenue: acc.recurring_montly_revenue + (item.recurring_montly_revenue || 0),
-    recurring_montly_subscriptions: acc.recurring_montly_subscriptions + (item.recurring_montly_subscriptions || 0),
-    first_annual_revenue: acc.first_annual_revenue + (item.first_annual_revenue || 0),
-    first_annual_subscriptions: acc.first_annual_subscriptions + (item.first_annual_subscriptions || 0),
-    first_montly_revenue: acc.first_montly_revenue + (item.first_montly_revenue || 0),
-    first_montly_subscriptions: acc.first_montly_subscriptions + (item.first_montly_subscriptions || 0),
-  }), {
+  // Para coffeemais: excluir recorrências mensais da receita e ROAS
+  const isCoffeemais = selectedTable === 'coffeemais'
+  const totals = campaignSummaries.length > 0 ? campaignSummaries.reduce((acc, item) => {
+    const baseRevenue = attributionModel === 'origin_stack' ? (item.revenue_origin_stack || item.revenue) : item.revenue
+    // Para coffeemais, excluir recorrências mensais da receita (mas manter primeira mensal, primeira anual e recorrências anuais)
+    const revenue = isCoffeemais 
+      ? baseRevenue - (item.recurring_montly_revenue || 0)
+      : baseRevenue
+    
+    return {
+      cost: acc.cost + item.cost,
+      impressions: acc.impressions + item.impressions,
+      clicks: acc.clicks + item.clicks,
+      leads: acc.leads + item.leads,
+      transactions: acc.transactions + (attributionModel === 'origin_stack' ? (item.transactions_origin_stack || item.transactions) : item.transactions),
+      revenue: acc.revenue + revenue,
+      transactions_first: acc.transactions_first + (attributionModel === 'origin_stack' ? (item.transactions_first_origin_stack || item.transactions_first) : item.transactions_first),
+      revenue_first: acc.revenue_first + (attributionModel === 'origin_stack' ? (item.revenue_first_origin_stack || item.revenue_first) : item.revenue_first),
+      recurring_annual_revenue: acc.recurring_annual_revenue + (item.recurring_annual_revenue || 0),
+      recurring_annual_subscriptions: acc.recurring_annual_subscriptions + (item.recurring_annual_subscriptions || 0),
+      recurring_montly_revenue: acc.recurring_montly_revenue + (item.recurring_montly_revenue || 0),
+      recurring_montly_subscriptions: acc.recurring_montly_subscriptions + (item.recurring_montly_subscriptions || 0),
+      first_annual_revenue: acc.first_annual_revenue + (item.first_annual_revenue || 0),
+      first_annual_subscriptions: acc.first_annual_subscriptions + (item.first_annual_subscriptions || 0),
+      first_montly_revenue: acc.first_montly_revenue + (item.first_montly_revenue || 0),
+      first_montly_subscriptions: acc.first_montly_subscriptions + (item.first_montly_subscriptions || 0),
+    }
+  }, {
     cost: 0,
     impressions: 0,
     clicks: 0,
@@ -1883,24 +1942,32 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     first_annual_subscriptions: 0,
     first_montly_revenue: 0,
     first_montly_subscriptions: 0,
-  }) : filteredData.length > 0 ? filteredData.reduce((acc, item) => ({
-    cost: acc.cost + item.cost,
-    impressions: acc.impressions + item.impressions,
-    clicks: acc.clicks + item.clicks,
-    leads: acc.leads + item.leads,
-    transactions: acc.transactions + (attributionModel === 'origin_stack' ? (item.transactions_origin_stack || item.transactions) : item.transactions),
-    revenue: acc.revenue + (attributionModel === 'origin_stack' ? (item.revenue_origin_stack || item.revenue) : item.revenue),
-    transactions_first: acc.transactions_first + (attributionModel === 'origin_stack' ? (item.transactions_first_origin_stack || item.transactions_first) : item.transactions_first),
-    revenue_first: acc.revenue_first + (attributionModel === 'origin_stack' ? (item.revenue_first_origin_stack || item.revenue_first) : item.revenue_first),
-    recurring_annual_revenue: acc.recurring_annual_revenue + (item.recurring_annual_revenue || 0),
-    recurring_annual_subscriptions: acc.recurring_annual_subscriptions + (item.recurring_annual_subscriptions || 0),
-    recurring_montly_revenue: acc.recurring_montly_revenue + (item.recurring_montly_revenue || 0),
-    recurring_montly_subscriptions: acc.recurring_montly_subscriptions + (item.recurring_montly_subscriptions || 0),
-    first_annual_revenue: acc.first_annual_revenue + (item.first_annual_revenue || 0),
-    first_annual_subscriptions: acc.first_annual_subscriptions + (item.first_annual_subscriptions || 0),
-    first_montly_revenue: acc.first_montly_revenue + (item.first_montly_revenue || 0),
-    first_montly_subscriptions: acc.first_montly_subscriptions + (item.first_montly_subscriptions || 0),
-  }), {
+  }) : filteredData.length > 0 ? filteredData.reduce((acc, item) => {
+    const baseRevenue = attributionModel === 'origin_stack' ? (item.revenue_origin_stack || item.revenue) : item.revenue
+    // Para coffeemais, excluir recorrências mensais da receita (mas manter primeira mensal, primeira anual e recorrências anuais)
+    const revenue = isCoffeemais 
+      ? baseRevenue - (item.recurring_montly_revenue || 0)
+      : baseRevenue
+    
+    return {
+      cost: acc.cost + item.cost,
+      impressions: acc.impressions + item.impressions,
+      clicks: acc.clicks + item.clicks,
+      leads: acc.leads + item.leads,
+      transactions: acc.transactions + (attributionModel === 'origin_stack' ? (item.transactions_origin_stack || item.transactions) : item.transactions),
+      revenue: acc.revenue + revenue,
+      transactions_first: acc.transactions_first + (attributionModel === 'origin_stack' ? (item.transactions_first_origin_stack || item.transactions_first) : item.transactions_first),
+      revenue_first: acc.revenue_first + (attributionModel === 'origin_stack' ? (item.revenue_first_origin_stack || item.revenue_first) : item.revenue_first),
+      recurring_annual_revenue: acc.recurring_annual_revenue + (item.recurring_annual_revenue || 0),
+      recurring_annual_subscriptions: acc.recurring_annual_subscriptions + (item.recurring_annual_subscriptions || 0),
+      recurring_montly_revenue: acc.recurring_montly_revenue + (item.recurring_montly_revenue || 0),
+      recurring_montly_subscriptions: acc.recurring_montly_subscriptions + (item.recurring_montly_subscriptions || 0),
+      first_annual_revenue: acc.first_annual_revenue + (item.first_annual_revenue || 0),
+      first_annual_subscriptions: acc.first_annual_subscriptions + (item.first_annual_subscriptions || 0),
+      first_montly_revenue: acc.first_montly_revenue + (item.first_montly_revenue || 0),
+      first_montly_subscriptions: acc.first_montly_subscriptions + (item.first_montly_subscriptions || 0),
+    }
+  }, {
     cost: 0,
     impressions: 0,
     clicks: 0,
@@ -1943,11 +2010,17 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     clicks: acc.clicks + item.clicks,
     leads: acc.leads + item.leads,
     transactions: acc.transactions + (attributionModel === 'origin_stack' ? (item.transactions_origin_stack || item.transactions) : item.transactions),
-    revenue: acc.revenue + (attributionModel === 'origin_stack' ? (item.revenue_origin_stack || item.revenue) : item.revenue),
+    revenue: (() => {
+      const baseRevenue = attributionModel === 'origin_stack' ? (item.revenue_origin_stack || item.revenue) : item.revenue
+      return acc.revenue + (isCoffeemais ? baseRevenue - (item.recurring_montly_revenue || 0) : baseRevenue)
+    })(),
     transactions_first: acc.transactions_first + (attributionModel === 'origin_stack' ? (item.transactions_first_origin_stack || item.transactions_first) : item.transactions_first),
     revenue_first: acc.revenue_first + (attributionModel === 'origin_stack' ? (item.revenue_first_origin_stack || item.revenue_first) : item.revenue_first),
     transactions_origin_stack: acc.transactions_origin_stack + (item.transactions_origin_stack || 0),
-    revenue_origin_stack: acc.revenue_origin_stack + (item.revenue_origin_stack || 0),
+    revenue_origin_stack: (() => {
+      const baseRevenueOS = item.revenue_origin_stack || 0
+      return acc.revenue_origin_stack + (isCoffeemais ? baseRevenueOS - (item.recurring_montly_revenue || 0) : baseRevenueOS)
+    })(),
     transactions_first_origin_stack: acc.transactions_first_origin_stack + (item.transactions_first_origin_stack || 0),
     revenue_first_origin_stack: acc.revenue_first_origin_stack + (item.revenue_first_origin_stack || 0),
   }), {
@@ -5092,12 +5165,18 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                 const cpaDeltas: number[] = []
                 
                 displayedRecords.forEach(campaign => {
-                  // Delta ROAS
+                  // Delta ROAS (ajustado para coffeemais: excluir recorrências mensais)
                   const revenueLND = campaign.records && campaign.records.length > 0 
-                    ? campaign.records.reduce((sum: number, record: any) => sum + record.revenue, 0)
+                    ? campaign.records.reduce((sum: number, record: any) => {
+                        const baseRevenue = record.revenue || 0
+                        return sum + (isCoffeemais ? baseRevenue - (record.recurring_montly_revenue || 0) : baseRevenue)
+                      }, 0)
                     : campaign.revenue;
                   const revenueOS = campaign.records && campaign.records.length > 0 
-                    ? campaign.records.reduce((sum: number, record: any) => sum + (record.revenue_origin_stack || 0), 0)
+                    ? campaign.records.reduce((sum: number, record: any) => {
+                        const baseRevenueOS = record.revenue_origin_stack || 0
+                        return sum + (isCoffeemais ? baseRevenueOS - (record.recurring_montly_revenue || 0) : baseRevenueOS)
+                      }, 0)
                     : campaign.revenue_origin_stack;
                   const roasLND = campaign.cost > 0 ? revenueLND / campaign.cost : 0;
                   const roasOS = campaign.cost > 0 ? revenueOS / campaign.cost : 0;
@@ -5206,14 +5285,22 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       {(() => {
                         // ROAS Last Non-Direct: usar sempre os valores originais (não afetados pelo filtro)
+                        // Ajustado para coffeemais: excluir recorrências mensais
                         const revenueLND = campaign.records && campaign.records.length > 0 
-                          ? campaign.records.reduce((sum: number, record: any) => sum + record.revenue, 0)
+                          ? campaign.records.reduce((sum: number, record: any) => {
+                              const baseRevenue = record.revenue || 0
+                              return sum + (isCoffeemais ? baseRevenue - (record.recurring_montly_revenue || 0) : baseRevenue)
+                            }, 0)
                           : campaign.revenue;
                         const roasLND = campaign.cost > 0 ? revenueLND / campaign.cost : 0;
                         
                         // ROAS Origin Stack: usar sempre os valores originais
+                        // Ajustado para coffeemais: excluir recorrências mensais
                         const revenueOS = campaign.records && campaign.records.length > 0 
-                          ? campaign.records.reduce((sum: number, record: any) => sum + (record.revenue_origin_stack || 0), 0)
+                          ? campaign.records.reduce((sum: number, record: any) => {
+                              const baseRevenueOS = record.revenue_origin_stack || 0
+                              return sum + (isCoffeemais ? baseRevenueOS - (record.recurring_montly_revenue || 0) : baseRevenueOS)
+                            }, 0)
                           : campaign.revenue_origin_stack;
                         const roasOS = campaign.cost > 0 ? revenueOS / campaign.cost : 0;
                         
