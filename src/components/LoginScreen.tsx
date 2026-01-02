@@ -64,7 +64,7 @@ const LoginScreen = ({ onLogin }: { onLogin: (username: string, rememberMe: bool
     setForgotPasswordMessage('')
 
     try {
-      const response = await api.forgotPassword({
+      await api.forgotPassword({
         email: data.email
       })
 
@@ -114,7 +114,7 @@ const LoginScreen = ({ onLogin }: { onLogin: (username: string, rememberMe: bool
           loginResponse: response
         })
         
-        // Efeito visual mais elaborado antes de redirecionar
+        // Efeito visual rápido antes de redirecionar (reduzido de 1200ms + 800ms para 300ms)
         setTimeout(() => {
           setShowTransition(true)
           
@@ -124,15 +124,15 @@ const LoginScreen = ({ onLogin }: { onLogin: (username: string, rememberMe: bool
             loginContainer.classList.add('animate-login-success')
           }
           
-          // Redirecionar após a animação
+          // Redirecionar após a animação (reduzido de 800ms para 200ms)
           setTimeout(() => {
             onLogin(data.username, rememberMe) // Usa o estado local rememberMe
             reset()
             setRememberMe(false) // Reset do estado rememberMe
             setLoginStatus('idle')
             setShowTransition(false)
-          }, 800)
-        }, 1200)
+          }, 200)
+        }, 300)
       } else {
         setLoginStatus('error')
         setErrorMessage('Credenciais inválidas. Tente novamente.')

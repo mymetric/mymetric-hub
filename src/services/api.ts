@@ -70,6 +70,31 @@ interface MetricsRequest {
   attribution_model?: string
 }
 
+interface OverviewDataItem {
+  add_to_carts: number
+  city: string
+  clicks: number
+  cost: number
+  country: string
+  event_date: string
+  leads: number
+  new_customers: number
+  orders: number
+  paid_orders: number
+  paid_revenue: number
+  platform: string
+  region: string
+  revenue: number
+  revenue_new_customers: number
+  sessions: number
+  traffic_category: string
+}
+
+interface OverviewResponse {
+  count: number
+  data: OverviewDataItem[]
+}
+
 interface OrdersRequest {
   start_date: string
   end_date: string
@@ -502,6 +527,157 @@ export const api = {
     } catch (error) {
       console.error('❌ Metrics fetch error:', error)
       throw new Error('Erro ao buscar métricas.')
+    }
+  },
+
+  // API 2.0 - Overview (padrão job/polling como mídia paga)
+  async createOverviewJob(token: string, customer: string): Promise<any> {
+    try {
+      const API_V2_URL = 'https://clownfish-app-l84ar.ondigitalocean.app/api/request'
+
+      const params: any = {
+        customer
+      }
+
+      console.log('🌐 Create Overview Job Request:', {
+        url: API_V2_URL,
+        method: 'POST',
+        customer,
+        note: 'Busca automática dos últimos 90 dias'
+      })
+
+      const response = await fetch(API_V2_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          endpoint: 'overview',
+          params
+        }),
+      })
+
+      console.log('📡 Create Overview Job Response status:', response.status, response.statusText)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Create Overview Job Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('📦 Create Overview Job Response data:', data)
+      return data
+    } catch (error) {
+      console.error('Create Overview Job error:', error)
+      throw new Error('Erro ao criar job de visão geral.')
+    }
+  },
+
+  async getOverviewJobStatus(token: string, jobId: string): Promise<any> {
+    try {
+      const API_V2_URL = `https://clownfish-app-l84ar.ondigitalocean.app/api/request/${jobId}`
+      
+      const response = await fetch(API_V2_URL, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Get Overview Job Status Error:', errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      return data
+    } catch (error) {
+      console.error('Get Overview Job Status error:', error)
+      throw new Error('Erro ao verificar status do job de visão geral.')
+    }
+  },
+
+  async getOverviewData(token: string, jobId: string): Promise<OverviewResponse> {
+    try {
+      const API_V2_URL = `https://clownfish-app-l84ar.ondigitalocean.app/api/request/${jobId}/data`
+      
+      console.log('🌐 Get Overview Data Request:', {
+        url: API_V2_URL,
+        method: 'GET'
+      })
+
+      const response = await fetch(API_V2_URL, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+
+      console.log('📡 Get Overview Data Response status:', response.status, response.statusText)
+      console.log('📡 Get Overview Data Response headers:', response.headers.get('content-type'))
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Get Overview Data Error:', errorText)
+        
+        // Se for 404, lançar um erro especial que indica que deve tentar novamente
+        if (response.status === 404) {
+          const retryError: any = new Error(`Dados ainda não disponíveis (404). Tente novamente.`)
+          retryError.isRetryable = true
+          retryError.status = 404
+          throw retryError
+        }
+        
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      // Verificar o tipo de conteúdo
+      const contentType = response.headers.get('content-type') || ''
+      let data: any
+
+      // Sempre ler como texto primeiro para tratar NaN
+      const text = await response.text()
+      
+      // Substituir NaN por null antes de fazer parse (captura NaN em qualquer contexto)
+      const cleanedText = text.replace(/:\s*NaN\b/g, ': null')
+      
+      console.log('📦 Response text (first 500 chars):', cleanedText.substring(0, 500))
+      
+      try {
+        data = JSON.parse(cleanedText)
+      } catch (parseError) {
+        console.error('❌ Failed to parse response as JSON:', parseError)
+        throw new Error(`Resposta não é um JSON válido. Tipo: ${contentType}`)
+      }
+
+      console.log('📦 Get Overview Data Response data:', data)
+      
+      // Validar estrutura dos dados
+      if (!data || (typeof data !== 'object')) {
+        throw new Error('Resposta inválida: dados não são um objeto')
+      }
+
+      // Garantir que data.data existe e é um array
+      if (!data.data || !Array.isArray(data.data)) {
+        console.warn('⚠️ Response data.data is not an array:', data)
+        // Tentar ajustar a estrutura se necessário
+        if (Array.isArray(data)) {
+          data = { count: data.length, data: data as any }
+        } else {
+          throw new Error('Resposta inválida: data.data não é um array')
+        }
+      }
+
+      return data
+    } catch (error) {
+      console.error('Get Overview Data error:', error)
+      if (error instanceof Error) {
+        throw error
+      }
+      throw new Error('Erro ao buscar dados de visão geral.')
     }
   },
 

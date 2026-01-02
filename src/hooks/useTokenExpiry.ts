@@ -4,9 +4,10 @@ interface TokenExpiryInfo {
   shouldRenew: boolean
   timeUntilExpiry: number
   isExpired: boolean
+  renewed?: boolean
 }
 
-export const useTokenExpiry = (checkTokenExpiry: () => TokenExpiryInfo) => {
+export const useTokenExpiry = (checkTokenExpiry: () => Promise<TokenExpiryInfo> | TokenExpiryInfo) => {
   const formatTime = useCallback((milliseconds: number): string => {
     if (milliseconds <= 0) return 'Expirado'
     
@@ -73,14 +74,17 @@ export const useTokenExpiry = (checkTokenExpiry: () => TokenExpiryInfo) => {
 
   useEffect(() => {
     // Verificar expiração a cada 5 minutos
-    const interval = setInterval(() => {
-      const info = checkTokenExpiry()
+    const interval = setInterval(async () => {
+      const info = await Promise.resolve(checkTokenExpiry())
       showExpiryNotification(info)
     }, 5 * 60 * 1000)
 
     // Verificação inicial
-    const info = checkTokenExpiry()
-    showExpiryNotification(info)
+    const checkInitial = async () => {
+      const info = await Promise.resolve(checkTokenExpiry())
+      showExpiryNotification(info)
+    }
+    checkInitial()
 
     return () => clearInterval(interval)
   }, [checkTokenExpiry, showExpiryNotification])

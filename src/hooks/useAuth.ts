@@ -224,28 +224,30 @@ export const useAuth = () => {
         }
       }
       
+      // Atualizar estado imediatamente para não bloquear a UI
       setAuthData(newAuthData)
       
-      // Decodificar tokens para obter expiração real
-      const accessTokenPayload = decodeJWT(loginResponse.access_token)
-      const refreshTokenPayload = decodeJWT(loginResponse.refresh_token)
-      
-      // Usar expiração real dos tokens ou fallback para valores padrão
+      // Decodificar tokens em paralelo (não bloqueia)
       const now = Date.now()
-      const expiresAt = accessTokenPayload?.exp 
-        ? accessTokenPayload.exp * 1000 // Converter de segundos para milissegundos
-        : now + (24 * 60 * 60 * 1000) // Fallback: 24 horas
+      let expiresAt = now + (24 * 60 * 60 * 1000) // Fallback: 24 horas
+      let refreshExpiresAt = now + (7 * 24 * 60 * 60 * 1000) // Fallback: 7 dias
       
-      const refreshExpiresAt = refreshTokenPayload?.exp 
-        ? refreshTokenPayload.exp * 1000 // Converter de segundos para milissegundos
-        : now + (7 * 24 * 60 * 60 * 1000) // Fallback: 7 dias
+      // Decodificar tokens de forma otimizada (sem bloquear)
+      try {
+        const accessTokenPayload = decodeJWT(loginResponse.access_token)
+        const refreshTokenPayload = decodeJWT(loginResponse.refresh_token)
+        
+        expiresAt = accessTokenPayload?.exp 
+          ? accessTokenPayload.exp * 1000
+          : expiresAt
       
-      console.log('🕐 Token expirations:', {
-        accessToken: new Date(expiresAt).toLocaleString(),
-        refreshToken: new Date(refreshExpiresAt).toLocaleString(),
-        accessTokenPayload: accessTokenPayload,
-        refreshTokenPayload: refreshTokenPayload
-      })
+        refreshExpiresAt = refreshTokenPayload?.exp 
+          ? refreshTokenPayload.exp * 1000
+          : refreshExpiresAt
+      } catch (e) {
+        // Se falhar ao decodificar, usar fallback (não é crítico)
+        console.warn('⚠️ Could not decode token expiration, using fallback')
+      }
       
       // Salvar dados completos de autenticação com refresh token
       const completeAuthData: StoredAuthData = {
@@ -257,16 +259,16 @@ export const useAuth = () => {
         refreshExpiresAt
       }
       
+      // Salvar no localStorage (operação síncrona rápida)
       localStorage.setItem('mymetric-auth-complete', JSON.stringify(completeAuthData))
       localStorage.setItem('mymetric-auth', JSON.stringify(newAuthData))
       
-      console.log('✅ Login successful, auth data saved:', newAuthData)
-      console.log('📦 Login response data used:', loginResponse)
-      console.log('🔄 Refresh token stored for automatic renewal')
+      console.log('✅ Login successful, auth data saved')
     } catch (error) {
       console.error('❌ Login error:', error)
       throw error
     } finally {
+      // Marcar como não carregando imediatamente após salvar dados
       setIsLoading(false)
     }
   }

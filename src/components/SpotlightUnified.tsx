@@ -124,6 +124,7 @@ const SpotlightUnified = ({
   // Configuração das abas disponíveis
   const tabConfig = {
     'visao-geral': { label: 'Visão Geral', icon: BarChart3, description: 'Métricas gerais e KPIs' },
+    'visao-geral-nova': { label: 'Visão Geral (Nova)', icon: BarChart3, description: 'Nova visão geral com API overview' },
     'midia-paga': { label: 'Mídia Paga', icon: TrendingUp, description: 'Análise de campanhas pagas' },
     'funil-conversao': { label: 'Funil de Conversão', icon: Filter, description: 'Jornada do cliente' },
     'dados-detalhados': { label: 'Dados Detalhados', icon: Database, description: 'Dados brutos e análises' },
@@ -148,6 +149,7 @@ const SpotlightUnified = ({
   const submenuTabs = [
     ...(currentTable === 'havaianas' ? ['havaianas'] : []),
     ...(currentTable === 'coroasparavelorio' ? ['funil-whatsapp'] : []),
+    'visao-geral-nova',
     'frete',
     'ab-testing',
     'produtos',

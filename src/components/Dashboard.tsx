@@ -59,6 +59,7 @@ import { useUrlParams } from '../hooks/useUrlParams'
 import { getDefaultPeriodForTab, getDatePresets, formatDateToString, convertBrazilianDateToISO } from '../utils/dateUtils'
 import OrdersTab from './OrdersTab'
 import LeadsTab from './LeadsTab'
+import OverviewDashboard from './OverviewDashboard'
 
 interface User {
   email: string
@@ -272,7 +273,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
   
   const [metrics, setMetrics] = useState<MetricsDataItem[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(false) // Iniciar como false para não bloquear render inicial
   const [isTableLoading, setIsTableLoading] = useState(false)
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
@@ -663,6 +664,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         }
 
         console.log('🔄 Fetching metrics for table:', selectedTable)
+        // Não setar isLoading como true inicialmente para não bloquear render
         setIsTableLoading(true)
         setIsLoadingPrevious(true)
         
@@ -675,7 +677,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
           table_name: selectedTable
         })
 
-        // Buscar dados do período atual com retry
+        // Buscar dados do período atual com retry (não bloqueia render)
         const response = await fetchMetricsWithRetry(token, {
           start_date: requestStartDate,
           end_date: requestEndDate,
@@ -689,28 +691,28 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         setMetrics(response.data || [])
         setTotalRecords(response.data?.length || 0)
         
-        // Buscar dados do período anterior para comparação
+        // Buscar dados do período anterior para comparação (em paralelo, não bloqueia)
         const previousPeriod = getPreviousPeriod()
         console.log('📊 Fetching previous period:', previousPeriod)
         
-        try {
-          const previousResponse = await fetchMetricsWithRetry(token, {
-            start_date: previousPeriod.start,
-            end_date: previousPeriod.end,
-            table_name: selectedTable,
-            attribution_model: attributionModel
-          })
-          
+        // Buscar período anterior de forma não-bloqueante
+        fetchMetricsWithRetry(token, {
+          start_date: previousPeriod.start,
+          end_date: previousPeriod.end,
+          table_name: selectedTable,
+          attribution_model: attributionModel
+        }).then(previousResponse => {
           console.log('✅ Previous period response:', previousResponse)
           setPreviousMetrics(previousResponse.data || [])
-        } catch (previousError) {
+          setIsLoadingPrevious(false)
+        }).catch(previousError => {
           console.error('❌ Error fetching previous metrics:', previousError)
           setPreviousMetrics([])
-        }
+          setIsLoadingPrevious(false)
+        })
         
         setIsLoading(false)
         setIsTableLoading(false)
-        setIsLoadingPrevious(false)
       } catch (error) {
         console.error('❌ Error fetching metrics:', error)
         setIsLoading(false)
@@ -721,7 +723,17 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       }
     }
 
-    fetchMetrics()
+    // Usar requestIdleCallback ou setTimeout para não bloquear render inicial
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      requestIdleCallback(() => {
+        fetchMetrics()
+      }, { timeout: 100 })
+    } else {
+      // Fallback para navegadores sem requestIdleCallback
+      setTimeout(() => {
+        fetchMetrics()
+      }, 0)
+    }
     
     // Limpar cache de pedidos quando mudar tabela, datas ou modelo de atribuição
     setDownloadedOrders(new Set())
@@ -768,14 +780,36 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     setDownloadMessages(new Map())
   }, [selectedTable, startDate, endDate, attributionModel])
 
-  // Buscar goals quando a tabela mudar
+  // Buscar goals quando a tabela mudar (não bloqueia render)
   useEffect(() => {
-    fetchGoals()
+    if (!selectedTable) return
+    
+    // Usar requestIdleCallback ou setTimeout para não bloquear render
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      requestIdleCallback(() => {
+        fetchGoals()
+      }, { timeout: 100 })
+    } else {
+      setTimeout(() => {
+        fetchGoals()
+      }, 0)
+    }
   }, [selectedTable])
 
-  // Buscar dados do mês atual quando a tabela ou modelo de atribuição mudar
+  // Buscar dados do mês atual quando a tabela ou modelo de atribuição mudar (não bloqueia render)
   useEffect(() => {
-    fetchCurrentMonthData()
+    if (!selectedTable) return
+    
+    // Usar requestIdleCallback ou setTimeout para não bloquear render
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      requestIdleCallback(() => {
+        fetchCurrentMonthData()
+      }, { timeout: 100 })
+    } else {
+      setTimeout(() => {
+        fetchCurrentMonthData()
+      }, 0)
+    }
   }, [selectedTable, attributionModel])
 
   // Limpar filtros quando a tabela (cliente) mudar
@@ -1719,6 +1753,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     ...(selectedTable === 'havaianas' ? ['havaianas'] : []),
     ...(selectedTable === 'coroasparavelorio' ? ['funil-whatsapp'] : []),
     ...(selectedTable === 'iwannasleep' ? ['influencers'] : []),
+    'visao-geral-nova',
     'dados-detalhados',
     'frete',
     'ab-testing',
@@ -1942,6 +1977,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                         'havaianas': { label: 'Product Scoring', icon: Package },
                         'funil-whatsapp': { label: 'Funil de Vendas por WhatsApp', icon: MessageSquare },
                         'influencers': { label: 'Influencers', icon: Users2 },
+                        'visao-geral-nova': { label: 'Visão Geral (Nova)', icon: BarChart3 },
                         'dados-detalhados': { label: 'Dados Detalhados', icon: Database },
                         'frete': { label: 'Frete', icon: Truck },
                         'ab-testing': { label: 'Testes A/B', icon: Target },
@@ -2171,6 +2207,26 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                         )}
                       </div>
                     </button>
+                    <button
+                      onClick={() => {
+                        handleTabChange('visao-geral-nova')
+                        setShowMobileTabMenu(false)
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                        activeTab === 'visao-geral-nova'
+                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <BarChart3 className="w-5 h-5" />
+                        <span>Visão Geral (Nova)</span>
+                        {activeTab === 'visao-geral-nova' && (
+                          <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full"></div>
+                        )}
+                      </div>
+                    </button>
+
                     <button
                       onClick={() => {
                         handleTabChange('ab-testing')
@@ -4643,6 +4699,15 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
         {activeTab === 'leads' && (
           <LeadsTab selectedTable={selectedTable} startDate={startDate} endDate={endDate} />
+        )}
+
+        {/* Visão Geral Nova Tab */}
+        {activeTab === 'visao-geral-nova' && (
+          <OverviewDashboard 
+            selectedTable={selectedTable}
+            startDate={startDate}
+            endDate={endDate}
+          />
         )}
 
       </main>
