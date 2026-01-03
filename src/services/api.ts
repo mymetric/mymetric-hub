@@ -88,6 +88,15 @@ interface OverviewDataItem {
   revenue_new_customers: number
   sessions: number
   traffic_category: string
+  // Novas métricas
+  paid_new_annual_orders?: number
+  paid_new_annual_revenue?: number
+  paid_new_montly_orders?: number
+  paid_new_montly_revenue?: number
+  paid_recurring_annual_orders?: number
+  paid_recurring_annual_revenue?: number
+  paid_recurring_montly_orders?: number
+  paid_recurring_montly_revenue?: number
 }
 
 interface OverviewResponse {

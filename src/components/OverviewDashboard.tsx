@@ -39,6 +39,15 @@ interface OverviewDataItem {
   revenue_new_customers: number
   sessions: number
   traffic_category: string
+  // Novas métricas
+  paid_new_annual_orders?: number
+  paid_new_annual_revenue?: number
+  paid_new_montly_orders?: number
+  paid_new_montly_revenue?: number
+  paid_recurring_annual_orders?: number
+  paid_recurring_annual_revenue?: number
+  paid_recurring_montly_orders?: number
+  paid_recurring_montly_revenue?: number
 }
 
 interface OverviewDashboardProps {
@@ -148,14 +157,23 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     if (metricKey === 'avg_order_value') return avgOrderValue
     if (metricKey === 'roas') return roas
     if (metricKey === 'new_customer_rate') return newCustomerRate
+    // Novas métricas
+    if (metricKey === 'paid_new_annual_orders') return totals.paid_new_annual_orders || 0
+    if (metricKey === 'paid_new_annual_revenue') return totals.paid_new_annual_revenue || 0
+    if (metricKey === 'paid_new_montly_orders') return totals.paid_new_montly_orders || 0
+    if (metricKey === 'paid_new_montly_revenue') return totals.paid_new_montly_revenue || 0
+    if (metricKey === 'paid_recurring_annual_orders') return totals.paid_recurring_annual_orders || 0
+    if (metricKey === 'paid_recurring_annual_revenue') return totals.paid_recurring_annual_revenue || 0
+    if (metricKey === 'paid_recurring_montly_orders') return totals.paid_recurring_montly_orders || 0
+    if (metricKey === 'paid_recurring_montly_revenue') return totals.paid_recurring_montly_revenue || 0
     return 0
   }
   
   // Função para obter o ícone da métrica
   const getMetricIcon = (metricKey: string) => {
     if (['sessions', 'leads'].includes(metricKey)) return Users
-    if (['orders', 'paid_orders'].includes(metricKey)) return ShoppingBag
-    if (['revenue', 'paid_revenue', 'revenue_new_customers', 'revenue_per_session', 'avg_order_value'].includes(metricKey)) return DollarSign
+    if (['orders', 'paid_orders', 'paid_new_annual_orders', 'paid_new_montly_orders', 'paid_recurring_annual_orders', 'paid_recurring_montly_orders'].includes(metricKey)) return ShoppingBag
+    if (['revenue', 'paid_revenue', 'revenue_new_customers', 'revenue_per_session', 'avg_order_value', 'paid_new_annual_revenue', 'paid_new_montly_revenue', 'paid_recurring_annual_revenue', 'paid_recurring_montly_revenue'].includes(metricKey)) return DollarSign
     if (['cost'].includes(metricKey)) return Coins
     if (['add_to_carts'].includes(metricKey)) return ShoppingCart
     if (['clicks'].includes(metricKey)) return Target
@@ -318,7 +336,16 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     { key: 'revenue_per_session', label: 'Receita por Sessão', type: 'currency' },
     { key: 'avg_order_value', label: 'Ticket Médio', type: 'currency' },
     { key: 'roas', label: 'ROAS', type: 'number' },
-    { key: 'new_customer_rate', label: 'Taxa de Novos Clientes', type: 'percentage' }
+    { key: 'new_customer_rate', label: 'Taxa de Novos Clientes', type: 'percentage' },
+    // Novas métricas de assinaturas pagas
+    { key: 'paid_new_annual_orders', label: 'Pedidos Novos Anuais Pagos', type: 'number' },
+    { key: 'paid_new_annual_revenue', label: 'Receita Novos Anuais Pagos', type: 'currency' },
+    { key: 'paid_new_montly_orders', label: 'Pedidos Novos Mensais Pagos', type: 'number' },
+    { key: 'paid_new_montly_revenue', label: 'Receita Novos Mensais Pagos', type: 'currency' },
+    { key: 'paid_recurring_annual_orders', label: 'Pedidos Recorrentes Anuais Pagos', type: 'number' },
+    { key: 'paid_recurring_annual_revenue', label: 'Receita Recorrentes Anuais Pagos', type: 'currency' },
+    { key: 'paid_recurring_montly_orders', label: 'Pedidos Recorrentes Mensais Pagos', type: 'number' },
+    { key: 'paid_recurring_montly_revenue', label: 'Receita Recorrentes Mensais Pagos', type: 'currency' }
   ]
   
   // Estado para métricas de cards (baseado nas métricas)
@@ -920,6 +947,15 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
       acc[date].leads += item.leads || 0
       acc[date].new_customers += item.new_customers || 0
       acc[date].revenue_new_customers += item.revenue_new_customers || 0
+      // Novas métricas
+      acc[date].paid_new_annual_orders += item.paid_new_annual_orders || 0
+      acc[date].paid_new_annual_revenue += item.paid_new_annual_revenue || 0
+      acc[date].paid_new_montly_orders += item.paid_new_montly_orders || 0
+      acc[date].paid_new_montly_revenue += item.paid_new_montly_revenue || 0
+      acc[date].paid_recurring_annual_orders += item.paid_recurring_annual_orders || 0
+      acc[date].paid_recurring_annual_revenue += item.paid_recurring_annual_revenue || 0
+      acc[date].paid_recurring_montly_orders += item.paid_recurring_montly_orders || 0
+      acc[date].paid_recurring_montly_revenue += item.paid_recurring_montly_revenue || 0
       return acc
     }, {} as Record<string, any>)
     
@@ -971,6 +1007,15 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
       acc.revenue += item.revenue || 0
       acc.revenue_new_customers += item.revenue_new_customers || 0
       acc.sessions += item.sessions || 0
+      // Novas métricas
+      acc.paid_new_annual_orders += item.paid_new_annual_orders || 0
+      acc.paid_new_annual_revenue += item.paid_new_annual_revenue || 0
+      acc.paid_new_montly_orders += item.paid_new_montly_orders || 0
+      acc.paid_new_montly_revenue += item.paid_new_montly_revenue || 0
+      acc.paid_recurring_annual_orders += item.paid_recurring_annual_orders || 0
+      acc.paid_recurring_annual_revenue += item.paid_recurring_annual_revenue || 0
+      acc.paid_recurring_montly_orders += item.paid_recurring_montly_orders || 0
+      acc.paid_recurring_montly_revenue += item.paid_recurring_montly_revenue || 0
       return acc
     }, {
       add_to_carts: 0,
@@ -983,7 +1028,16 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
       paid_revenue: 0,
       revenue: 0,
       revenue_new_customers: 0,
-      sessions: 0
+      sessions: 0,
+      // Novas métricas
+      paid_new_annual_orders: 0,
+      paid_new_annual_revenue: 0,
+      paid_new_montly_orders: 0,
+      paid_new_montly_revenue: 0,
+      paid_recurring_annual_orders: 0,
+      paid_recurring_annual_revenue: 0,
+      paid_recurring_montly_orders: 0,
+      paid_recurring_montly_revenue: 0
     })
   }, [filteredData])
   
@@ -1175,7 +1229,16 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
       {/* Cards de Métricas */}
       {cardMetrics.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          {cardOrder.filter(key => cardMetrics.includes(key)).map((cardKey, index) => {
+          {cardOrder.filter(key => {
+            if (!cardMetrics.includes(key)) return false
+            // Filtrar novas métricas: exibir apenas se > 0
+            const newMetrics = ['paid_new_annual_orders', 'paid_new_annual_revenue', 'paid_new_montly_orders', 'paid_new_montly_revenue', 'paid_recurring_annual_orders', 'paid_recurring_annual_revenue', 'paid_recurring_montly_orders', 'paid_recurring_montly_revenue']
+            if (newMetrics.includes(key)) {
+              const value = getMetricValue(key)
+              return value > 0
+            }
+            return true
+          }).map((cardKey, index) => {
             const metric = metrics.find(m => m.key === cardKey)
             if (!metric) return null
             
@@ -1643,7 +1706,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                         }, {} as Record<string, any>),
                         // Inicializar todas as métricas base sempre, além das selecionadas
                         metrics: (() => {
-                          const baseMetrics = ['sessions', 'orders', 'paid_orders', 'revenue', 'paid_revenue', 'cost', 'add_to_carts', 'leads', 'new_customers', 'clicks', 'revenue_new_customers']
+                          const baseMetrics = ['sessions', 'orders', 'paid_orders', 'revenue', 'paid_revenue', 'cost', 'add_to_carts', 'leads', 'new_customers', 'clicks', 'revenue_new_customers', 'paid_new_annual_orders', 'paid_new_annual_revenue', 'paid_new_montly_orders', 'paid_new_montly_revenue', 'paid_recurring_annual_orders', 'paid_recurring_annual_revenue', 'paid_recurring_montly_orders', 'paid_recurring_montly_revenue']
                           const allMetricsToInit = [...new Set([...baseMetrics, ...selectedMetrics])]
                           return allMetricsToInit.reduce((mets, metKey) => {
                             mets[metKey] = 0
@@ -1655,7 +1718,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                     
                     // Sempre somar todas as métricas base (necessárias para calcular as derivadas)
                     // Lista de métricas base que sempre devem ser somadas
-                    const baseMetrics = ['sessions', 'orders', 'paid_orders', 'revenue', 'paid_revenue', 'cost', 'add_to_carts', 'leads', 'new_customers', 'clicks', 'revenue_new_customers']
+                    const baseMetrics = ['sessions', 'orders', 'paid_orders', 'revenue', 'paid_revenue', 'cost', 'add_to_carts', 'leads', 'new_customers', 'clicks', 'revenue_new_customers', 'paid_new_annual_orders', 'paid_new_annual_revenue', 'paid_new_montly_orders', 'paid_new_montly_revenue', 'paid_recurring_annual_orders', 'paid_recurring_annual_revenue', 'paid_recurring_montly_orders', 'paid_recurring_montly_revenue']
                     baseMetrics.forEach(metKey => {
                       const value = item[metKey as keyof OverviewDataItem] as number || 0
                       acc[groupKey].metrics[metKey] = (acc[groupKey].metrics[metKey] || 0) + value
