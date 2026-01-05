@@ -82,7 +82,7 @@ export const useTokenExpiry = (checkTokenExpiry: () => Promise<TokenExpiryInfo> 
     // Verificação inicial
     const checkInitial = async () => {
       const info = await Promise.resolve(checkTokenExpiry())
-      showExpiryNotification(info)
+    showExpiryNotification(info)
     }
     checkInitial()
 

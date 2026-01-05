@@ -1971,18 +1971,18 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     const revenueOS = baseRevenueOS - (item.recurring_montly_revenue || 0) - (item.recurring_annual_revenue || 0)
     
     return {
-      cost: acc.cost + item.cost,
-      impressions: acc.impressions + item.impressions,
-      clicks: acc.clicks + item.clicks,
-      leads: acc.leads + item.leads,
-      transactions: acc.transactions + (attributionModel === 'origin_stack' ? (item.transactions_origin_stack || item.transactions) : item.transactions),
+    cost: acc.cost + item.cost,
+    impressions: acc.impressions + item.impressions,
+    clicks: acc.clicks + item.clicks,
+    leads: acc.leads + item.leads,
+    transactions: acc.transactions + (attributionModel === 'origin_stack' ? (item.transactions_origin_stack || item.transactions) : item.transactions),
       revenue: acc.revenue + revenue,
-      transactions_first: acc.transactions_first + (attributionModel === 'origin_stack' ? (item.transactions_first_origin_stack || item.transactions_first) : item.transactions_first),
-      revenue_first: acc.revenue_first + (attributionModel === 'origin_stack' ? (item.revenue_first_origin_stack || item.revenue_first) : item.revenue_first),
-      transactions_origin_stack: acc.transactions_origin_stack + (item.transactions_origin_stack || 0),
+    transactions_first: acc.transactions_first + (attributionModel === 'origin_stack' ? (item.transactions_first_origin_stack || item.transactions_first) : item.transactions_first),
+    revenue_first: acc.revenue_first + (attributionModel === 'origin_stack' ? (item.revenue_first_origin_stack || item.revenue_first) : item.revenue_first),
+    transactions_origin_stack: acc.transactions_origin_stack + (item.transactions_origin_stack || 0),
       revenue_origin_stack: acc.revenue_origin_stack + revenueOS,
-      transactions_first_origin_stack: acc.transactions_first_origin_stack + (item.transactions_first_origin_stack || 0),
-      revenue_first_origin_stack: acc.revenue_first_origin_stack + (item.revenue_first_origin_stack || 0),
+    transactions_first_origin_stack: acc.transactions_first_origin_stack + (item.transactions_first_origin_stack || 0),
+    revenue_first_origin_stack: acc.revenue_first_origin_stack + (item.revenue_first_origin_stack || 0),
     }
   }, {
     cost: 0,
@@ -2019,10 +2019,10 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     const revenueOS = baseRevenueOS - (item.recurring_montly_revenue || 0) - (item.recurring_annual_revenue || 0)
     
     return {
-      transactions: acc.transactions + (item.transactions_origin_stack || 0),
+    transactions: acc.transactions + (item.transactions_origin_stack || 0),
       revenue: acc.revenue + revenueOS,
-      transactions_first: acc.transactions_first + (item.transactions_first_origin_stack || 0),
-      revenue_first: acc.revenue_first + (item.revenue_first_origin_stack || 0),
+    transactions_first: acc.transactions_first + (item.transactions_first_origin_stack || 0),
+    revenue_first: acc.revenue_first + (item.revenue_first_origin_stack || 0),
     }
   }, {
     transactions: 0,
@@ -2042,10 +2042,10 @@ const PaidMediaDashboard = ({ selectedTable, startDate, endDate, token }: PaidMe
     const revenue = baseRevenue - (item.recurring_montly_revenue || 0) - (item.recurring_annual_revenue || 0)
     
     return {
-      transactions: acc.transactions + item.transactions,
+    transactions: acc.transactions + item.transactions,
       revenue: acc.revenue + revenue,
-      transactions_first: acc.transactions_first + item.transactions_first,
-      revenue_first: acc.revenue_first + item.revenue_first,
+    transactions_first: acc.transactions_first + item.transactions_first,
+    revenue_first: acc.revenue_first + item.revenue_first,
     }
   }, {
     transactions: 0,
