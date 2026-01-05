@@ -827,6 +827,63 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     localStorage.setItem(storageKey, JSON.stringify(updatedPresets))
   }
 
+  // Estados para drag and drop de presets
+  const [draggedPresetId, setDraggedPresetId] = useState<string | null>(null)
+  const [dragOverPresetId, setDragOverPresetId] = useState<string | null>(null)
+
+  const handlePresetDragStart = (presetId: string) => {
+    setDraggedPresetId(presetId)
+  }
+
+  const handlePresetDragOver = (e: React.DragEvent, presetId: string) => {
+    e.preventDefault()
+    if (draggedPresetId && draggedPresetId !== presetId) {
+      setDragOverPresetId(presetId)
+    }
+  }
+
+  const handlePresetDragLeave = () => {
+    setDragOverPresetId(null)
+  }
+
+  const handlePresetDrop = (e: React.DragEvent, targetPresetId: string) => {
+    e.preventDefault()
+    
+    if (!draggedPresetId || draggedPresetId === targetPresetId) {
+      setDraggedPresetId(null)
+      setDragOverPresetId(null)
+      return
+    }
+
+    const draggedIndex = presets.findIndex(p => p.id === draggedPresetId)
+    const targetIndex = presets.findIndex(p => p.id === targetPresetId)
+
+    if (draggedIndex === -1 || targetIndex === -1) {
+      setDraggedPresetId(null)
+      setDragOverPresetId(null)
+      return
+    }
+
+    // Reordenar os presets
+    const updatedPresets = [...presets]
+    const [removed] = updatedPresets.splice(draggedIndex, 1)
+    updatedPresets.splice(targetIndex, 0, removed)
+
+    setPresets(updatedPresets)
+    
+    // Salvar no localStorage
+    const storageKey = `overview-presets-${selectedTable}`
+    localStorage.setItem(storageKey, JSON.stringify(updatedPresets))
+
+    setDraggedPresetId(null)
+    setDragOverPresetId(null)
+  }
+
+  const handlePresetDragEnd = () => {
+    setDraggedPresetId(null)
+    setDragOverPresetId(null)
+  }
+
   // Função para obter o token da API 2.0
   const getV2Token = (): string | null => {
     try {
@@ -2495,18 +2552,39 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                     
                     {presets.length > 0 && (
                       <div className="space-y-2 bg-white/60 backdrop-blur-sm rounded-xl p-2 border border-gray-200/50">
-                        {presets.map(preset => (
+                        {presets.map((preset, index) => (
                           <div
                             key={preset.id}
-                            className="p-3 rounded-xl hover:bg-gray-50/80 border border-gray-200/50 transition-all duration-200 group"
+                            draggable
+                            onDragStart={() => handlePresetDragStart(preset.id)}
+                            onDragOver={(e) => handlePresetDragOver(e, preset.id)}
+                            onDragLeave={handlePresetDragLeave}
+                            onDrop={(e) => handlePresetDrop(e, preset.id)}
+                            onDragEnd={handlePresetDragEnd}
+                            className={`p-3 rounded-xl hover:bg-gray-50/80 border transition-all duration-200 group cursor-move ${
+                              draggedPresetId === preset.id
+                                ? 'opacity-50 border-blue-400 bg-blue-50/50'
+                                : dragOverPresetId === preset.id
+                                ? 'border-blue-400 bg-blue-50/50 border-2'
+                                : 'border-gray-200/50'
+                            }`}
                           >
                             <div className="flex items-center justify-between mb-2">
                               <div className="flex items-center gap-2 flex-1 min-w-0">
+                                <GripVertical className="w-4 h-4 text-gray-400 flex-shrink-0 cursor-grab active:cursor-grabbing" />
+                                {index === 0 && (
+                                  <span className="text-xs font-semibold text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded flex-shrink-0">
+                                    Padrão
+                                  </span>
+                                )}
                                 <FolderOpen className="w-4 h-4 text-blue-500 flex-shrink-0" />
                                 <span className="text-sm font-medium text-gray-900 truncate">{preset.name}</span>
                               </div>
                               <button
-                                onClick={() => deletePreset(preset.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  deletePreset(preset.id)
+                                }}
                                 className="p-1.5 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
                                 title="Deletar preset"
                               >
