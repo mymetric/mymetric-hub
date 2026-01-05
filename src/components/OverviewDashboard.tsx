@@ -23,7 +23,8 @@ import {
   Download,
   ArrowUpRight,
   ArrowDownRight,
-  Search
+  Search,
+  GripVertical
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
 import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts'
@@ -2233,28 +2234,12 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
               format = 'percentage'
             }
             
-            // Estado para drag and drop
-            const isDragging = draggedCard === cardKey
-            const isDragOver = dragOverCard === cardKey
-            
             // Tratamento especial para ROAS
             if (cardKey === 'roas') {
               return (
                 <div 
                   key={cardKey}
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, cardKey)}
-                  onDragOver={(e) => handleCardDragOver(e, cardKey)}
-                  onDragLeave={handleDragLeave}
-                  onDragEnd={handleDragEnd}
-                  onDrop={(e) => handleDrop(e, cardKey)}
-                  className={`bg-white rounded-xl shadow-lg p-4 border transition-all duration-200 ease-out ${
-                    isDragging 
-                      ? 'opacity-40 border-blue-300 scale-95 cursor-grabbing shadow-md' 
-                      : isDragOver 
-                        ? 'border-blue-500 border-2 shadow-2xl scale-105 bg-blue-50/30 z-10' 
-                        : 'border-gray-100 hover:shadow-xl hover:border-gray-200 cursor-grab active:cursor-grabbing'
-                  }`}
+                  className="bg-white rounded-xl shadow-lg p-4 border border-gray-100 hover:shadow-xl hover:border-gray-200 transition-all duration-200 ease-out"
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="p-2.5 rounded-lg bg-blue-100 text-blue-600">
@@ -2290,19 +2275,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
             return (
               <div
                 key={cardKey}
-                draggable
-                onDragStart={(e) => handleDragStart(e, cardKey)}
-                onDragOver={(e) => handleCardDragOver(e, cardKey)}
-                onDragLeave={handleDragLeave}
-                onDragEnd={handleDragEnd}
-                onDrop={(e) => handleDrop(e, cardKey)}
-                className={`transition-all duration-200 ease-out ${
-                  isDragging 
-                    ? 'opacity-40 scale-95 cursor-grabbing' 
-                    : isDragOver 
-                      ? 'transform scale-105 z-10' 
-                      : 'cursor-grab active:cursor-grabbing hover:scale-[1.02]'
-                }`}
+                className="transition-all duration-200 ease-out hover:scale-[1.02]"
               >
                 <MetricCard
                   title={metric.label}
@@ -2310,7 +2283,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                   icon={Icon}
                   format={format}
                   color={color}
-                  isDragOver={isDragOver}
+                  isDragOver={false}
                   growth={getMetricGrowth(cardKey)}
                 />
               </div>
@@ -2603,6 +2576,61 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                       })}
                     </div>
                   </div>
+                  
+                  {/* Ordem dos Cards */}
+                  {cardMetrics.length > 0 && (
+                    <div>
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-base font-bold text-gray-900">Ordem dos Cards</h3>
+                        <span className="text-xs text-gray-500">
+                          {cardMetrics.length} {cardMetrics.length === 1 ? 'card' : 'cards'}
+                        </span>
+                      </div>
+                      <div className="space-y-2 bg-white/60 backdrop-blur-sm rounded-xl p-2 border border-gray-200/50">
+                        {cardOrder
+                          .filter(key => cardMetrics.includes(key))
+                          .map((cardKey, index) => {
+                            const metric = metrics.find(m => m.key === cardKey)
+                            if (!metric) return null
+                            
+                            const isDragging = draggedCard === cardKey
+                            const isDragOver = dragOverCard === cardKey
+                            
+                            return (
+                              <div
+                                key={cardKey}
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, cardKey)}
+                                onDragOver={(e) => handleCardDragOver(e, cardKey)}
+                                onDragLeave={handleDragLeave}
+                                onDragEnd={handleDragEnd}
+                                onDrop={(e) => handleDrop(e, cardKey)}
+                                className={`flex items-center gap-3 p-3 rounded-xl transition-all duration-200 border ${
+                                  isDragging
+                                    ? 'opacity-40 border-blue-300 scale-95 cursor-grabbing'
+                                    : isDragOver
+                                      ? 'border-blue-500 border-2 shadow-lg scale-105 bg-blue-50/50 z-10'
+                                      : 'hover:bg-gray-50/80 border-gray-200/50 cursor-grab active:cursor-grabbing'
+                                }`}
+                              >
+                                <GripVertical className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                                <span className="text-xs font-medium text-gray-500 w-6 flex-shrink-0">
+                                  {index + 1}
+                                </span>
+                                <span className="text-sm font-medium text-gray-900 flex-1">
+                                  {metric.label}
+                                </span>
+                              </div>
+                            )
+                          })}
+                      </div>
+                      {cardOrder.filter(key => cardMetrics.includes(key)).length === 0 && (
+                        <div className="p-4 text-center text-sm text-gray-500 bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/50">
+                          Nenhum card selecionado. Selecione métricas como "Card" para ordená-las aqui.
+                        </div>
+                      )}
+                    </div>
+                  )}
                   
                   {/* Métricas */}
                   <div>
