@@ -2536,17 +2536,17 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                           borderColor: overviewVersion === 'novo' ? '#3b82f6' : '#f59e0b',
                           color: overviewVersion === 'novo' ? '#1e40af' : '#92400e'
                         }}
-                        title={overviewVersion === 'novo' ? 'Usando visão geral nova (padrão) - Clique para usar a versão antiga' : 'Usando visão geral antiga - Clique para usar a versão nova (padrão)'}
+                        title={overviewVersion === 'novo' ? 'Clique para voltar para versão antiga' : 'Clique para ir para nova versão'}
                       >
                         {overviewVersion === 'novo' ? (
                           <>
-                            <Zap className="w-4 h-4" />
-                            <span className="font-semibold">Nova (Padrão)</span>
+                            <RotateCcw className="w-4 h-4" />
+                            <span className="font-semibold">Voltar para versão antiga</span>
                           </>
                         ) : (
                           <>
-                            <RotateCcw className="w-4 h-4" />
-                            <span className="font-semibold">Antiga</span>
+                            <Zap className="w-4 h-4" />
+                            <span className="font-semibold">Ir para nova versão</span>
                           </>
                         )}
                       </button>
