@@ -339,10 +339,10 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     localStorage.setItem('dashboardVisibleColumns', JSON.stringify(visibleColumns))
   }, [visibleColumns])
   
-  // Estado para controlar qual versão do dashboard de visão geral usar (padrão: 'antigo')
+  // Estado para controlar qual versão do dashboard de visão geral usar (padrão: 'novo')
   const [overviewVersion, setOverviewVersion] = useState<'novo' | 'antigo'>(() => {
     const saved = localStorage.getItem('overview-dashboard-version')
-    return (saved === 'novo' || saved === 'antigo') ? saved : 'antigo'
+    return (saved === 'novo' || saved === 'antigo') ? saved : 'novo'
   })
   
   // Salvar preferência no localStorage quando mudar
@@ -2536,19 +2536,19 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                           borderColor: overviewVersion === 'novo' ? '#3b82f6' : '#f59e0b',
                           color: overviewVersion === 'novo' ? '#1e40af' : '#92400e'
                         }}
-                        title={overviewVersion === 'novo' ? 'Usando visão geral nova - Clique para usar a versão antiga (padrão)' : 'Usando visão geral antiga (padrão) - Clique para usar a versão nova'}
+                        title={overviewVersion === 'novo' ? 'Usando visão geral nova (padrão) - Clique para usar a versão antiga' : 'Usando visão geral antiga - Clique para usar a versão nova (padrão)'}
                       >
-                      {overviewVersion === 'novo' ? (
-                        <>
-                          <RotateCcw className="w-4 h-4" />
-                          <span className="font-semibold">Voltar para versão antiga</span>
-                        </>
-                      ) : (
-                        <>
-                          <Zap className="w-4 h-4" />
-                          <span className="font-semibold">Ir para nova versão</span>
-                        </>
-                      )}
+                        {overviewVersion === 'novo' ? (
+                          <>
+                            <Zap className="w-4 h-4" />
+                            <span className="font-semibold">Nova (Padrão)</span>
+                          </>
+                        ) : (
+                          <>
+                            <RotateCcw className="w-4 h-4" />
+                            <span className="font-semibold">Antiga</span>
+                          </>
+                        )}
                       </button>
                     </div>
                   )}

@@ -159,6 +159,12 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     goal_value: ''
   })
   
+  // Estado para drag and drop dos cards
+  const [draggedCard, setDraggedCard] = useState<string | null>(null)
+  const [dragOverCard, setDragOverCard] = useState<string | null>(null)
+  const isDraggingRef = useRef(false)
+  const dragOverCardRef = useRef<string | null>(null)
+  
   // Estado para métricas da timeline (máximo 2)
   // Personalização salva por cliente usando selectedTable como identificador
   const [timelineMetrics, setTimelineMetrics] = useState<string[]>(() => {
@@ -465,8 +471,8 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   const syncCardOrderRef = useRef(false)
   
   useEffect(() => {
-    // Não sincronizar durante atualização
-    if (syncCardOrderRef.current) {
+    // Não sincronizar durante drag and drop
+    if (isDraggingRef.current || syncCardOrderRef.current) {
       return
     }
     
@@ -500,27 +506,89 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     })
   }, [cardMetrics])
   
-  // Funções para reordenar cards na sidebar
-  const moveCardUp = (cardKey: string) => {
-    setCardOrder(prevOrder => {
-      const newOrder = [...prevOrder]
-      const currentIndex = newOrder.indexOf(cardKey)
-      if (currentIndex > 0) {
-        [newOrder[currentIndex - 1], newOrder[currentIndex]] = [newOrder[currentIndex], newOrder[currentIndex - 1]]
-      }
-      return newOrder
-    })
+  // Função para lidar com drag start - SIMPLIFICADA
+  const handleDragStart = (e: React.DragEvent, cardKey: string) => {
+    isDraggingRef.current = true
+    setDraggedCard(cardKey)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', cardKey)
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '0.5'
+    }
   }
   
-  const moveCardDown = (cardKey: string) => {
+  // Função para lidar com drag over - versão simplificada
+  const handleCardDragOver = (e: React.DragEvent, cardKey: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'move'
+    
+    if (cardKey !== draggedCard && dragOverCardRef.current !== cardKey) {
+      dragOverCardRef.current = cardKey
+      setDragOverCard(cardKey)
+    }
+  }
+  
+  // Função para lidar com drag leave - SIMPLIFICADA
+  const handleDragLeave = () => {
+    setDragOverCard(null)
+    dragOverCardRef.current = null
+  }
+  
+  // Função para lidar com drag end - SIMPLIFICADA
+  const handleDragEnd = (e: React.DragEvent) => {
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '1'
+    }
+    // Limpar estado apenas se não houve drop (handleDrop já limpa se houver drop)
+    setTimeout(() => {
+      if (draggedCard) {
+        setDraggedCard(null)
+        setDragOverCard(null)
+        dragOverCardRef.current = null
+        isDraggingRef.current = false
+      }
+    }, 100)
+  }
+  
+  // Função para lidar com drop - VERSÃO ULTRA SIMPLIFICADA
+  const handleDrop = (e: React.DragEvent, dropCardKey: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    const dragCardKey = draggedCard
+    
+    if (!dragCardKey || dragCardKey === dropCardKey) {
+      setDraggedCard(null)
+      setDragOverCard(null)
+      dragOverCardRef.current = null
+      isDraggingRef.current = false
+      return
+    }
+    
+    // Reordenar de forma simples e direta
     setCardOrder(prevOrder => {
       const newOrder = [...prevOrder]
-      const currentIndex = newOrder.indexOf(cardKey)
-      if (currentIndex < newOrder.length - 1 && currentIndex !== -1) {
-        [newOrder[currentIndex], newOrder[currentIndex + 1]] = [newOrder[currentIndex + 1], newOrder[currentIndex]]
+      const dragIndex = newOrder.indexOf(dragCardKey)
+      const dropIndex = newOrder.indexOf(dropCardKey)
+      
+      if (dragIndex === -1 || dropIndex === -1 || dragIndex === dropIndex) {
+        return prevOrder
       }
+      
+      // Remover da posição original
+      newOrder.splice(dragIndex, 1)
+      // Inserir na nova posição
+      newOrder.splice(dropIndex, 0, dragCardKey)
+      
       return newOrder
     })
+    
+    // Limpar estados
+    setDraggedCard(null)
+    setDragOverCard(null)
+    dragOverCardRef.current = null
+    isDraggingRef.current = false
   }
   
   // Salvar métricas de cards no localStorage (por cliente)
@@ -1958,6 +2026,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     icon: Icon, 
     format = 'number',
     color = 'blue',
+    isDragOver = false,
     growth
   }: {
     title: string
@@ -1965,6 +2034,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     icon: any
     format?: 'number' | 'currency' | 'percentage'
     color?: string
+    isDragOver?: boolean
     growth?: number
   }) => {
     const formatValue = () => {
@@ -1988,11 +2058,15 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     }
 
     return (
-      <div className="bg-white rounded-xl shadow-lg p-4 border border-gray-100 hover:shadow-xl hover:border-gray-200 transition-all duration-200">
+      <div className={`bg-white rounded-xl shadow-lg p-4 border transition-all duration-200 ${
+        isDragOver 
+          ? 'border-blue-500 border-2 shadow-2xl bg-blue-50/30' 
+          : 'border-gray-100 hover:shadow-xl hover:border-gray-200'
+      }`}>
         <div className="flex items-center justify-between mb-3">
           <div className={`p-2.5 rounded-lg transition-transform ${
             colorClasses[color as keyof typeof colorClasses] || colorClasses.blue
-          }`}>
+          } ${isDragOver ? 'scale-110' : ''}`}>
             <Icon className="w-5 h-5" />
           </div>
           {isLoadingPrevious ? (
@@ -2159,12 +2233,28 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
               format = 'percentage'
             }
             
+            // Estado para drag and drop
+            const isDragging = draggedCard === cardKey
+            const isDragOver = dragOverCard === cardKey
+            
             // Tratamento especial para ROAS
             if (cardKey === 'roas') {
               return (
                 <div 
                   key={cardKey}
-                  className="bg-white rounded-xl shadow-lg p-4 border border-gray-100 hover:shadow-xl hover:border-gray-200 transition-all duration-200"
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, cardKey)}
+                  onDragOver={(e) => handleCardDragOver(e, cardKey)}
+                  onDragLeave={handleDragLeave}
+                  onDragEnd={handleDragEnd}
+                  onDrop={(e) => handleDrop(e, cardKey)}
+                  className={`bg-white rounded-xl shadow-lg p-4 border transition-all duration-200 ease-out ${
+                    isDragging 
+                      ? 'opacity-40 border-blue-300 scale-95 cursor-grabbing shadow-md' 
+                      : isDragOver 
+                        ? 'border-blue-500 border-2 shadow-2xl scale-105 bg-blue-50/30 z-10' 
+                        : 'border-gray-100 hover:shadow-xl hover:border-gray-200 cursor-grab active:cursor-grabbing'
+                  }`}
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="p-2.5 rounded-lg bg-blue-100 text-blue-600">
@@ -2198,15 +2288,32 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
             }
             
             return (
-              <MetricCard
+              <div
                 key={cardKey}
-                title={metric.label}
-                value={value}
-                icon={Icon}
-                format={format}
-                color={color}
-                growth={getMetricGrowth(cardKey)}
-              />
+                draggable
+                onDragStart={(e) => handleDragStart(e, cardKey)}
+                onDragOver={(e) => handleCardDragOver(e, cardKey)}
+                onDragLeave={handleDragLeave}
+                onDragEnd={handleDragEnd}
+                onDrop={(e) => handleDrop(e, cardKey)}
+                className={`transition-all duration-200 ease-out ${
+                  isDragging 
+                    ? 'opacity-40 scale-95 cursor-grabbing' 
+                    : isDragOver 
+                      ? 'transform scale-105 z-10' 
+                      : 'cursor-grab active:cursor-grabbing hover:scale-[1.02]'
+                }`}
+              >
+                <MetricCard
+                  title={metric.label}
+                  value={value}
+                  icon={Icon}
+                  format={format}
+                  color={color}
+                  isDragOver={isDragOver}
+                  growth={getMetricGrowth(cardKey)}
+                />
+              </div>
             )
           })}
         </div>
@@ -2623,58 +2730,6 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                       </div>
                     )}
                   </div>
-                  
-                  {/* Ordem dos Cards */}
-                  {cardMetrics.length > 0 && (
-                    <div className="mt-8">
-                      <h3 className="text-base font-bold text-gray-900 mb-4">Ordem dos Cards</h3>
-                      <div className="space-y-2 bg-white/60 backdrop-blur-sm rounded-xl p-2 border border-gray-200/50">
-                        {cardOrder
-                          .filter(key => cardMetrics.includes(key))
-                          .map((cardKey, index) => {
-                            const metric = metrics.find(m => m.key === cardKey)
-                            if (!metric) return null
-                            const isFirst = index === 0
-                            const isLast = index === cardOrder.filter(k => cardMetrics.includes(k)).length - 1
-                            
-                            return (
-                              <div
-                                key={cardKey}
-                                className="flex items-center gap-2 p-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 transition-colors"
-                              >
-                                <span className="flex-1 text-sm font-medium text-gray-700">{metric.label}</span>
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    onClick={() => moveCardUp(cardKey)}
-                                    disabled={isFirst}
-                                    className={`p-1.5 rounded transition-colors ${
-                                      isFirst
-                                        ? 'text-gray-300 cursor-not-allowed'
-                                        : 'text-blue-600 hover:bg-blue-50 hover:text-blue-700'
-                                    }`}
-                                    title="Mover para cima"
-                                  >
-                                    <ChevronUp className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => moveCardDown(cardKey)}
-                                    disabled={isLast}
-                                    className={`p-1.5 rounded transition-colors ${
-                                      isLast
-                                        ? 'text-gray-300 cursor-not-allowed'
-                                        : 'text-blue-600 hover:bg-blue-50 hover:text-blue-700'
-                                    }`}
-                                    title="Mover para baixo"
-                                  >
-                                    <ChevronDown className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              </div>
-                            )
-                          })}
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
