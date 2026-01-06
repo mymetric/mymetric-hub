@@ -23,8 +23,37 @@ import {
   Download,
   ArrowUpRight,
   ArrowDownRight,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   Search,
-  GripVertical
+  GripVertical,
+  Pencil,
+  Plus,
+  Layout,
+  Eye,
+  EyeOff,
+  Activity,
+  Database,
+  Package,
+  MessageSquare,
+  Truck,
+  Filter,
+  Zap,
+  Star,
+  Heart,
+  Home,
+  Briefcase,
+  Calendar,
+  Clock,
+  Bell,
+  Bookmark,
+  Tag,
+  Layers,
+  Grid,
+  List,
+  Columns,
+  type LucideIcon
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
 import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts'
@@ -78,6 +107,418 @@ interface DashboardPreset {
   createdAt: string
 }
 
+interface Widget {
+  id: string
+  type: 'cards' | 'timeline' | 'table' | 'runrate'
+  cardMetrics?: string[]
+  cardOrder?: string[]
+  timelineMetrics?: string[]
+  selectedDimensions?: string[]
+  selectedMetrics?: string[]
+  sortField?: string | null
+  sortDirection?: 'asc' | 'desc'
+  rowLimit?: number | null
+  title?: string
+  customTabId?: string // ID da sub aba à qual este widget pertence
+}
+
+// Interface para sub abas personalizadas
+interface CustomTab {
+  id: string
+  name: string
+  icon: string // Nome do ícone do lucide-react
+  order: number
+  createdAt: string
+  updatedAt: string
+}
+
+// Interface para todas as configurações do dashboard
+interface DashboardConfig {
+  widgets: Widget[]
+  customTabs?: CustomTab[] // Sub abas personalizadas
+  // Configurações legadas (mantidas para compatibilidade durante migração)
+  legacy?: {
+    cardMetrics?: string[]
+    cardOrder?: string[]
+    timelineMetrics?: string[]
+    selectedDimensions?: string[]
+    selectedMetrics?: string[]
+    sortField?: string | null
+    sortDirection?: 'asc' | 'desc'
+    dimensionFilters?: Record<string, string[]>
+    presets?: DashboardPreset[]
+  }
+  version: string // Versão do schema para migrações futuras
+}
+
+// Utilitário centralizado para gerenciar configurações no localStorage
+class DashboardStorage {
+  private static readonly STORAGE_PREFIX = 'overview-dashboard'
+  private static readonly CURRENT_VERSION = '2.0'
+
+  // Obter chave de storage para um cliente
+  private static getStorageKey(tableName: string): string {
+    return `${this.STORAGE_PREFIX}-${tableName}`
+  }
+
+  // Carregar todas as configurações de um cliente
+  static loadConfig(tableName: string): DashboardConfig | null {
+    if (!tableName) return null
+
+    try {
+      const storageKey = this.getStorageKey(tableName)
+      const saved = localStorage.getItem(storageKey)
+      
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        
+        // Se já tem widgets e versão, retornar direto (não migrar)
+        if (parsed.widgets && Array.isArray(parsed.widgets) && parsed.widgets.length > 0 && parsed.version === this.CURRENT_VERSION) {
+          return parsed as DashboardConfig
+        }
+        
+        // Migrar de versão antiga se necessário
+        if (!parsed.version || parsed.version !== this.CURRENT_VERSION) {
+          return this.migrateFromLegacy(tableName, parsed)
+        }
+        
+        return parsed as DashboardConfig
+      }
+    } catch (error) {
+      console.error('❌ Erro ao carregar configurações:', error)
+    }
+
+    return null
+  }
+
+  // Salvar todas as configurações de um cliente
+  static saveConfig(tableName: string, config: Partial<DashboardConfig>): void {
+    if (!tableName) return
+
+    try {
+      const storageKey = this.getStorageKey(tableName)
+      
+      // Carregar existente diretamente do localStorage para evitar migração durante save
+      let existing: DashboardConfig | null = null
+      try {
+        const saved = localStorage.getItem(storageKey)
+        if (saved) {
+          const parsed = JSON.parse(saved)
+          // Preservar widgets e customTabs existentes mesmo se versão for antiga
+          if (parsed.widgets && Array.isArray(parsed.widgets)) {
+            existing = {
+              widgets: parsed.widgets,
+              customTabs: Array.isArray(parsed.customTabs) ? parsed.customTabs : [],
+              version: parsed.version || this.CURRENT_VERSION,
+              legacy: parsed.legacy
+            }
+          } else if (Array.isArray(parsed.customTabs)) {
+            // Caso raro: ter apenas customTabs salvas
+            existing = {
+              widgets: [],
+              customTabs: parsed.customTabs,
+              version: parsed.version || this.CURRENT_VERSION,
+              legacy: parsed.legacy
+            }
+          }
+        }
+      } catch {}
+
+      if (!existing) {
+        existing = {
+          widgets: [],
+          customTabs: [],
+          version: this.CURRENT_VERSION
+        }
+      }
+
+      const updated: DashboardConfig = {
+        ...existing,
+        ...config,
+        version: this.CURRENT_VERSION
+      }
+
+      // Se widgets estão sendo atualizados, usar os novos; caso contrário, preservar os existentes
+      if (config.widgets !== undefined) {
+        // Só atualizar se não for array vazio OU se for explicitamente uma remoção (array vazio quando já havia widgets)
+        if (Array.isArray(config.widgets) && config.widgets.length > 0) {
+          // Atualizar com novos widgets
+          updated.widgets = config.widgets
+        } else if (Array.isArray(config.widgets) && config.widgets.length === 0) {
+          // Array vazio: só permitir se já estava vazio OU se foi uma remoção explícita
+          // Para detectar remoção explícita, verificamos se existing tinha widgets antes
+          if (existing.widgets.length === 0) {
+            // Já estava vazio, ok manter vazio
+            updated.widgets = []
+          } else {
+            // Tentando limpar widgets existentes - NÃO PERMITIR (preservar)
+            console.warn('⚠️ Tentativa de limpar widgets existentes bloqueada. Preservando widgets.')
+            updated.widgets = existing.widgets
+          }
+        } else {
+          // Preservar widgets existentes
+          updated.widgets = existing.widgets
+        }
+      } else if (existing.widgets && existing.widgets.length > 0) {
+        // Preservar widgets existentes se não estiver sendo atualizado
+        updated.widgets = existing.widgets
+      }
+
+      // Preservar customTabs existentes se não estiver sendo atualizado
+      if (config.customTabs === undefined && existing.customTabs) {
+        updated.customTabs = existing.customTabs
+      } else if (config.customTabs !== undefined) {
+        updated.customTabs = config.customTabs
+      }
+
+      localStorage.setItem(storageKey, JSON.stringify(updated))
+      console.log('💾 Configurações salvas:', { tableName, widgets: updated.widgets.length, customTabs: updated.customTabs?.length || 0 })
+    } catch (error) {
+      console.error('❌ Erro ao salvar configurações:', error)
+    }
+  }
+
+  // Métodos para gerenciar customTabs
+  static getCustomTabs(tableName: string): CustomTab[] {
+    const config = this.loadConfig(tableName)
+    return config?.customTabs || []
+  }
+
+  static addCustomTab(tableName: string, tab: Omit<CustomTab, 'id' | 'createdAt' | 'updatedAt'>): CustomTab {
+    const tabs = this.getCustomTabs(tableName)
+    const newTab: CustomTab = {
+      ...tab,
+      id: `custom-tab-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+    const updatedTabs = [...tabs, newTab]
+    this.saveConfig(tableName, { customTabs: updatedTabs })
+    return newTab
+  }
+
+  static updateCustomTab(tableName: string, tabId: string, updates: Partial<Omit<CustomTab, 'id' | 'createdAt'>>): CustomTab | null {
+    const tabs = this.getCustomTabs(tableName)
+    const index = tabs.findIndex(t => t.id === tabId)
+    if (index === -1) return null
+    
+    const updatedTab: CustomTab = {
+      ...tabs[index],
+      ...updates,
+      updatedAt: new Date().toISOString()
+    }
+    const updatedTabs = [...tabs]
+    updatedTabs[index] = updatedTab
+    this.saveConfig(tableName, { customTabs: updatedTabs })
+    return updatedTab
+  }
+
+  static deleteCustomTab(tableName: string, tabId: string): void {
+    const tabs = this.getCustomTabs(tableName)
+    const updatedTabs = tabs.filter(t => t.id !== tabId)
+    this.saveConfig(tableName, { customTabs: updatedTabs })
+    
+    // Remover widgets associados a esta aba
+    const config = this.loadConfig(tableName)
+    if (config?.widgets) {
+      const updatedWidgets = config.widgets.filter(w => w.customTabId !== tabId)
+      this.saveConfig(tableName, { widgets: updatedWidgets })
+    }
+  }
+
+  static reorderCustomTabs(tableName: string, tabIds: string[]): void {
+    const tabs = this.getCustomTabs(tableName)
+    const reorderedTabs = tabIds.map((id, index) => {
+      const tab = tabs.find(t => t.id === id)
+      if (!tab) return null
+      return { ...tab, order: index }
+    }).filter((tab): tab is CustomTab => tab !== null)
+    
+    // Adicionar tabs que não foram incluídos na reordenação (mantendo ordem original)
+    const remainingTabs = tabs.filter(t => !tabIds.includes(t.id))
+    const allTabs = [...reorderedTabs, ...remainingTabs]
+    
+    this.saveConfig(tableName, { customTabs: allTabs })
+  }
+
+  // Migrar configurações antigas para o novo formato
+  private static migrateFromLegacy(tableName: string, existing: any): DashboardConfig {
+    console.log('🔄 Migrando configurações antigas para novo formato...')
+    
+    const config: DashboardConfig = {
+      widgets: [],
+      version: this.CURRENT_VERSION,
+      legacy: {}
+    }
+
+    // PRIORIDADE 1: Preservar widgets existentes se já houver no novo formato
+    if (existing?.widgets && Array.isArray(existing.widgets) && existing.widgets.length > 0) {
+      console.log('📦 Preservando widgets existentes do novo formato:', existing.widgets.length)
+      config.widgets = existing.widgets
+    } else {
+      // PRIORIDADE 2: Migrar widgets da chave antiga se existirem
+      const widgetsKey = `overview-widgets-${tableName}`
+      const savedWidgets = localStorage.getItem(widgetsKey)
+      if (savedWidgets) {
+        try {
+          const parsed = JSON.parse(savedWidgets)
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            config.widgets = parsed
+            console.log('📦 Widgets migrados da chave antiga:', parsed.length)
+          }
+        } catch (e) {
+          console.error('❌ Erro ao migrar widgets da chave antiga:', e)
+        }
+      }
+    }
+
+    // Migrar configurações legadas
+    const legacy: any = {}
+    
+    const cardMetricsKey = `overview-card-metrics-${tableName}`
+    const savedCardMetrics = localStorage.getItem(cardMetricsKey)
+    if (savedCardMetrics) {
+      try {
+        legacy.cardMetrics = JSON.parse(savedCardMetrics)
+      } catch {}
+    }
+
+    const timelineMetricsKey = `overview-timeline-metrics-${tableName}`
+    const savedTimelineMetrics = localStorage.getItem(timelineMetricsKey)
+    if (savedTimelineMetrics) {
+      try {
+        legacy.timelineMetrics = JSON.parse(savedTimelineMetrics)
+      } catch {}
+    }
+
+    const dimensionsKey = `overview-selected-dimensions-${tableName}`
+    const savedDimensions = localStorage.getItem(dimensionsKey)
+    if (savedDimensions) {
+      try {
+        const parsed = JSON.parse(savedDimensions)
+        legacy.selectedDimensions = parsed.dimensions || parsed
+      } catch {}
+    }
+
+    const metricsKey = `overview-selected-metrics-${tableName}`
+    const savedMetrics = localStorage.getItem(metricsKey)
+    if (savedMetrics) {
+      try {
+        const parsed = JSON.parse(savedMetrics)
+        legacy.selectedMetrics = parsed.metrics || parsed
+      } catch {}
+    }
+
+    const cardOrderKey = `overview-card-order-${tableName}`
+    const savedCardOrder = localStorage.getItem(cardOrderKey)
+    if (savedCardOrder) {
+      try {
+        legacy.cardOrder = JSON.parse(savedCardOrder)
+      } catch {}
+    }
+
+    const sortFieldKey = `overview-sort-field-${tableName}`
+    const savedSortField = localStorage.getItem(sortFieldKey)
+    if (savedSortField) {
+      legacy.sortField = savedSortField
+    }
+
+    const sortDirectionKey = `overview-sort-direction-${tableName}`
+    const savedSortDirection = localStorage.getItem(sortDirectionKey)
+    if (savedSortDirection) {
+      legacy.sortDirection = savedSortDirection as 'asc' | 'desc'
+    }
+
+    const filtersKey = `overview-dimension-filters-${tableName}`
+    const savedFilters = localStorage.getItem(filtersKey)
+    if (savedFilters) {
+      try {
+        const parsed = JSON.parse(savedFilters)
+        legacy.dimensionFilters = parsed
+      } catch {}
+    }
+
+    const presetsKey = `overview-presets-${tableName}`
+    const savedPresets = localStorage.getItem(presetsKey)
+    if (savedPresets) {
+      try {
+        legacy.presets = JSON.parse(savedPresets)
+      } catch {}
+    }
+
+    config.legacy = legacy
+
+    // Salvar configuração migrada
+    this.saveConfig(tableName, config)
+
+    console.log('✅ Migração concluída')
+    return config
+  }
+
+  // Limpar todas as configurações de um cliente
+  static clearConfig(tableName: string): void {
+    if (!tableName) return
+
+    try {
+      const storageKey = this.getStorageKey(tableName)
+      localStorage.removeItem(storageKey)
+      
+      // Limpar também chaves antigas para limpeza completa
+      const oldKeys = [
+        `overview-widgets-${tableName}`,
+        `overview-card-metrics-${tableName}`,
+        `overview-timeline-metrics-${tableName}`,
+        `overview-selected-dimensions-${tableName}`,
+        `overview-selected-metrics-${tableName}`,
+        `overview-card-order-${tableName}`,
+        `overview-sort-field-${tableName}`,
+        `overview-sort-direction-${tableName}`,
+        `overview-dimension-filters-${tableName}`,
+        `overview-presets-${tableName}`
+      ]
+
+      oldKeys.forEach(key => localStorage.removeItem(key))
+      console.log('🗑️ Configurações removidas:', tableName)
+    } catch (error) {
+      console.error('❌ Erro ao limpar configurações:', error)
+    }
+  }
+}
+
+// Helper para mapear nomes de ícones para componentes do lucide-react
+const iconMap: Record<string, LucideIcon> = {
+  BarChart3,
+  ShoppingBag,
+  DollarSign,
+  Coins,
+  Users,
+  Globe,
+  Target,
+  TrendingUp,
+  CheckCircle,
+  ShoppingCart,
+  Activity,
+  Database,
+  Package,
+  MessageSquare,
+  Truck,
+  Filter,
+  Zap,
+  Star,
+  Heart,
+  Home,
+  Briefcase,
+  Calendar,
+  Clock,
+  Bell,
+  Bookmark,
+  Tag,
+  Layers,
+  Grid,
+  List,
+  Columns
+}
+
 // Todas as personalizações (dimensões, métricas, cards, timeline, filtros, ordem) são salvas no localStorage
 // usando selectedTable como identificador único do cliente, garantindo que cada cliente tenha suas próprias configurações
 const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashboardProps) => {
@@ -102,6 +543,50 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   
   // Estado para sidebar do seletor
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  
+  // Estados para múltiplos widgets
+  const [widgets, setWidgets] = useState<Widget[]>(() => {
+    if (!selectedTable) return []
+    const config = DashboardStorage.loadConfig(selectedTable)
+    if (config?.widgets) {
+      console.log('📦 Widgets carregados:', config.widgets.length, 'widgets')
+      return config.widgets
+    }
+    console.log('📦 Nenhum widget encontrado')
+    return []
+  })
+  
+  // Ref para evitar adicionar widgets duplicados
+  const addingWidgetRef = useRef(false)
+
+  // Estados para sub abas personalizadas
+  const [customTabs, setCustomTabs] = useState<CustomTab[]>(() => {
+    if (!selectedTable) return []
+    return DashboardStorage.getCustomTabs(selectedTable).sort((a, b) => a.order - b.order)
+  })
+  const [activeCustomTab, setActiveCustomTab] = useState<string | null>(null) // null = mostrar widgets sem aba
+  const [showCustomTabModal, setShowCustomTabModal] = useState(false)
+  const [editingCustomTab, setEditingCustomTab] = useState<CustomTab | null>(null)
+  const [customTabFormData, setCustomTabFormData] = useState({ name: '', icon: 'BarChart3', order: 0 })
+  const [draggedCustomTab, setDraggedCustomTab] = useState<string | null>(null)
+
+  // Estados para edição de widgets individuais
+  const [editingWidget, setEditingWidget] = useState<{ id: string; type: 'cards' | 'timeline' | 'table' | 'runrate' } | null>(null)
+  
+  // Estado para modal de reordenação
+  const [showReorderModal, setShowReorderModal] = useState(false)
+  
+  // Estado para modal de adicionar widget
+  const [showAddWidgetModal, setShowAddWidgetModal] = useState(false)
+  
+  // Estado para modo de edição/visualização (padrão: visualização)
+  const [isEditMode, setIsEditMode] = useState(false)
+  
+  // Estados para busca nos modais de edição
+  const [cardsMetricSearch, setCardsMetricSearch] = useState('')
+  const [timelineMetricSearch, setTimelineMetricSearch] = useState('')
+  const [tableMetricSearch, setTableMetricSearch] = useState('')
+  const [tableDimensionSearch, setTableDimensionSearch] = useState('')
   
   // Estado para busca de métricas na sidebar
   const [metricSearchTerm, setMetricSearchTerm] = useState('')
@@ -163,6 +648,10 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   // Estado para drag and drop dos cards
   const [draggedCard, setDraggedCard] = useState<string | null>(null)
   const [dragOverCard, setDragOverCard] = useState<string | null>(null)
+  
+  // Estado para drag and drop dos widgets
+  const [draggedWidget, setDraggedWidget] = useState<string | null>(null)
+  const [dragOverWidget, setDragOverWidget] = useState<string | null>(null)
   const isDraggingRef = useRef(false)
   const dragOverCardRef = useRef<string | null>(null)
   
@@ -201,8 +690,401 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
       setTimelineMetrics([])
     }
   }, [selectedTable])
+
+  // Limpar campos de busca quando fechar o modal
+  useEffect(() => {
+    if (!editingWidget) {
+      setCardsMetricSearch('')
+      setTimelineMetricSearch('')
+      setTableMetricSearch('')
+      setTableDimensionSearch('')
+    }
+  }, [editingWidget])
+
+  // Recarregar customTabs quando selectedTable mudar
+  useEffect(() => {
+    if (selectedTable) {
+      const tabs = DashboardStorage.getCustomTabs(selectedTable).sort((a, b) => a.order - b.order)
+      setCustomTabs(tabs)
+      // Se houver abas e nenhuma estiver ativa, ativar a primeira
+      if (tabs.length > 0 && activeCustomTab === null) {
+        setActiveCustomTab(tabs[0].id)
+      } else if (tabs.length === 0) {
+        setActiveCustomTab(null)
+      } else if (activeCustomTab && !tabs.find(t => t.id === activeCustomTab)) {
+        // Se a aba ativa não existe mais, ativar a primeira
+        setActiveCustomTab(tabs[0].id)
+      }
+    } else {
+      setCustomTabs([])
+      setActiveCustomTab(null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTable])
+
+  // Filtrar widgets por sub aba ativa
+  const filteredWidgets = useMemo(() => {
+    if (activeCustomTab === null) {
+      // Mostrar widgets sem sub aba (customTabId undefined ou null)
+      return widgets.filter(w => !w.customTabId)
+    }
+    // Mostrar widgets da sub aba ativa
+    return widgets.filter(w => w.customTabId === activeCustomTab)
+  }, [widgets, activeCustomTab])
+
+  // Ref para rastrear se é a primeira renderização dos widgets
+  const isWidgetsInitialMountRef = useRef(true)
+  const prevWidgetsRef = useRef<Widget[]>([])
+
+  // Salvar widgets no localStorage (apenas quando realmente mudarem, não na inicialização)
+  useEffect(() => {
+    // Pular na primeira renderização
+    if (isWidgetsInitialMountRef.current) {
+      isWidgetsInitialMountRef.current = false
+      prevWidgetsRef.current = widgets
+      return
+    }
+
+    // Só salvar se os widgets realmente mudaram
+    if (selectedTable && JSON.stringify(prevWidgetsRef.current) !== JSON.stringify(widgets)) {
+      DashboardStorage.saveConfig(selectedTable, { widgets })
+      prevWidgetsRef.current = widgets
+    }
+  }, [widgets, selectedTable])
+
+  // Recarregar widgets quando selectedTable mudar (apenas se não houver widgets carregados)
+  // Usar ref para evitar recarregar múltiplas vezes
+  const hasLoadedWidgetsRef = useRef(false)
+  
+  useEffect(() => {
+    if (selectedTable) {
+      // Só carregar se ainda não carregou OU se não há widgets no estado
+      if (!hasLoadedWidgetsRef.current || widgets.length === 0) {
+        const config = DashboardStorage.loadConfig(selectedTable)
+        if (config?.widgets && config.widgets.length > 0) {
+          setWidgets(config.widgets)
+          prevWidgetsRef.current = config.widgets
+          isWidgetsInitialMountRef.current = true // Resetar flag para não salvar na próxima renderização
+          hasLoadedWidgetsRef.current = true
+          console.log('🔄 Widgets recarregados:', config.widgets.length, 'widgets')
+        } else if (widgets.length > 0) {
+          // Se não há widgets salvos mas há widgets no estado, preservar (não limpar)
+          console.log('⚠️ Nenhum widget encontrado no storage, preservando widgets atuais:', widgets.length)
+        }
+      }
+    }
+    
+    // Resetar flag quando selectedTable mudar
+    return () => {
+      hasLoadedWidgetsRef.current = false
+    }
+  }, [selectedTable])
+
+  // Migrar widgets antigos para o novo sistema na primeira vez
+  useEffect(() => {
+    if (widgets.length === 0) {
+      // Verificar se há configurações antigas
+      const cardMetricsKey = `overview-card-metrics-${selectedTable}`
+      const timelineMetricsKey = `overview-timeline-metrics-${selectedTable}`
+      const selectedDimensionsKey = `overview-selected-dimensions-${selectedTable}`
+      const selectedMetricsKey = `overview-selected-metrics-${selectedTable}`
+      
+      const savedCardMetrics = localStorage.getItem(cardMetricsKey)
+      const savedTimelineMetrics = localStorage.getItem(timelineMetricsKey)
+      const savedDimensions = localStorage.getItem(selectedDimensionsKey)
+      const savedMetrics = localStorage.getItem(selectedMetricsKey)
+      
+      const newWidgets: Widget[] = []
+      
+      // Migrar cards se existirem
+      if (savedCardMetrics) {
+        try {
+          const cardMetrics = JSON.parse(savedCardMetrics)
+          if (cardMetrics.length > 0) {
+            const cardOrderKey = `overview-card-order-${selectedTable}`
+            const savedCardOrder = localStorage.getItem(cardOrderKey)
+            newWidgets.push({
+              id: `widget-${Date.now()}-cards`,
+              type: 'cards',
+              cardMetrics: cardMetrics,
+              cardOrder: savedCardOrder ? JSON.parse(savedCardOrder) : cardMetrics,
+              title: 'Cards de Métricas'
+            })
+          }
+        } catch {}
+      }
+      
+      // Migrar timeline se existir
+      if (savedTimelineMetrics) {
+        try {
+          const timelineMetrics = JSON.parse(savedTimelineMetrics)
+          if (timelineMetrics.length > 0) {
+            newWidgets.push({
+              id: `widget-${Date.now()}-timeline`,
+              type: 'timeline',
+              timelineMetrics: timelineMetrics,
+              title: 'Timeline de Métricas'
+            })
+          }
+        } catch {}
+      }
+      
+      // Migrar tabela se existir
+      if (savedDimensions && savedMetrics) {
+        try {
+          const dimensions = JSON.parse(savedDimensions)
+          const metrics = JSON.parse(savedMetrics)
+          if (dimensions.length > 0 && metrics.length > 0) {
+            const sortFieldKey = `overview-sort-field-${selectedTable}`
+            const sortDirectionKey = `overview-sort-direction-${selectedTable}`
+            const savedSortField = localStorage.getItem(sortFieldKey)
+            const savedSortDirection = localStorage.getItem(sortDirectionKey)
+            
+            newWidgets.push({
+              id: `widget-${Date.now()}-table`,
+              type: 'table',
+              selectedDimensions: dimensions,
+              selectedMetrics: metrics,
+              sortField: savedSortField || null,
+              sortDirection: (savedSortDirection as 'asc' | 'desc') || 'asc',
+              rowLimit: 10,
+              title: 'Dados Agrupados'
+            })
+          }
+        } catch {}
+      }
+      
+      if (newWidgets.length > 0) {
+        setWidgets(newWidgets)
+      }
+    }
+  }, [selectedTable]) // Executar apenas quando selectedTable mudar
+
+  // Funções para gerenciar widgets
+  const addWidget = (type: 'cards' | 'timeline' | 'table' | 'runrate') => {
+    // Prevenir adição duplicada
+    if (addingWidgetRef.current) {
+      return
+    }
+    
+    addingWidgetRef.current = true
+    
+    const newWidget: Widget = {
+      id: `widget-${Date.now()}-${Math.random()}-${type}`,
+      type,
+      ...(type === 'cards' && { cardMetrics: [], cardOrder: [] }),
+      ...(type === 'timeline' && { timelineMetrics: [] }),
+      ...(type === 'table' && { 
+        selectedDimensions: [], 
+        selectedMetrics: [],
+        sortField: null,
+        sortDirection: 'asc',
+        rowLimit: 10
+      }),
+      title: type === 'cards' ? 'Cards de Métricas' : 
+             type === 'timeline' ? 'Timeline de Métricas' : 
+             type === 'runrate' ? 'Run Rate da Meta' :
+             'Dados Agrupados',
+      customTabId: activeCustomTab || undefined // Associar à sub aba ativa
+    }
+    setWidgets(prev => [...prev, newWidget])
+    setEditingWidget({ id: newWidget.id, type })
+    
+    // Resetar após um pequeno delay
+    setTimeout(() => {
+      addingWidgetRef.current = false
+    }, 100)
+  }
+
+  const removeWidget = (id: string) => {
+    setWidgets(prev => {
+      const newWidgets = prev.filter(w => w.id !== id)
+      // Salvar imediatamente
+      if (selectedTable) {
+        DashboardStorage.saveConfig(selectedTable, { widgets: newWidgets })
+      }
+      return newWidgets
+    })
+  }
+
+  const removeAllWidgets = () => {
+    if (window.confirm('Tem certeza que deseja remover todos os widgets? Esta ação não pode ser desfeita.')) {
+      setWidgets([])
+      // Salvar imediatamente
+      if (selectedTable) {
+        DashboardStorage.saveConfig(selectedTable, { widgets: [] })
+      }
+    }
+  }
+
+  const updateWidget = (id: string, updates: Partial<Widget>) => {
+    setWidgets(prev => {
+      const updated = prev.map(w => w.id === id ? { ...w, ...updates } : w)
+      // Salvar imediatamente no localStorage
+      if (selectedTable) {
+        DashboardStorage.saveConfig(selectedTable, { widgets: updated })
+      }
+      return updated
+    })
+  }
+
+  // Funções para drag and drop de widgets
+  const handleWidgetDragStart = (e: React.DragEvent, widgetId: string) => {
+    setDraggedWidget(widgetId)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleWidgetDragOver = (e: React.DragEvent, widgetId: string) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (widgetId !== draggedWidget && widgetId !== dragOverWidget) {
+      setDragOverWidget(widgetId)
+    }
+  }
+
+  const handleWidgetDragLeave = () => {
+    setDragOverWidget(null)
+  }
+
+  const handleWidgetDragEnd = () => {
+    setDraggedWidget(null)
+    setDragOverWidget(null)
+  }
+
+  const handleWidgetDrop = (e: React.DragEvent, dropWidgetId: string) => {
+    e.preventDefault()
+    if (!draggedWidget || draggedWidget === dropWidgetId) {
+      setDraggedWidget(null)
+      setDragOverWidget(null)
+      return
+    }
+    
+    setWidgets(prev => {
+      const newWidgets = [...prev]
+      const dragIndex = newWidgets.findIndex(w => w.id === draggedWidget)
+      const dropIndex = newWidgets.findIndex(w => w.id === dropWidgetId)
+      
+      if (dragIndex === -1 || dropIndex === -1 || dragIndex === dropIndex) {
+        return prev
+      }
+      
+      // Remover da posição original
+      const [removed] = newWidgets.splice(dragIndex, 1)
+      // Inserir na nova posição
+      newWidgets.splice(dropIndex, 0, removed)
+      
+      return newWidgets
+    })
+    
+    setDraggedWidget(null)
+    setDragOverWidget(null)
+  }
+
+  // Funções para reordenar widgets no modal
+  const moveWidgetUp = (index: number) => {
+    if (index === 0 || !selectedTable) return
+    
+    setWidgets(prev => {
+      const newWidgets = [...prev]
+      const [removed] = newWidgets.splice(index, 1)
+      newWidgets.splice(index - 1, 0, removed)
+      
+      // Salvar imediatamente
+      DashboardStorage.saveConfig(selectedTable, { widgets: newWidgets })
+      console.log('✅ Widgets reordenados e salvos:', newWidgets.length)
+      
+      return newWidgets
+    })
+  }
+
+  const moveWidgetDown = (index: number) => {
+    if (index === widgets.length - 1 || !selectedTable) return
+    
+    setWidgets(prev => {
+      const newWidgets = [...prev]
+      const [removed] = newWidgets.splice(index, 1)
+      newWidgets.splice(index + 1, 0, removed)
+      
+      // Salvar imediatamente
+      DashboardStorage.saveConfig(selectedTable, { widgets: newWidgets })
+      console.log('✅ Widgets reordenados e salvos:', newWidgets.length)
+      
+      return newWidgets
+    })
+  }
+
+  // Função para obter o ícone do tipo de widget
+  const getWidgetTypeIcon = (type: string) => {
+    switch (type) {
+      case 'cards':
+        return Layout
+      case 'timeline':
+        return TrendingUp
+      case 'table':
+        return BarChart3
+      case 'runrate':
+        return Target
+      default:
+        return Layout
+    }
+  }
+
+  // Função para obter a cor do tipo de widget
+  const getWidgetTypeColor = (type: string) => {
+    switch (type) {
+      case 'cards':
+        return 'blue'
+      case 'timeline':
+        return 'purple'
+      case 'table':
+        return 'green'
+      case 'runrate':
+        return 'orange'
+      default:
+        return 'gray'
+    }
+  }
+
+  // Função para obter o nome do tipo de widget
+  const getWidgetTypeName = (type: string) => {
+    switch (type) {
+      case 'cards':
+        return 'Cards'
+      case 'timeline':
+        return 'Timeline'
+      case 'table':
+        return 'Tabela'
+      case 'runrate':
+        return 'Run Rate'
+      default:
+        return 'Widget'
+    }
+  }
+
+  // Obter widget atual sendo editado
+  const currentWidget = editingWidget ? widgets.find(w => w.id === editingWidget.id) : null
   
   const toggleTimelineMetric = (metricKey: string) => {
+    // Se estiver editando um widget específico, atualizar o widget
+    if (editingWidget && editingWidget.type === 'timeline' && currentWidget) {
+      const currentMetrics = currentWidget.timelineMetrics || []
+      let newMetrics: string[]
+      
+      if (currentMetrics.includes(metricKey)) {
+        newMetrics = currentMetrics.filter(key => key !== metricKey)
+      } else {
+        // Máximo de 2 métricas
+        if (currentMetrics.length >= 2) {
+          return
+        }
+        newMetrics = [...currentMetrics, metricKey]
+      }
+      
+      updateWidget(editingWidget.id, { timelineMetrics: newMetrics })
+      return
+    }
+    
+    // Comportamento legado para estado global
     setTimelineMetrics(prev => {
       if (prev.includes(metricKey)) {
         return prev.filter(key => key !== metricKey)
@@ -567,7 +1449,31 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
       return
     }
     
-    // Reordenar de forma simples e direta
+    // Se estiver editando um widget específico, atualizar o widget
+    if (editingWidget && editingWidget.type === 'cards' && currentWidget) {
+      const currentOrder = currentWidget.cardOrder || currentWidget.cardMetrics || []
+      const newOrder = [...currentOrder]
+      const dragIndex = newOrder.indexOf(dragCardKey)
+      const dropIndex = newOrder.indexOf(dropCardKey)
+      
+      if (dragIndex !== -1 && dropIndex !== -1 && dragIndex !== dropIndex) {
+        // Remover da posição original
+        newOrder.splice(dragIndex, 1)
+        // Inserir na nova posição
+        newOrder.splice(dropIndex, 0, dragCardKey)
+        
+        updateWidget(editingWidget.id, { cardOrder: newOrder })
+      }
+      
+      // Limpar estados
+      setDraggedCard(null)
+      setDragOverCard(null)
+      dragOverCardRef.current = null
+      isDraggingRef.current = false
+      return
+    }
+    
+    // Reordenar de forma simples e direta (comportamento legado)
     setCardOrder(prevOrder => {
       const newOrder = [...prevOrder]
       const dragIndex = newOrder.indexOf(dragCardKey)
@@ -627,6 +1533,37 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   }, [selectedTable])
   
   const toggleCardMetric = (metricKey: string) => {
+    // Se estiver editando um widget específico, atualizar o widget
+    if (editingWidget && editingWidget.type === 'cards' && currentWidget) {
+      const currentMetrics = currentWidget.cardMetrics || []
+      let newMetrics: string[]
+      
+      if (currentMetrics.includes(metricKey)) {
+        newMetrics = currentMetrics.filter(key => key !== metricKey)
+      } else {
+        newMetrics = [...currentMetrics, metricKey]
+      }
+      
+      // Atualizar também o cardOrder se necessário
+      const currentOrder = currentWidget.cardOrder || []
+      let newOrder = [...currentOrder]
+      
+      if (newMetrics.includes(metricKey) && !currentOrder.includes(metricKey)) {
+        // Adicionar ao final da ordem se não estiver lá
+        newOrder.push(metricKey)
+      } else if (!newMetrics.includes(metricKey)) {
+        // Remover da ordem se foi removido das métricas
+        newOrder = newOrder.filter(key => key !== metricKey)
+      }
+      
+      updateWidget(editingWidget.id, { 
+        cardMetrics: newMetrics,
+        cardOrder: newOrder
+      })
+      return
+    }
+    
+    // Comportamento legado para estado global
     setCardMetrics(prev => 
       prev.includes(metricKey) 
         ? prev.filter(key => key !== metricKey)
@@ -635,6 +1572,25 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   }
   
   const toggleAllCardMetrics = () => {
+    // Se estiver editando um widget específico, atualizar o widget
+    if (editingWidget && editingWidget.type === 'cards' && currentWidget) {
+      const currentMetrics = currentWidget.cardMetrics || []
+      if (currentMetrics.length === metrics.length) {
+        updateWidget(editingWidget.id, { 
+          cardMetrics: [],
+          cardOrder: []
+        })
+      } else {
+        const allMetrics = metrics.map(m => m.key)
+        updateWidget(editingWidget.id, { 
+          cardMetrics: allMetrics,
+          cardOrder: allMetrics
+        })
+      }
+      return
+    }
+    
+    // Comportamento legado para estado global
     if (cardMetrics.length === metrics.length) {
       setCardMetrics([])
     } else {
@@ -643,6 +1599,18 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   }
   
   const toggleAllTableMetrics = () => {
+    // Se estiver editando um widget de tabela, atualizar o widget específico
+    if (editingWidget && editingWidget.type === 'table' && currentWidget) {
+      const currentMetrics = currentWidget.selectedMetrics || []
+      if (currentMetrics.length === metrics.length) {
+        updateWidget(editingWidget.id, { selectedMetrics: [] })
+      } else {
+        updateWidget(editingWidget.id, { selectedMetrics: metrics.map(m => m.key) })
+      }
+      return
+    }
+
+    // Comportamento legado global
     if (selectedMetrics.length === metrics.length) {
       setSelectedMetrics([])
     } else {
@@ -741,6 +1709,18 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   
   // Funções para toggle de seleção
   const toggleDimension = (key: string) => {
+    // Se estiver editando um widget de tabela, atualizar o widget específico
+    if (editingWidget && editingWidget.type === 'table' && currentWidget) {
+      const currentDims = currentWidget.selectedDimensions || []
+      const newDims = currentDims.includes(key)
+        ? currentDims.filter(d => d !== key)
+        : [...currentDims, key]
+
+      updateWidget(editingWidget.id, { selectedDimensions: newDims })
+      return
+    }
+
+    // Comportamento legado global
     setSelectedDimensions(prev => 
       prev.includes(key) 
         ? prev.filter(d => d !== key)
@@ -749,6 +1729,18 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   }
   
   const toggleMetric = (key: string) => {
+    // Se estiver editando um widget de tabela, atualizar o widget específico
+    if (editingWidget && editingWidget.type === 'table' && currentWidget) {
+      const currentMetrics = currentWidget.selectedMetrics || []
+      const newMetrics = currentMetrics.includes(key)
+        ? currentMetrics.filter(m => m !== key)
+        : [...currentMetrics, key]
+
+      updateWidget(editingWidget.id, { selectedMetrics: newMetrics })
+      return
+    }
+
+    // Comportamento legado global
     setSelectedMetrics(prev =>
       prev.includes(key)
         ? prev.filter(m => m !== key)
@@ -757,6 +1749,18 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   }
   
   const toggleAllDimensions = () => {
+    // Se estiver editando um widget de tabela, atualizar o widget específico
+    if (editingWidget && editingWidget.type === 'table' && currentWidget) {
+      const currentDims = currentWidget.selectedDimensions || []
+      if (currentDims.length === dimensions.length) {
+        updateWidget(editingWidget.id, { selectedDimensions: [] })
+      } else {
+        updateWidget(editingWidget.id, { selectedDimensions: dimensions.map(d => d.key) })
+      }
+      return
+    }
+
+    // Comportamento legado global
     if (selectedDimensions.length === dimensions.length) {
       setSelectedDimensions([])
     } else {
@@ -882,6 +1886,164 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   const handlePresetDragEnd = () => {
     setDraggedPresetId(null)
     setDragOverPresetId(null)
+  }
+
+  const widgetsStateRef = useRef<Widget[] | null>(null)
+  widgetsStateRef.current = widgets
+
+  // Exportar/importar configurações do dashboard (widgets + presets) - apenas da sub aba ativa
+  const handleExportDashboardConfig = () => {
+    if (!selectedTable) {
+      alert('Nenhum cliente selecionado para exportar configurações.')
+      return
+    }
+
+    try {
+      const storageKey = (DashboardStorage as any).getStorageKey
+        ? (DashboardStorage as any).getStorageKey(selectedTable)
+        : `overview-dashboard-${selectedTable}`
+
+      let allWidgets: Widget[] = widgetsStateRef.current || []
+      let legacy: DashboardConfig['legacy'] | undefined = undefined
+
+      try {
+        const saved = localStorage.getItem(storageKey)
+        if (saved) {
+          const parsed = JSON.parse(saved)
+          if (Array.isArray(parsed.widgets)) {
+            allWidgets = parsed.widgets
+          }
+          if (parsed.legacy) {
+            legacy = parsed.legacy
+          }
+        }
+      } catch {
+        // Ignorar erros de leitura, usa estado atual
+      }
+
+      // Filtrar widgets apenas da sub aba ativa
+      const widgetsToExport = activeCustomTab === null
+        ? allWidgets.filter(w => !w.customTabId)
+        : allWidgets.filter(w => w.customTabId === activeCustomTab)
+
+      // Obter nome da aba para o nome do arquivo
+      const tabName = activeCustomTab === null
+        ? 'Geral'
+        : customTabs.find(t => t.id === activeCustomTab)?.name || 'Aba'
+
+      const payload = {
+        type: 'mymetric-overview-dashboard-config',
+        version: '1.0',
+        table: selectedTable,
+        exportedAt: new Date().toISOString(),
+        customTabId: activeCustomTab,
+        customTabName: tabName,
+        widgets: widgetsToExport,
+        legacy: legacy || null,
+        presets
+      }
+
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const safeTable = selectedTable.replace(/[^\w-]/g, '_')
+      const safeTabName = tabName.replace(/[^\w-]/g, '_')
+      a.href = url
+      a.download = `overview-dashboard-${safeTable}-${safeTabName}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Erro ao exportar configurações do dashboard:', error)
+      alert('Erro ao exportar configurações. Por favor, tente novamente.')
+    }
+  }
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  const handleImportDashboardConfigClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+      fileInputRef.current.click()
+    }
+  }
+
+  const handleImportDashboardConfig = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    if (!selectedTable) {
+      alert('Nenhum cliente selecionado para importar configurações.')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result
+        if (typeof text !== 'string') {
+          throw new Error('Arquivo inválido')
+        }
+
+        const parsed = JSON.parse(text)
+
+        if (parsed.type !== 'mymetric-overview-dashboard-config') {
+          alert('Arquivo de configuração inválido.')
+          return
+        }
+
+        if (!Array.isArray(parsed.widgets)) {
+          alert('Arquivo de configuração não contém widgets válidos.')
+          return
+        }
+
+        // Carregar widgets existentes
+        const config = DashboardStorage.loadConfig(selectedTable)
+        const existingWidgets: Widget[] = config?.widgets || []
+        
+        // Remover widgets da sub aba ativa antes de importar
+        const widgetsToKeep = activeCustomTab === null
+          ? existingWidgets.filter(w => w.customTabId) // Manter widgets de outras abas
+          : existingWidgets.filter(w => w.customTabId !== activeCustomTab) // Manter widgets de outras abas e da aba "Geral"
+
+        // Importar widgets e associá-los à sub aba ativa
+        const importedWidgets: Widget[] = parsed.widgets.map((w: Widget) => ({
+          ...w,
+          id: `widget-${Date.now()}-${Math.random()}-${w.type}`, // Gerar novo ID para evitar conflitos
+          customTabId: activeCustomTab || undefined // Associar à sub aba ativa
+        }))
+
+        // Combinar widgets mantidos com os importados
+        const allWidgets = [...widgetsToKeep, ...importedWidgets]
+        
+        const importedPresets: DashboardPreset[] = Array.isArray(parsed.presets) ? parsed.presets : []
+
+        // Salvar widgets via DashboardStorage
+        DashboardStorage.saveConfig(selectedTable, {
+          widgets: allWidgets,
+          legacy: parsed.legacy || undefined
+        })
+
+        // Salvar presets no localStorage
+        const presetStorageKey = `overview-presets-${selectedTable}`
+        localStorage.setItem(presetStorageKey, JSON.stringify(importedPresets))
+
+        // Atualizar estado
+        setWidgets(allWidgets)
+        setPresets(importedPresets)
+
+        const tabName = activeCustomTab === null
+          ? 'Geral'
+          : customTabs.find(t => t.id === activeCustomTab)?.name || 'aba atual'
+        
+        alert(`Configurações da aba "${tabName}" importadas com sucesso!`)
+      } catch (error) {
+        console.error('Erro ao importar configurações do dashboard:', error)
+        alert('Erro ao importar configurações. Verifique o arquivo e tente novamente.')
+      }
+    }
+    reader.readAsText(file, 'utf-8')
   }
 
   // Função para obter o token da API 2.0
@@ -1371,7 +2533,21 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     // Marcar imediatamente para evitar race condition
     isProcessingRef.current = true
 
-    const token = getV2Token()
+    // Tentar obter o token com retry (aguardar até 5 segundos)
+    let token = getV2Token()
+    if (!token) {
+      console.log('⏳ Token não encontrado imediatamente, aguardando...')
+      // Tentar obter o token várias vezes antes de mostrar erro
+      for (let i = 0; i < 10; i++) {
+        await new Promise(resolve => setTimeout(resolve, 500)) // Aguardar 500ms
+        token = getV2Token()
+        if (token) {
+          console.log('✅ Token encontrado após espera')
+          break
+        }
+      }
+    }
+
     if (!token) {
       setJobStatus('error')
       setIsLoading(false)
@@ -2172,18 +3348,11 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Header com botão de personalizar */}
+      {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
           {/* Removido indicador do header para evitar duplicação - apenas no indicador grande abaixo */}
         </div>
-        <button
-          onClick={() => setIsSidebarOpen(true)}
-          className="flex items-center gap-2 px-4 py-2.5 text-sm text-white bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 font-medium rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl active:scale-95"
-        >
-          <Settings className="w-4 h-4" />
-          Personalizar Dashboard
-        </button>
       </div>
 
       {/* Indicador de processamento quando não há dados ainda */}
@@ -2243,26 +3412,773 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
         </div>
       )}
 
-      {/* Mensagem quando há dados mas nenhuma seleção para exibir */}
-      {filteredData.length > 0 && cardMetrics.length === 0 && selectedDimensions.length === 0 && selectedMetrics.length === 0 && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-          <p className="text-yellow-800">
-            Dados carregados ({filteredData.length} registros), mas nenhuma métrica ou dimensão selecionada. 
-            Use o botão "Personalizar Dashboard" para selecionar o que deseja visualizar.
-          </p>
-        </div>
-      )}
 
-      {/* Run Rate da Meta */}
+      {/* Run Rate da Meta (legado - só mostrar se não houver widgets do novo sistema) */}
+      {widgets.length === 0 && (
       <RunRateHighlight 
         runRateData={runRateData} 
         isLoadingGoals={isLoadingGoals}
         isLoadingCurrentMonth={isLoadingCurrentMonth}
       />
+      )}
 
-      {/* Cards de Métricas */}
-      {cardMetrics.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      {/* Botão para adicionar widgets */}
+      <div className="mb-6 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsEditMode(!isEditMode)}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl transition-all duration-200 shadow-sm hover:shadow-md active:scale-95 ${
+              isEditMode
+                ? 'text-blue-700 bg-blue-50 border border-blue-300 hover:bg-blue-100'
+                : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+            }`}
+            title={isEditMode ? 'Modo Edição - Clique para visualização' : 'Modo Visualização - Clique para edição'}
+          >
+            {isEditMode ? (
+              <>
+                <Pencil className="w-4 h-4" />
+                Modo Edição
+              </>
+            ) : (
+              <>
+                <Eye className="w-4 h-4" />
+                Modo Visualização
+              </>
+            )}
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          {isEditMode && customTabs.length === 0 && (
+            <button
+              onClick={() => {
+                setEditingCustomTab(null)
+                setCustomTabFormData({ name: '', icon: 'BarChart3', order: 0 })
+                setShowCustomTabModal(true)
+              }}
+              className="flex items-center gap-2 px-4 py-2 text-sm text-white bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-700 hover:to-purple-600 font-medium rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl active:scale-95"
+              title="Criar primeira sub aba personalizada"
+            >
+              <Plus className="w-4 h-4" />
+              Criar Sub Aba
+            </button>
+          )}
+          {isEditMode && (
+            <>
+              <button
+                onClick={handleExportDashboardConfig}
+                className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 font-medium rounded-xl transition-all duration-200 shadow-sm hover:shadow-md active:scale-95"
+                title={`Exportar configurações da aba atual (${activeCustomTab === null ? 'Geral' : customTabs.find(t => t.id === activeCustomTab)?.name || 'atual'})`}
+              >
+                <Download className="w-4 h-4" />
+                Exportar Aba
+              </button>
+              <button
+                onClick={handleImportDashboardConfigClick}
+                className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 font-medium rounded-xl transition-all duration-200 shadow-sm hover:shadow-md active:scale-95"
+                title={`Importar configurações para a aba atual (${activeCustomTab === null ? 'Geral' : customTabs.find(t => t.id === activeCustomTab)?.name || 'atual'})`}
+              >
+                <FolderOpen className="w-4 h-4" />
+                Importar Aba
+              </button>
+            </>
+          )}
+          {isEditMode && (
+            <>
+              {widgets.length > 1 && (
+                <button
+                  onClick={() => setShowReorderModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 font-medium rounded-xl transition-all duration-200 shadow-sm hover:shadow-md active:scale-95"
+                >
+                  <GripVertical className="w-4 h-4 text-gray-500" />
+                  Reordenar Widgets
+                </button>
+              )}
+              <button
+                onClick={() => setShowAddWidgetModal(true)}
+                className="flex items-center gap-2 px-4 py-2 text-sm text-white bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 font-medium rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                Adicionar Widget
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Navegação de Sub Abas Personalizadas */}
+      {customTabs.length > 0 && (
+        <div className="mb-6">
+          <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+            {/* Botão para mostrar widgets sem sub aba */}
+            <button
+              onClick={() => setActiveCustomTab(null)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap transition-all duration-200 ${
+                activeCustomTab === null
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              <Layout className="w-4 h-4" />
+              <span>Geral</span>
+            </button>
+            
+            {/* Sub abas personalizadas */}
+            {customTabs.map((tab) => {
+              const IconComponent = iconMap[tab.icon] || BarChart3
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveCustomTab(tab.id)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap transition-all duration-200 ${
+                    activeCustomTab === tab.id
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                  }`}
+                  draggable={isEditMode}
+                  onDragStart={(e) => {
+                    if (isEditMode) {
+                      setDraggedCustomTab(tab.id)
+                      e.dataTransfer.effectAllowed = 'move'
+                    }
+                  }}
+                  onDragOver={(e) => {
+                    if (isEditMode && draggedCustomTab && draggedCustomTab !== tab.id) {
+                      e.preventDefault()
+                      e.dataTransfer.dropEffect = 'move'
+                    }
+                  }}
+                  onDrop={(e) => {
+                    if (isEditMode && draggedCustomTab && draggedCustomTab !== tab.id) {
+                      e.preventDefault()
+                      const draggedIndex = customTabs.findIndex(t => t.id === draggedCustomTab)
+                      const dropIndex = customTabs.findIndex(t => t.id === tab.id)
+                      if (draggedIndex !== -1 && dropIndex !== -1) {
+                        const reordered = [...customTabs]
+                        const [removed] = reordered.splice(draggedIndex, 1)
+                        reordered.splice(dropIndex, 0, removed)
+                        const reorderedIds = reordered.map(t => t.id)
+                        DashboardStorage.reorderCustomTabs(selectedTable, reorderedIds)
+                        setCustomTabs(reordered.map((t, i) => ({ ...t, order: i })))
+                      }
+                      setDraggedCustomTab(null)
+                    }
+                  }}
+                >
+                  <IconComponent className="w-4 h-4" />
+                  <span>{tab.name}</span>
+                  {isEditMode && (
+                    <div className="flex items-center gap-1 ml-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setEditingCustomTab(tab)
+                          setCustomTabFormData({ name: tab.name, icon: tab.icon, order: tab.order })
+                          setShowCustomTabModal(true)
+                        }}
+                        className="p-1 hover:bg-blue-700 rounded opacity-70 hover:opacity-100"
+                        title="Editar aba"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (confirm(`Tem certeza que deseja excluir a aba "${tab.name}"? Os widgets desta aba também serão removidos.`)) {
+                            DashboardStorage.deleteCustomTab(selectedTable, tab.id)
+                            const updated = customTabs.filter(t => t.id !== tab.id)
+                            setCustomTabs(updated)
+                            if (activeCustomTab === tab.id) {
+                              setActiveCustomTab(updated.length > 0 ? updated[0].id : null)
+                            }
+                          }
+                        }}
+                        className="p-1 hover:bg-red-600 rounded opacity-70 hover:opacity-100"
+                        title="Excluir aba"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+                </button>
+              )
+            })}
+            
+            {/* Botão para adicionar nova sub aba (apenas no modo edição) */}
+            {isEditMode && (
+              <button
+                onClick={() => {
+                  setEditingCustomTab(null)
+                  setCustomTabFormData({ name: '', icon: 'BarChart3', order: customTabs.length })
+                  setShowCustomTabModal(true)
+                }}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200 transition-all duration-200"
+                title="Adicionar nova sub aba"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Nova Aba</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Renderizar múltiplos widgets */}
+      {filteredWidgets.map((widget, widgetIndex) => {
+        if (widget.type === 'cards') {
+          return (
+            <div
+              key={widget.id}
+              className="mb-6 relative group transition-all duration-200 border border-transparent rounded-xl"
+            >
+              <div className="absolute top-0 right-0 z-10 flex items-center gap-2">
+                <button
+                  onClick={() => setEditingWidget({ id: widget.id, type: 'cards' })}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
+                  title="Editar cards"
+                  aria-label="Editar cards"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => removeWidget(widget.id)}
+                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
+                  title="Remover widget"
+                  aria-label="Remover widget"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              {/* Título do widget */}
+              {widget.title && (
+                <div className="mb-4">
+                  <h3 className="text-base font-semibold text-gray-900">{widget.title}</h3>
+                </div>
+              )}
+              {widget.cardMetrics && widget.cardMetrics.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  {(widget.cardOrder || widget.cardMetrics).filter(key => {
+                    if (!widget.cardMetrics?.includes(key)) return false
+                    const newMetrics = ['paid_new_annual_orders', 'paid_new_annual_revenue', 'paid_new_montly_orders', 'paid_new_montly_revenue', 'paid_recurring_annual_orders', 'paid_recurring_annual_revenue', 'paid_recurring_montly_orders', 'paid_recurring_montly_revenue']
+                    if (newMetrics.includes(key)) {
+                      const value = getMetricValue(key)
+                      return value > 0
+                    }
+                    return true
+                  }).map((cardKey) => {
+                    const metric = metrics.find(m => m.key === cardKey)
+                    if (!metric) return null
+                    const value = getMetricValue(cardKey)
+                    const Icon = getMetricIcon(cardKey)
+                    let format: 'number' | 'currency' | 'percentage' = 'number'
+                    if (metric.type === 'currency') format = 'currency'
+                    else if (metric.type === 'percentage') format = 'percentage'
+                    
+                    if (cardKey === 'roas') {
+                      return (
+                        <div key={cardKey} className="bg-white rounded-xl shadow-lg p-4 border border-gray-100 hover:shadow-xl hover:border-gray-200 transition-all duration-200 ease-out">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="p-2.5 rounded-lg bg-blue-100 text-blue-600">
+                              <Icon className="w-5 h-5" />
+                            </div>
+                            {isLoadingPrevious ? (
+                              <div className="flex items-center gap-1">
+                                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+                                <span className="text-xs text-gray-500">Comparando...</span>
+                              </div>
+                            ) : (() => {
+                              const growth = getMetricGrowth(cardKey)
+                              return growth !== undefined && growth !== 0 && (
+                                <div className="flex items-center gap-1">
+                                  {growth > 0 ? <ArrowUpRight className="w-4 h-4 text-green-600" /> : <ArrowDownRight className="w-4 h-4 text-red-600" />}
+                                  <span className={`text-sm font-medium ${growth > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                    {growth > 0 ? '+' : ''}{growth.toFixed(1)}%
+                                  </span>
+                                </div>
+                              )
+                            })()}
+                          </div>
+                          <h3 className="text-gray-600 text-sm font-medium mb-1">{metric.label}</h3>
+                          <p className="text-2xl font-bold text-gray-900">{value.toFixed(3)}x</p>
+                        </div>
+                      )
+                    }
+                    
+                    return (
+                      <div key={cardKey} className="transition-all duration-200 ease-out hover:scale-[1.02]">
+                        <MetricCard
+                          title={metric.label}
+                          value={value}
+                          icon={Icon}
+                          format={format}
+                          color="blue"
+                          isDragOver={false}
+                          growth={getMetricGrowth(cardKey)}
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="bg-white rounded-xl shadow-lg p-4 border border-gray-200 text-center text-gray-500">
+                  Nenhuma métrica selecionada. Clique no ícone de editar para configurar.
+                </div>
+              )}
+            </div>
+          )
+        }
+        
+        if (widget.type === 'timeline') {
+          // Preparar dados da timeline para este widget específico
+          const getWidgetTimelineData = (widgetMetrics: string[] | undefined) => {
+            if (!widgetMetrics || widgetMetrics.length === 0) return []
+            
+            const timelineDataMap = new Map<string, any>()
+            
+            filteredData.forEach(item => {
+              const date = item.event_date
+              if (!timelineDataMap.has(date)) {
+                timelineDataMap.set(date, { date })
+              }
+              const dayData = timelineDataMap.get(date)
+              widgetMetrics.forEach(metricKey => {
+                dayData[metricKey] = (dayData[metricKey] || 0) + (item[metricKey as keyof OverviewDataItem] as number || 0)
+              })
+            })
+            
+            return Array.from(timelineDataMap.values()).sort((a, b) => a.date.localeCompare(b.date))
+          }
+          
+          const widgetTimelineData = getWidgetTimelineData(widget.timelineMetrics)
+          
+          return (
+            <div
+              key={widget.id}
+              className="mb-6 relative group transition-all duration-200 bg-white rounded-xl shadow-lg p-4 border border-gray-200"
+            >
+              <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+                <button
+                  onClick={() => setEditingWidget({ id: widget.id, type: 'timeline' })}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
+                  title="Editar timeline"
+                  aria-label="Editar timeline"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => removeWidget(widget.id)}
+                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
+                  title="Remover widget"
+                  aria-label="Remover widget"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              {widget.timelineMetrics && widget.timelineMetrics.length > 0 && widgetTimelineData.length > 0 ? (
+                <>
+                  <div className="mb-4">
+                    <h3 className="text-base font-semibold text-gray-900">{widget.title || 'Timeline de Métricas'}</h3>
+                  </div>
+                  <ResponsiveContainer width="100%" height={400}>
+                    <LineChart data={widgetTimelineData}>
+                      <XAxis 
+                        dataKey="date" 
+                        tick={{ fontSize: 12 }}
+                        tickFormatter={(value) => {
+                          const parts = value.split('-')
+                          if (parts.length === 3) {
+                            return `${parts[2]}/${parts[1]}`
+                          }
+                          return value
+                        }}
+                      />
+                      <YAxis 
+                        yAxisId="left"
+                        tick={{ fontSize: 12 }}
+                        tickFormatter={(value) => {
+                          return new Intl.NumberFormat('pt-BR', { 
+                            maximumFractionDigits: 0,
+                            minimumFractionDigits: 0 
+                          }).format(Math.round(value))
+                        }}
+                        label={{ 
+                          value: widget.timelineMetrics[0] ? metrics.find(m => m.key === widget.timelineMetrics[0])?.label : '', 
+                          angle: -90, 
+                          position: 'insideLeft', 
+                          offset: 10,
+                          style: { fill: '#3b82f6', fontWeight: 'bold' }
+                        }}
+                        width={80}
+                      />
+                      {widget.timelineMetrics.length === 2 && (
+                        <YAxis 
+                          yAxisId="right"
+                          orientation="right"
+                          tick={{ fontSize: 12 }}
+                          tickFormatter={(value) => {
+                            return new Intl.NumberFormat('pt-BR', { 
+                              maximumFractionDigits: 0,
+                              minimumFractionDigits: 0 
+                            }).format(Math.round(value))
+                          }}
+                          label={{ 
+                            value: widget.timelineMetrics[1] ? metrics.find(m => m.key === widget.timelineMetrics[1])?.label : '', 
+                            angle: 90, 
+                            position: 'insideRight', 
+                            offset: 10,
+                            style: { fill: '#10b981', fontWeight: 'bold' }
+                          }}
+                          width={80}
+                        />
+                      )}
+                      <Tooltip 
+                        formatter={(value: any, name: string) => {
+                          const metric = metrics.find(m => m.key === name)
+                          if (!metric) {
+                            return new Intl.NumberFormat('pt-BR', { 
+                              maximumFractionDigits: 0,
+                              minimumFractionDigits: 0 
+                            }).format(Math.round(value || 0))
+                          }
+                          if (metric.type === 'currency') {
+                            return formatCurrency(value)
+                          } else if (metric.type === 'percentage') {
+                            return `${Math.round(value)}%`
+                          } else if (name === 'roas') {
+                            return value.toFixed(3) + 'x'
+                          }
+                          const roundedValue = Math.round(value || 0)
+                          return new Intl.NumberFormat('pt-BR', { 
+                            maximumFractionDigits: 0,
+                            minimumFractionDigits: 0 
+                          }).format(roundedValue)
+                        }}
+                        labelFormatter={(label) => {
+                          const parts = label.split('-')
+                          if (parts.length === 3) {
+                            return `${parts[2]}/${parts[1]}/${parts[0]}`
+                          }
+                          return label
+                        }}
+                      />
+                      {widget.timelineMetrics.map((metricKey, index) => {
+                        const metric = metrics.find(m => m.key === metricKey)
+                        if (!metric) return null
+                        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
+                        const color = colors[index % colors.length]
+                        const yAxisId = index === 0 ? 'left' : 'right'
+                        
+                        return (
+                          <Line
+                            key={metricKey}
+                            type="monotone"
+                            dataKey={metricKey}
+                            name={metric.label}
+                            stroke={color}
+                            strokeWidth={3}
+                            dot={false}
+                            yAxisId={yAxisId}
+                          />
+                        )
+                      })}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </>
+              ) : (
+                <div className="text-center text-gray-500 py-8">
+                  Nenhuma métrica selecionada. Clique no ícone de editar para configurar.
+                </div>
+              )}
+            </div>
+          )
+        }
+        
+        if (widget.type === 'table') {
+          // Função para lidar com ordenação ao clicar no cabeçalho
+          const handleTableSort = (field: string) => {
+            const currentSortField = widget.sortField
+            const currentSortDirection = widget.sortDirection || 'asc'
+            
+            let newSortField: string | null = field
+            let newSortDirection: 'asc' | 'desc' = 'desc'
+            
+            if (currentSortField === field) {
+              // Se já está ordenando por este campo, alternar direção
+              newSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc'
+            } else {
+              // Novo campo, começar com desc
+              newSortDirection = 'desc'
+            }
+            
+            updateWidget(widget.id, {
+              sortField: newSortField,
+              sortDirection: newSortDirection
+            })
+          }
+          
+          // Preparar dados da tabela para este widget específico
+          const getWidgetTableData = (
+            selectedDims: string[] | undefined,
+            selectedMets: string[] | undefined,
+            sortField: string | null | undefined,
+            sortDirection: 'asc' | 'desc' | undefined,
+            rowLimit: number | null | undefined
+          ) => {
+            if (!selectedDims || !selectedMets || 
+                selectedDims.length === 0 || selectedMets.length === 0) {
+              return []
+            }
+            
+            const grouped = new Map<string, any>()
+            
+            filteredData.forEach(item => {
+              const groupKey = selectedDims.map(dim => String(item[dim as keyof OverviewDataItem] || '')).join('|')
+              
+              if (!grouped.has(groupKey)) {
+                const group: any = {}
+                selectedDims.forEach(dim => {
+                  group[dim] = item[dim as keyof OverviewDataItem] || ''
+                })
+                selectedMets.forEach(met => {
+                  group[met] = 0
+                })
+                grouped.set(groupKey, group)
+              }
+              
+              const group = grouped.get(groupKey)!
+              selectedMets.forEach(met => {
+                group[met] = (group[met] || 0) + (item[met as keyof OverviewDataItem] as number || 0)
+              })
+            })
+            
+            let result = Array.from(grouped.values())
+            
+            // Aplicar ordenação se houver
+            if (sortField) {
+              result.sort((a, b) => {
+                const aVal = a[sortField] || 0
+                const bVal = b[sortField] || 0
+                const direction = sortDirection === 'desc' ? -1 : 1
+                return (aVal > bVal ? 1 : aVal < bVal ? -1 : 0) * direction
+              })
+            }
+            
+            // Aplicar limite de linhas
+            if (rowLimit) {
+              result = result.slice(0, rowLimit)
+            }
+            
+            return result
+          }
+          
+          const widgetTableData = getWidgetTableData(
+            widget.selectedDimensions,
+            widget.selectedMetrics,
+            widget.sortField,
+            widget.sortDirection,
+            widget.rowLimit
+          )
+          
+          return (
+            <div
+              key={widget.id}
+              className="mb-6 relative group transition-all duration-200 bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200"
+            >
+              <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+                <button
+                  onClick={() => setEditingWidget({ id: widget.id, type: 'table' })}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
+                  title="Editar tabela"
+                  aria-label="Editar tabela"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => removeWidget(widget.id)}
+                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
+                  title="Remover widget"
+                  aria-label="Remover widget"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              {widget.selectedDimensions && widget.selectedDimensions.length > 0 && 
+               widget.selectedMetrics && widget.selectedMetrics.length > 0 ? (
+                <>
+                  <div className="px-6 py-4 border-b border-gray-200">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h2 className="text-lg font-semibold text-gray-900">{widget.title || 'Dados Agrupados'}</h2>
+                        <p className="text-sm text-gray-500 mt-1">
+                          Agrupados por {widget.selectedDimensions.map(d => dimensions.find(dim => dim.key === d)?.label).filter(Boolean).join(', ')}
+          </p>
+        </div>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          {widget.selectedDimensions.map(dimKey => {
+                            const dimension = dimensions.find(d => d.key === dimKey)
+                            if (!dimension) return null
+                            const isSorted = widget.sortField === dimKey
+                            const sortDirection = widget.sortDirection || 'asc'
+                            return (
+                              <th
+                                key={dimKey}
+                                onClick={() => handleTableSort(dimKey)}
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors select-none"
+                              >
+                                <div className="flex items-center gap-1">
+                                  <span>{dimension.label}</span>
+                                  {isSorted ? (
+                                    sortDirection === 'asc' ? (
+                                      <ArrowUp className="w-3 h-3 text-blue-600" />
+                                    ) : (
+                                      <ArrowDown className="w-3 h-3 text-blue-600" />
+                                    )
+                                  ) : (
+                                    <ArrowUpDown className="w-3 h-3 text-gray-400 opacity-50" />
+                                  )}
+                                </div>
+                              </th>
+                            )
+                          })}
+                          {widget.selectedMetrics.map(metKey => {
+                            const metric = metrics.find(m => m.key === metKey)
+                            if (!metric) return null
+                            const isSorted = widget.sortField === metKey
+                            const sortDirection = widget.sortDirection || 'asc'
+                            return (
+                              <th
+                                key={metKey}
+                                onClick={() => handleTableSort(metKey)}
+                                className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors select-none"
+                              >
+                                <div className="flex items-center justify-end gap-1">
+                                  <span>{metric.label}</span>
+                                  {isSorted ? (
+                                    sortDirection === 'asc' ? (
+                                      <ArrowUp className="w-3 h-3 text-blue-600" />
+                                    ) : (
+                                      <ArrowDown className="w-3 h-3 text-blue-600" />
+                                    )
+                                  ) : (
+                                    <ArrowUpDown className="w-3 h-3 text-gray-400 opacity-50" />
+                                  )}
+                                </div>
+                              </th>
+                            )
+                          })}
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {widgetTableData.map((row, idx) => (
+                          <tr key={idx}>
+                            {widget.selectedDimensions!.map(dimKey => (
+                              <td key={dimKey} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {row[dimKey] || '-'}
+                              </td>
+                            ))}
+                            {widget.selectedMetrics!.map(metKey => {
+                              const metric = metrics.find(m => m.key === metKey)
+                              const value = row[metKey] || 0
+                              return (
+                                <td key={metKey} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                                  {metric?.type === 'currency' ? formatCurrency(value) :
+                                   metric?.type === 'percentage' ? `${value.toFixed(1)}%` :
+                                   new Intl.NumberFormat('pt-BR').format(value)}
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                <div className="p-6 text-center text-gray-500">
+                  Selecione dimensões e métricas no painel de edição para visualizar os dados na tabela.
+        </div>
+      )}
+            </div>
+          )
+        }
+        
+        if (widget.type === 'runrate') {
+          return (
+            <div
+              key={widget.id}
+              className="mb-6 relative group transition-all duration-200 border border-transparent rounded-xl"
+            >
+              <div className="absolute top-0 right-0 z-10 flex items-center gap-2">
+                <button
+                  onClick={() => setEditingWidget({ id: widget.id, type: 'runrate' })}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
+                  title="Editar run rate"
+                  aria-label="Editar run rate"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => removeWidget(widget.id)}
+                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
+                  title="Remover widget"
+                  aria-label="Remover widget"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              {/* Título do widget */}
+              {widget.title && (
+                <div className="mb-4">
+                  <h3 className="text-base font-semibold text-gray-900">{widget.title}</h3>
+                </div>
+              )}
+      <RunRateHighlight 
+        runRateData={runRateData} 
+        isLoadingGoals={isLoadingGoals}
+        isLoadingCurrentMonth={isLoadingCurrentMonth}
+      />
+            </div>
+          )
+        }
+        
+        return null
+      })}
+
+      {/* Cards de Métricas (legado - só mostrar se não houver widgets do novo sistema) */}
+      {widgets.length === 0 && cardMetrics.length > 0 && (
+        <div className="mb-6 relative group">
+          <div className="absolute top-0 right-0 z-10 flex items-center gap-2">
+            <button
+              onClick={() => {
+                // Encontrar o widget de cards ou criar um temporário
+                const cardsWidget = widgets.find(w => w.type === 'cards')
+                if (cardsWidget) {
+                  setEditingWidget({ id: cardsWidget.id, type: 'cards' })
+                }
+              }}
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
+              title="Editar cards"
+              aria-label="Editar cards"
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => {
+                setCardMetrics([])
+                setCardOrder([])
+              }}
+              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
+              title="Remover cards legados"
+              aria-label="Remover cards legados"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {(() => {
             // Filtrar e manter a ordem do cardOrder
             const visibleCards = cardOrder.filter(key => {
@@ -2346,14 +4262,41 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
               </div>
             )
           })}
+          </div>
         </div>
       )}
 
-      {/* Timeline */}
-      {timelineMetrics.length > 0 && timelineData.length > 0 && (
-        <div className="mb-6">
-          <div className="bg-white rounded-xl shadow-lg p-4 border border-gray-200">
-            <h3 className="text-base font-semibold text-gray-900 mb-4">Timeline de Métricas</h3>
+      {/* Timeline (legado - só mostrar se não houver widgets do novo sistema) */}
+      {widgets.length === 0 && timelineMetrics.length > 0 && timelineData.length > 0 && (
+        <div className="mb-6 relative group bg-white rounded-xl shadow-lg p-4 border border-gray-200">
+          <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+            <button
+              onClick={() => {
+                const timelineWidget = widgets.find(w => w.type === 'timeline')
+                if (timelineWidget) {
+                  setEditingWidget({ id: timelineWidget.id, type: 'timeline' })
+                }
+              }}
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
+              title="Editar timeline"
+              aria-label="Editar timeline"
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => {
+                setTimelineMetrics([])
+              }}
+              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
+              title="Remover timeline legada"
+              aria-label="Remover timeline legada"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="mb-4">
+            <h3 className="text-base font-semibold text-gray-900">Timeline de Métricas</h3>
+          </div>
             <ResponsiveContainer width="100%" height={400}>
               <LineChart data={timelineData}>
                 <XAxis 
@@ -2464,7 +4407,6 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                 })}
               </LineChart>
             </ResponsiveContainer>
-          </div>
         </div>
       )}
 
@@ -2501,6 +4443,23 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                   <div>
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-base font-bold text-gray-900">Presets</h3>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleExportDashboardConfig}
+                        className="text-xs font-semibold text-gray-600 hover:text-gray-800 px-2 py-1.5 rounded-lg hover:bg-gray-100 transition-all duration-200 flex items-center gap-1"
+                        title={`Exportar configurações da aba atual (${activeCustomTab === null ? 'Geral' : customTabs.find(t => t.id === activeCustomTab)?.name || 'atual'})`}
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        Exportar Aba
+                      </button>
+                      <button
+                        onClick={handleImportDashboardConfigClick}
+                        className="text-xs font-semibold text-gray-600 hover:text-gray-800 px-2 py-1.5 rounded-lg hover:bg-gray-100 transition-all duration-200 flex items-center gap-1"
+                        title={`Importar configurações para a aba atual (${activeCustomTab === null ? 'Geral' : customTabs.find(t => t.id === activeCustomTab)?.name || 'atual'})`}
+                      >
+                        <FolderOpen className="w-3.5 h-3.5" />
+                        Importar Aba
+                      </button>
                       {!showPresetInput && (
                         <button
                           onClick={() => setShowPresetInput(true)}
@@ -2511,6 +4470,16 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                         </button>
                       )}
                     </div>
+                    </div>
+                    
+                    {/* Input oculto para importar JSON de configurações */}
+                    <input
+                      type="file"
+                      accept="application/json"
+                      ref={fileInputRef}
+                      onChange={handleImportDashboardConfig}
+                      className="hidden"
+                    />
                     
                     {showPresetInput && (
                       <div className="mb-4 p-3 bg-gradient-to-r from-blue-50 to-blue-100/50 rounded-xl border border-blue-200/50">
@@ -2849,7 +4818,675 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
             />
           )}
           
-          {/* Tabela - mostrar mensagem se não houver seleções */}
+          {/* Modal para adicionar novo widget */}
+          {showAddWidgetModal && (
+            <>
+              <div
+                className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 transition-opacity duration-300"
+                onClick={() => setShowAddWidgetModal(false)}
+              />
+              <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white rounded-xl shadow-2xl z-50">
+                <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                  <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <Plus className="w-5 h-5 text-blue-600" />
+                    Adicionar Widget
+                  </h2>
+                  <button
+                    onClick={() => setShowAddWidgetModal(false)}
+                    className="p-2 hover:bg-gray-200/60 rounded-lg transition-all"
+                  >
+                    <X className="w-4 h-4 text-gray-600" />
+                  </button>
+                </div>
+                <div className="p-6">
+                  <p className="text-sm text-gray-600 mb-4">Escolha o tipo de widget que deseja adicionar:</p>
+                  <div className="grid grid-cols-1 gap-3">
+                    <button
+                      onClick={() => {
+                        addWidget('cards')
+                        setShowAddWidgetModal(false)
+                      }}
+                      className="flex items-center gap-3 p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all text-left"
+                    >
+                      <div className="p-2 bg-blue-100 rounded-lg">
+                        <Layout className="w-6 h-6 text-blue-600" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-gray-900">Cards (Big Numbers)</h3>
+                        <p className="text-sm text-gray-500">Exiba métricas importantes em formato de cards</p>
+                      </div>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        addWidget('timeline')
+                        setShowAddWidgetModal(false)
+                      }}
+                      className="flex items-center gap-3 p-4 border-2 border-gray-200 rounded-xl hover:border-purple-500 hover:bg-purple-50 transition-all text-left"
+                    >
+                      <div className="p-2 bg-purple-100 rounded-lg">
+                        <TrendingUp className="w-6 h-6 text-purple-600" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-gray-900">Timeline</h3>
+                        <p className="text-sm text-gray-500">Gráfico de linha temporal com até 2 métricas</p>
+                      </div>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        addWidget('table')
+                        setShowAddWidgetModal(false)
+                      }}
+                      className="flex items-center gap-3 p-4 border-2 border-gray-200 rounded-xl hover:border-green-500 hover:bg-green-50 transition-all text-left"
+                    >
+                      <div className="p-2 bg-green-100 rounded-lg">
+                        <BarChart3 className="w-6 h-6 text-green-600" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-gray-900">Tabela</h3>
+                        <p className="text-sm text-gray-500">Dados agrupados em formato tabular</p>
+                      </div>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        addWidget('runrate')
+                        setShowAddWidgetModal(false)
+                      }}
+                      className="flex items-center gap-3 p-4 border-2 border-gray-200 rounded-xl hover:border-orange-500 hover:bg-orange-50 transition-all text-left"
+                    >
+                      <div className="p-2 bg-orange-100 rounded-lg">
+                        <Target className="w-6 h-6 text-orange-600" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-gray-900">Run Rate da Meta</h3>
+                        <p className="text-sm text-gray-500">Projeção mensal e progresso da meta</p>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Modais de edição de widgets */}
+          {editingWidget && (
+            <>
+              {/* Overlay */}
+              <div
+                className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 transition-opacity duration-300"
+                onClick={() => setEditingWidget(null)}
+              />
+              
+              {/* Modal de edição */}
+              <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white rounded-xl shadow-2xl z-50 max-h-[90vh] overflow-hidden flex flex-col">
+                {/* Header do Modal */}
+                <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-gray-50 to-white/80">
+                  <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <div className="p-1.5 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg">
+                      <Settings className="w-4 h-4 text-white" />
+                    </div>
+                    {editingWidget?.type === 'cards' && 'Editar Cards'}
+                    {editingWidget?.type === 'timeline' && 'Editar Timeline'}
+                    {editingWidget?.type === 'table' && 'Editar Tabela'}
+                    {editingWidget?.type === 'runrate' && 'Editar Run Rate'}
+                  </h2>
+                  <button
+                    onClick={() => setEditingWidget(null)}
+                    className="p-2 hover:bg-gray-200/60 rounded-lg transition-all duration-200 hover:scale-110 active:scale-95"
+                    aria-label="Fechar"
+                  >
+                    <X className="w-4 h-4 text-gray-600" />
+                  </button>
+                </div>
+                
+                {/* Conteúdo do Modal */}
+                <div className="flex-1 overflow-y-auto p-6">
+                  {editingWidget?.type === 'cards' && (
+                    <div className="space-y-6">
+                      {/* Título do Widget */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Título do Widget
+                        </label>
+                        <input
+                          type="text"
+                          value={currentWidget?.title || ''}
+                          onChange={(e) => updateWidget(editingWidget.id, { title: e.target.value })}
+                          placeholder="Ex: Cards de Receita"
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                        <p className="mt-1 text-xs text-gray-500">
+                          Dê um nome único para este widget para diferenciá-lo de outros do mesmo tipo
+                        </p>
+                      </div>
+                      
+                      {/* Ordem dos Cards */}
+                      <div>
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-base font-bold text-gray-900">Ordem dos Cards</h3>
+                          <span className="text-xs text-gray-500">
+                            {currentWidget?.cardMetrics?.length || 0} {(currentWidget?.cardMetrics?.length || 0) === 1 ? 'card' : 'cards'}
+                          </span>
+                        </div>
+                        <div className="space-y-2 bg-gray-50 rounded-xl p-3 border border-gray-200">
+                          {(currentWidget?.cardOrder || currentWidget?.cardMetrics || [])
+                            .filter(key => currentWidget?.cardMetrics?.includes(key))
+                            .map((cardKey, index) => {
+                              const metric = metrics.find(m => m.key === cardKey)
+                              if (!metric) return null
+                              
+                              return (
+                                <div
+                                  key={cardKey}
+                                  draggable
+                                  onDragStart={(e) => handleDragStart(e, cardKey)}
+                                  onDragOver={(e) => handleCardDragOver(e, cardKey)}
+                                  onDragLeave={handleDragLeave}
+                                  onDragEnd={handleDragEnd}
+                                  onDrop={(e) => handleDrop(e, cardKey)}
+                                  className="flex items-center gap-3 p-3 rounded-lg bg-white border border-gray-200 hover:border-blue-300 transition-all cursor-grab active:cursor-grabbing"
+                                >
+                                  <GripVertical className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                                  <span className="text-xs font-medium text-gray-500 w-6 flex-shrink-0">
+                                    {index + 1}
+                                  </span>
+                                  <span className="text-sm font-medium text-gray-900 flex-1">
+                                    {metric.label}
+                                  </span>
+                                </div>
+                              )
+                            })}
+                        </div>
+                      </div>
+                      
+                      {/* Métricas de Cards */}
+                      <div>
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-base font-bold text-gray-900">Métricas de Cards</h3>
+                          <button
+                            onClick={toggleAllCardMetrics}
+                            className="text-xs font-semibold text-blue-600 hover:text-blue-700 px-2.5 py-1 rounded-lg hover:bg-blue-50 transition-all"
+                          >
+                            {(currentWidget?.cardMetrics?.length || 0) === metrics.length ? 'Desselecionar Todas' : 'Selecionar Todas'}
+                          </button>
+                        </div>
+                        {/* Campo de busca */}
+                        <div className="mb-3">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input
+                              type="text"
+                              value={cardsMetricSearch}
+                              onChange={(e) => setCardsMetricSearch(e.target.value)}
+                              placeholder="Buscar métricas..."
+                              className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                            />
+                            {cardsMetricSearch && (
+                              <button
+                                onClick={() => setCardsMetricSearch('')}
+                                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                aria-label="Limpar busca"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="space-y-2 bg-gray-50 rounded-xl p-3 border border-gray-200 max-h-[300px] overflow-y-auto">
+                          {metrics
+                            .filter(metric => {
+                              if (!cardsMetricSearch) return true
+                              const searchLower = cardsMetricSearch.toLowerCase()
+                              return metric.label.toLowerCase().includes(searchLower) || 
+                                     metric.key.toLowerCase().includes(searchLower)
+                            })
+                            .map(metric => {
+                              const isInCard = (currentWidget?.cardMetrics || []).includes(metric.key)
+                            return (
+                              <label
+                                key={metric.key}
+                                className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
+                                  isInCard 
+                                    ? 'bg-blue-50 border border-blue-200' 
+                                    : 'bg-white border border-gray-200 hover:border-gray-300'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isInCard}
+                                  onChange={() => toggleCardMetric(metric.key)}
+                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                                />
+                                <span className={`text-sm font-medium flex-1 ${isInCard ? 'text-blue-900' : 'text-gray-700'}`}>
+                                  {metric.label}
+                                </span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {editingWidget?.type === 'timeline' && (
+                    <div className="space-y-6">
+                      {/* Título do Widget */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Título do Widget
+                        </label>
+                        <input
+                          type="text"
+                          value={currentWidget?.title || ''}
+                          onChange={(e) => updateWidget(editingWidget.id, { title: e.target.value })}
+                          placeholder="Ex: Timeline de Receita"
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        />
+                        <p className="mt-1 text-xs text-gray-500">
+                          Dê um nome único para este widget para diferenciá-lo de outros do mesmo tipo
+                        </p>
+                      </div>
+                      
+                      <div>
+                        <h3 className="text-base font-bold text-gray-900 mb-4">Métricas da Timeline</h3>
+                        <p className="text-sm text-gray-600 mb-4">
+                          Selecione até 2 métricas para exibir na timeline
+                        </p>
+                        {/* Campo de busca */}
+                        <div className="mb-3">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input
+                              type="text"
+                              value={timelineMetricSearch}
+                              onChange={(e) => setTimelineMetricSearch(e.target.value)}
+                              placeholder="Buscar métricas..."
+                              className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
+                            />
+                            {timelineMetricSearch && (
+                              <button
+                                onClick={() => setTimelineMetricSearch('')}
+                                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                aria-label="Limpar busca"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="space-y-2 bg-gray-50 rounded-xl p-3 border border-gray-200 max-h-[400px] overflow-y-auto">
+                          {metrics
+                            .filter(metric => {
+                              if (!timelineMetricSearch) return true
+                              const searchLower = timelineMetricSearch.toLowerCase()
+                              return metric.label.toLowerCase().includes(searchLower) || 
+                                     metric.key.toLowerCase().includes(searchLower)
+                            })
+                            .map(metric => {
+                            const widgetMetrics = currentWidget?.timelineMetrics || []
+                            const isInTimeline = widgetMetrics.includes(metric.key)
+                            const isDisabled = !isInTimeline && widgetMetrics.length >= 2
+                            return (
+                              <label
+                                key={metric.key}
+                                className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
+                                  isInTimeline 
+                                    ? 'bg-purple-50 border border-purple-200' 
+                                    : 'bg-white border border-gray-200 hover:border-gray-300'
+                                } ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isInTimeline}
+                                  onChange={() => toggleTimelineMetric(metric.key)}
+                                  disabled={isDisabled}
+                                  className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-2 focus:ring-purple-500 disabled:opacity-40"
+                                />
+                                <span className={`text-sm font-medium flex-1 ${isInTimeline ? 'text-purple-900' : 'text-gray-700'}`}>
+                                  {metric.label}
+                                </span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                        {currentWidget?.timelineMetrics && currentWidget.timelineMetrics.length > 0 && (
+                          <div className="mt-3 px-3 py-2 bg-gradient-to-r from-purple-50 to-purple-100/50 rounded-lg border border-purple-200/50">
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                              <span className="text-xs font-medium text-purple-900">
+                                Selecionadas: {currentWidget.timelineMetrics.map(key => metrics.find(m => m.key === key)?.label).filter(Boolean).join(', ')}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {editingWidget?.type === 'table' && (
+                    <div className="space-y-6">
+                      {/* Título do Widget */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Título do Widget
+                        </label>
+                        <input
+                          type="text"
+                          value={currentWidget?.title || ''}
+                          onChange={(e) => updateWidget(editingWidget.id, { title: e.target.value })}
+                          placeholder="Ex: Tabela por País"
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                        <p className="mt-1 text-xs text-gray-500">
+                          Dê um nome único para este widget para diferenciá-lo de outros do mesmo tipo
+                        </p>
+                      </div>
+                      
+                      {/* Dimensões */}
+                      <div>
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-base font-bold text-gray-900">Dimensões</h3>
+                          <button
+                            onClick={toggleAllDimensions}
+                            className="text-xs font-semibold text-blue-600 hover:text-blue-700 px-2.5 py-1 rounded-lg hover:bg-blue-50 transition-all"
+                          >
+                            {(currentWidget?.selectedDimensions?.length || 0) === dimensions.length ? 'Desselecionar Todas' : 'Selecionar Todas'}
+                          </button>
+                        </div>
+                        {/* Campo de busca de dimensões */}
+                        <div className="mb-3">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input
+                              type="text"
+                              value={tableDimensionSearch}
+                              onChange={(e) => setTableDimensionSearch(e.target.value)}
+                              placeholder="Buscar dimensões..."
+                              className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                            />
+                            {tableDimensionSearch && (
+                              <button
+                                onClick={() => setTableDimensionSearch('')}
+                                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                aria-label="Limpar busca"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="space-y-2 bg-gray-50 rounded-xl p-3 border border-gray-200 max-h-[300px] overflow-y-auto">
+                          {dimensions
+                            .filter(dimension => {
+                              if (!tableDimensionSearch) return true
+                              const searchLower = tableDimensionSearch.toLowerCase()
+                              return dimension.label.toLowerCase().includes(searchLower) || 
+                                     dimension.key.toLowerCase().includes(searchLower)
+                            })
+                            .map(dimension => {
+                            const widgetDims = currentWidget?.selectedDimensions || selectedDimensions
+                            const isSelected = widgetDims.includes(dimension.key)
+                            return (
+                              <label
+                                key={dimension.key}
+                                className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
+                                  isSelected 
+                                    ? 'bg-blue-50 border border-blue-200' 
+                                    : 'bg-white border border-gray-200 hover:border-gray-300'
+                                }`}
+                              >
+                                {isSelected ? (
+                                  <CheckSquare className="w-5 h-5 text-blue-600" />
+                                ) : (
+                                  <Square className="w-5 h-5 text-gray-400" />
+                                )}
+                                <span className={`text-sm font-medium flex-1 ${isSelected ? 'text-blue-900' : 'text-gray-700'}`}>
+                                  {dimension.label}
+                                </span>
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => toggleDimension(dimension.key)}
+                                  className="sr-only"
+                                />
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>
+                      
+                      {/* Métricas da Tabela */}
+                      <div>
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-base font-bold text-gray-900">Métricas da Tabela</h3>
+                          <button
+                            onClick={toggleAllTableMetrics}
+                            className="text-xs font-semibold text-blue-600 hover:text-blue-700 px-2.5 py-1 rounded-lg hover:bg-blue-50 transition-all"
+                          >
+                            {(currentWidget?.selectedMetrics?.length || 0) === metrics.length ? 'Desselecionar Todas' : 'Selecionar Todas'}
+                          </button>
+                        </div>
+                        {/* Campo de busca de métricas */}
+                        <div className="mb-3">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input
+                              type="text"
+                              value={tableMetricSearch}
+                              onChange={(e) => setTableMetricSearch(e.target.value)}
+                              placeholder="Buscar métricas..."
+                              className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                            />
+                            {tableMetricSearch && (
+                              <button
+                                onClick={() => setTableMetricSearch('')}
+                                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                aria-label="Limpar busca"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="space-y-2 bg-gray-50 rounded-xl p-3 border border-gray-200 max-h-[300px] overflow-y-auto">
+                          {metrics
+                            .filter(metric => {
+                              if (!tableMetricSearch) return true
+                              const searchLower = tableMetricSearch.toLowerCase()
+                              return metric.label.toLowerCase().includes(searchLower) || 
+                                     metric.key.toLowerCase().includes(searchLower)
+                            })
+                            .map(metric => {
+                            const widgetMetrics = currentWidget?.selectedMetrics || selectedMetrics
+                            const isInTable = widgetMetrics.includes(metric.key)
+                            return (
+                              <label
+                                key={metric.key}
+                                className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
+                                  isInTable 
+                                    ? 'bg-blue-50 border border-blue-200' 
+                                    : 'bg-white border border-gray-200 hover:border-gray-300'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isInTable}
+                                  onChange={() => toggleMetric(metric.key)}
+                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                                />
+                                <span className={`text-sm font-medium flex-1 ${isInTable ? 'text-blue-900' : 'text-gray-700'}`}>
+                                  {metric.label}
+                                </span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Modal de edição - Run Rate */}
+                  {editingWidget?.type === 'runrate' && (
+                    <div className="p-6 space-y-4 overflow-y-auto flex-1">
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Título do Widget
+                          </label>
+                          <input
+                            type="text"
+                            value={currentWidget?.title || 'Run Rate da Meta'}
+                            onChange={(e) => {
+                              if (currentWidget) {
+                                updateWidget(currentWidget.id, { title: e.target.value })
+                              }
+                            }}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="Digite o título do widget"
+                          />
+                        </div>
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                          <p className="text-sm text-blue-800">
+                            O widget de Run Rate da Meta exibe automaticamente a projeção mensal e o progresso em relação à meta configurada.
+                            Não é necessário configurar métricas ou dimensões adicionais.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Modal de Reordenação de Widgets */}
+          {showReorderModal && (
+            <>
+              <div
+                className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 transition-opacity duration-300"
+                onClick={() => setShowReorderModal(false)}
+              />
+              <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl bg-white rounded-xl shadow-2xl z-50 max-h-[90vh] overflow-hidden flex flex-col">
+                {/* Header do Modal */}
+                <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-gray-50 to-white/80">
+                  <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <div className="p-1.5 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg">
+                      <GripVertical className="w-4 h-4 text-white" />
+                    </div>
+                    Reordenar Widgets
+                  </h2>
+                  <button
+                    onClick={() => setShowReorderModal(false)}
+                    className="p-2 hover:bg-gray-200/60 rounded-lg transition-all duration-200 hover:scale-110 active:scale-95"
+                  >
+                    <X className="w-4 h-4 text-gray-600" />
+                  </button>
+                </div>
+
+                {/* Conteúdo do Modal */}
+                <div className="p-6 overflow-y-auto flex-1">
+                  {widgets.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <p>Nenhum widget para reordenar.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {widgets.map((widget, index) => {
+                        const Icon = getWidgetTypeIcon(widget.type)
+                        const color = getWidgetTypeColor(widget.type)
+                        const typeName = getWidgetTypeName(widget.type)
+                        const colorClasses = {
+                          blue: 'bg-blue-100 text-blue-600',
+                          purple: 'bg-purple-100 text-purple-600',
+                          green: 'bg-green-100 text-green-600',
+                          orange: 'bg-orange-100 text-orange-600',
+                          gray: 'bg-gray-100 text-gray-600'
+                        }
+                        
+                        return (
+                          <div
+                            key={widget.id}
+                            className="flex items-center gap-3 p-4 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-all"
+                          >
+                            {/* Ícone do tipo */}
+                            <div className={`p-3 rounded-lg ${colorClasses[color as keyof typeof colorClasses] || colorClasses.gray}`}>
+                              <Icon className="w-5 h-5" />
+                            </div>
+                            
+                            {/* Informações do widget */}
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-semibold text-gray-900 truncate">
+                                {widget.title || `${typeName} #${index + 1}`}
+                              </h3>
+                              <p className="text-sm text-gray-500">
+                                {typeName}
+                                {widget.type === 'cards' && widget.cardMetrics && (
+                                  <span> • {widget.cardMetrics.length} métrica{widget.cardMetrics.length !== 1 ? 's' : ''}</span>
+                                )}
+                                {widget.type === 'timeline' && widget.timelineMetrics && (
+                                  <span> • {widget.timelineMetrics.length} métrica{widget.timelineMetrics.length !== 1 ? 's' : ''}</span>
+                                )}
+                                {widget.type === 'table' && widget.selectedDimensions && widget.selectedMetrics && (
+                                  <span> • {widget.selectedDimensions.length} dimensão{widget.selectedDimensions.length !== 1 ? 'ões' : ''}, {widget.selectedMetrics.length} métrica{widget.selectedMetrics.length !== 1 ? 's' : ''}</span>
+                                )}
+                              </p>
+                            </div>
+
+                            {/* Botões de reordenação */}
+                            <div className="flex flex-col gap-1">
+                              <button
+                                onClick={() => moveWidgetUp(index)}
+                                disabled={index === 0}
+                                className={`p-2 rounded-lg transition-all ${
+                                  index === 0
+                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600'
+                                }`}
+                                title="Mover para cima"
+                              >
+                                <ChevronUp className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => moveWidgetDown(index)}
+                                disabled={index === widgets.length - 1}
+                                className={`p-2 rounded-lg transition-all ${
+                                  index === widgets.length - 1
+                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600'
+                                }`}
+                                title="Mover para baixo"
+                              >
+                                <ChevronDown className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer do Modal */}
+                <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end">
+                  <button
+                    onClick={() => setShowReorderModal(false)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+                  >
+                    Concluído
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+          
+          {/* Tabela - mostrar mensagem se não houver seleções (legado - só mostrar se não houver widgets do novo sistema) */}
+          {widgets.length === 0 && (
+            <>
           {selectedDimensions.length === 0 || selectedMetrics.length === 0 ? (
             <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
               <p className="text-gray-600 text-center">
@@ -2861,7 +5498,33 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
               </p>
             </div>
           ) : (
-            <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
+            <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200 relative group">
+              <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const tableWidget = widgets.find(w => w.type === 'table')
+                    if (tableWidget) {
+                      setEditingWidget({ id: tableWidget.id, type: 'table' })
+                    }
+                  }}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
+                  title="Editar tabela"
+                  aria-label="Editar tabela"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedDimensions([])
+                    setSelectedMetrics([])
+                  }}
+                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
+                  title="Remover tabela legada"
+                  aria-label="Remover tabela legada"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
               <div className="px-6 py-4 border-b border-gray-200">
               <div className="flex items-center justify-between">
                 <div>
@@ -3167,6 +5830,8 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
               </table>
               </div>
             </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -3217,6 +5882,107 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
               >
                 <Target className="w-4 h-4" />
                 {editingGoal ? 'Atualizar Meta' : 'Salvar Meta'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Sub Aba Personalizada */}
+      {showCustomTabModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md animate-fadeIn">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">{editingCustomTab ? 'Editar Sub Aba' : 'Nova Sub Aba'}</h3>
+              <p className="text-sm text-gray-600 mt-1">{editingCustomTab ? 'Edite os detalhes da sub aba' : 'Crie uma nova sub aba personalizada'}</p>
+            </div>
+            
+            <div className="px-6 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Nome da Aba</label>
+                <input
+                  type="text"
+                  value={customTabFormData.name}
+                  onChange={(e) => setCustomTabFormData({ ...customTabFormData, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                  placeholder="Ex: Análise de Vendas"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Ícone</label>
+                <div className="grid grid-cols-6 gap-2 max-h-48 overflow-y-auto p-2 border border-gray-200 rounded-lg">
+                  {Object.keys(iconMap).map((iconName) => {
+                    const IconComponent = iconMap[iconName]
+                    return (
+                      <button
+                        key={iconName}
+                        type="button"
+                        onClick={() => setCustomTabFormData({ ...customTabFormData, icon: iconName })}
+                        className={`p-3 rounded-lg border-2 transition-all ${
+                          customTabFormData.icon === iconName
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                        }`}
+                        title={iconName}
+                      >
+                        <IconComponent className="w-5 h-5 text-gray-700" />
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+            
+            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowCustomTabModal(false)
+                  setEditingCustomTab(null)
+                  setCustomTabFormData({ name: '', icon: 'BarChart3', order: 0 })
+                }}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors duration-200 font-medium"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  if (!customTabFormData.name.trim()) {
+                    alert('Por favor, informe o nome da aba')
+                    return
+                  }
+                  
+                  if (editingCustomTab) {
+                    // Atualizar aba existente
+                    const updated = DashboardStorage.updateCustomTab(
+                      selectedTable,
+                      editingCustomTab.id,
+                      { name: customTabFormData.name, icon: customTabFormData.icon }
+                    )
+                    if (updated) {
+                      const updatedTabs = customTabs.map(t => t.id === updated.id ? updated : t)
+                      setCustomTabs(updatedTabs.sort((a, b) => a.order - b.order))
+                    }
+                  } else {
+                    // Criar nova aba
+                    const newTab = DashboardStorage.addCustomTab(selectedTable, {
+                      name: customTabFormData.name,
+                      icon: customTabFormData.icon,
+                      order: customTabs.length
+                    })
+                    const updatedTabs = [...customTabs, newTab].sort((a, b) => a.order - b.order)
+                    setCustomTabs(updatedTabs)
+                    setActiveCustomTab(newTab.id)
+                  }
+                  
+                  setShowCustomTabModal(false)
+                  setEditingCustomTab(null)
+                  setCustomTabFormData({ name: '', icon: 'BarChart3', order: 0 })
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center gap-2"
+              >
+                <Save className="w-4 h-4" />
+                {editingCustomTab ? 'Atualizar' : 'Criar'}
               </button>
             </div>
           </div>
