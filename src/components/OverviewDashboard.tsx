@@ -3454,10 +3454,19 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
         }
       })
       
-      // Buscar dados do período anterior para cada dataSource em paralelo
-      await Promise.all(Array.from(activeDataSources).map(dataSource => 
-        fetchPreviousPeriodDataForSource(dataSource)
-      ))
+      // Buscar dados do período anterior para cada dataSource em segundo tempo (sequencial + pequeno atraso)
+      for (const dataSource of Array.from(activeDataSources)) {
+        // Evitar brigar com carregamento/processamento do período atual
+        const isProcessing = isProcessingBySourceRef.current.get(dataSource)
+        const isLoading = isLoadingBySource.get(dataSource)
+        if (isProcessing || isLoading) {
+          console.log('⏳ [PREV] Aguardando dataSource estabilizar antes do comparativo:', { dataSource, isProcessing, isLoading })
+          await new Promise(resolve => setTimeout(resolve, 1200))
+        }
+
+        await fetchPreviousPeriodDataForSource(dataSource)
+        await new Promise(resolve => setTimeout(resolve, 400))
+      }
       
     } catch (error) {
       console.error('❌ Error fetching previous period data:', error)
@@ -3728,11 +3737,6 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
           setIsPolling(false)
           console.log('✅ Overview data loaded successfully, data length:', dataResponse.data.length)
           
-          // Buscar dados do período anterior para comparação
-          if (startDate && endDate) {
-            fetchPreviousPeriodData()
-          }
-          
           return
         }
       } catch (error: any) {
@@ -3979,8 +3983,6 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   useEffect(() => {
     if (allData.length > 0 && startDate && endDate) {
       filterDataByDateRange(allData, startDate, endDate)
-      // Buscar dados do período anterior quando datas mudarem
-      fetchPreviousPeriodData()
     }
     
     // Também filtrar dados por fonte quando datas mudarem
@@ -4046,6 +4048,55 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
       })
     }
   }, [startDate, endDate, allData])
+
+  // Disparar comparativo do período anterior em "segundo tempo":
+  // aguarda a aba estabilizar (sem loading/processamento) e então busca o período anterior.
+  const previousFetchKeyRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!selectedTable || !startDate || !endDate) return
+    if (jobStatus !== 'completed') return
+    if (isTabLoading) return
+    if (isLoading || isPolling) return
+
+    // Assinatura do estado "visível" da aba atual (mudanças em widgets devem refazer o comparativo)
+    const activeTabWidgets = activeCustomTab
+      ? widgets.filter(w => w.customTabId === activeCustomTab)
+      : widgets.filter(w => !w.customTabId)
+
+    const widgetSignature = activeTabWidgets
+      .map(w => `${w.id}:${w.type}:${w.dataSource || ''}`)
+      .sort()
+      .join('|')
+
+    const key = `${selectedTable}:${activeCustomTab || 'default'}:${startDate}:${endDate}:${widgetSignature}`
+    if (previousFetchKeyRef.current === key) return
+    previousFetchKeyRef.current = key
+
+    const schedule = (cb: () => void) => {
+      if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+        ;(window as any).requestIdleCallback(cb, { timeout: 1500 })
+      } else {
+        setTimeout(cb, 800)
+      }
+    }
+
+    schedule(() => {
+      // Se mudou algo desde o agendamento, não dispara
+      if (previousFetchKeyRef.current !== key) return
+      fetchPreviousPeriodData()
+    })
+  }, [
+    selectedTable,
+    startDate,
+    endDate,
+    jobStatus,
+    isTabLoading,
+    isLoading,
+    isPolling,
+    activeCustomTab,
+    widgets,
+    fetchPreviousPeriodData
+  ])
 
   // Função para buscar dados de uma fonte específica
   const fetchDataSourceData = useCallback(async (dataSource: string, currentAllDataBySource?: Map<string, OverviewDataItem[]>) => {
