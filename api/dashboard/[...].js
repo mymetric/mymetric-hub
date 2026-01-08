@@ -5,6 +5,26 @@ import { getFirestore } from 'firebase-admin/firestore';
 
 const app = express();
 
+// Middleware para ajustar o path no Vercel e adicionar logs
+app.use((req, res, next) => {
+  // No Vercel, o path pode vir como /api/dashboard/load, mas nossas rotas esperam /load
+  const originalPath = req.path || req.url.split('?')[0];
+  console.log('🔍 [VERCEL] Request recebido:', {
+    method: req.method,
+    originalPath,
+    originalUrl: req.url,
+    query: req.query
+  });
+  
+  if (originalPath.startsWith('/api/dashboard')) {
+    const newPath = originalPath.replace('/api/dashboard', '') || '/';
+    req.url = newPath + (req.url.includes('?') ? req.url.split('?')[1] : '');
+    req.path = newPath;
+    console.log('🔄 [VERCEL] Path ajustado:', { originalPath, newPath });
+  }
+  next();
+});
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -46,11 +66,16 @@ try {
   // Obter instância do Firestore
   if (databaseId && databaseId !== '(default)') {
     db = getFirestore(undefined, databaseId);
+    console.log('✅ Firestore Admin configurado para database:', databaseId);
   } else {
     db = getFirestore();
+    console.log('✅ Firestore Admin configurado para database default');
   }
+  console.log('✅ Firebase Admin inicializado com sucesso:', { projectId, databaseId });
 } catch (error) {
   console.error('❌ Erro ao inicializar Firebase Admin:', error);
+  console.error('Stack:', error.stack);
+  // Não fazer exit no Vercel, apenas logar o erro
 }
 
 const COLLECTION_NAME = 'dashboard_personalizations';
@@ -129,11 +154,18 @@ function hasAllAccess(accessControl, userTableName) {
 
 app.post('/save', async (req, res) => {
   try {
+    if (!db) {
+      console.error('❌ Firestore não inicializado');
+      return res.status(500).json({ error: 'Firestore não inicializado. Verifique as variáveis de ambiente.' });
+    }
+    
     const { tableName, config, userId, email, accessControl, userTableName } = req.body;
 
     if (!tableName || !config) {
       return res.status(400).json({ error: 'tableName e config são obrigatórios' });
     }
+    
+    console.log('📤 [SAVE] Salvando configuração:', { tableName, userId, email });
 
     const allTabs = config.customTabs || [];
     const universalTabs = allTabs.filter(tab => tab.isUniversal === true);
@@ -226,11 +258,18 @@ app.post('/save', async (req, res) => {
 
 app.get('/load', async (req, res) => {
   try {
+    if (!db) {
+      console.error('❌ Firestore não inicializado');
+      return res.status(500).json({ error: 'Firestore não inicializado. Verifique as variáveis de ambiente.' });
+    }
+    
     const { tableName, userId, email } = req.query;
 
     if (!tableName) {
       return res.status(400).json({ error: 'tableName é obrigatório' });
     }
+    
+    console.log('📥 [LOAD] Carregando configuração:', { tableName, userId, email });
 
     const docId = getDocId(tableName, userId, email);
     const docRef = db.collection(COLLECTION_NAME).doc(docId);
@@ -399,6 +438,17 @@ app.get('/data-sources', async (req, res) => {
   }
 });
 
+// Endpoint de health check
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    service: 'firestore-api',
+    firestoreInitialized: !!db,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Exportar handler para Vercel
+// O Vercel automaticamente passa req e res para o app Express
 export default app;
 
