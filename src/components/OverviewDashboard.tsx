@@ -2359,6 +2359,10 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
       setDimensionFilters({})
     }
   }, [selectedTable])
+
+  // Rastrear quando os filtros foram aplicados via clique em uma tabela,
+  // para exibir/remover o filtro no próprio widget (e não no topo do dashboard).
+  const [filterAppliedByTableWidgetId, setFilterAppliedByTableWidgetId] = useState<string | null>(null)
   
   // Função para toggle de filtro de dimensão
   const toggleDimensionFilter = (dimensionKey: string, value: string) => {
@@ -2395,7 +2399,15 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   // Função para limpar todos os filtros
   const clearAllFilters = () => {
     setDimensionFilters({})
+    setFilterAppliedByTableWidgetId(null)
   }
+
+  // Se não há mais filtros, limpar origem
+  useEffect(() => {
+    if (Object.keys(dimensionFilters).length === 0) {
+      setFilterAppliedByTableWidgetId(null)
+    }
+  }, [dimensionFilters])
   
   // Dimensões e métricas disponíveis (padrão - usado quando não há widget específico)
   const dimensions = [
@@ -5849,7 +5861,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
       )}
 
       {/* Indicador de Filtros Ativos */}
-      {Object.keys(dimensionFilters).length > 0 && (
+      {Object.keys(dimensionFilters).length > 0 && !filterAppliedByTableWidgetId && (
         <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 flex-wrap">
@@ -6713,6 +6725,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
               })
               return next
             })
+            setFilterAppliedByTableWidgetId(widget.id)
           }
           
           return (
@@ -6859,22 +6872,63 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                     </table>
                   </div>
                   <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between gap-3">
-                    <div className="text-xs text-gray-500">
-                      {widget.rowLimit !== null && typeof widget.rowLimit === 'number' ? (
-                        <>Mostrando {Math.min(widgetTableData.length, widget.rowLimit)} de {formatNumber(widgetTableFullData.length)} linhas</>
-                      ) : (
-                        <>Mostrando {formatNumber(widgetTableFullData.length)} linhas</>
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 w-full">
+                      <div className="flex-1">
+                        {filterAppliedByTableWidgetId === widget.id && Object.keys(dimensionFilters).length > 0 && (
+                          <div className="mb-2 flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-medium text-gray-600">Filtro da tabela:</span>
+                            {Object.entries(dimensionFilters).map(([dimKey, values]) => {
+                              const dimLabel =
+                                widgetDimensions.find(d => d.key === dimKey)?.label ||
+                                dimensions.find(d => d.key === dimKey)?.label ||
+                                dimKey
+                              return (
+                                <div key={dimKey} className="flex items-center gap-1">
+                                  <span className="text-xs font-medium text-gray-600">{dimLabel}:</span>
+                                  {Array.from(values).map((value, idx) => (
+                                    <span key={idx} className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
+                                      {value}
+                                      <button
+                                        onClick={() => toggleDimensionFilter(dimKey, value)}
+                                        className="ml-1 text-gray-500 hover:text-gray-800"
+                                        title="Remover"
+                                      >
+                                        ×
+                                      </button>
+                                    </span>
+                                  ))}
+                                </div>
+                              )
+                            })}
+                            <button
+                              onClick={clearAllFilters}
+                              className="text-xs font-semibold text-blue-600 hover:text-blue-800"
+                              title="Remover filtro aplicado pela tabela"
+                            >
+                              Limpar filtro
+                            </button>
+                          </div>
+                        )}
+
+                        <div className="text-xs text-gray-500">
+                          {widget.rowLimit !== null && typeof widget.rowLimit === 'number' ? (
+                            <>Mostrando {Math.min(widgetTableData.length, widget.rowLimit)} de {formatNumber(widgetTableFullData.length)} linhas</>
+                          ) : (
+                            <>Mostrando {formatNumber(widgetTableFullData.length)} linhas</>
+                          )}
+                        </div>
+                      </div>
+
+                      {canShowMoreRows && (
+                        <button
+                          onClick={handleShowMoreRows}
+                          className="px-3 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors self-start sm:self-auto"
+                          title="Exibir mais linhas"
+                        >
+                          Ver mais
+                        </button>
                       )}
                     </div>
-                    {canShowMoreRows && (
-                      <button
-                        onClick={handleShowMoreRows}
-                        className="px-3 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                        title="Exibir mais linhas"
-                      >
-                        Ver mais
-                      </button>
-                    )}
                   </div>
                 </>
               ) : (
