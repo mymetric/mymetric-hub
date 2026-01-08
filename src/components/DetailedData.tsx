@@ -99,6 +99,8 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel }: D
   const [isLoadingAll, setIsLoadingAll] = useState(false)
   const [autoLoadProgress, setAutoLoadProgress] = useState(0)
   const [currentBatchNumber, setCurrentBatchNumber] = useState(1)
+  const [elapsedSeconds, setElapsedSeconds] = useState<number | null>(null)
+  const [loadingStartTime, setLoadingStartTime] = useState<number | null>(null)
 
   const [showTabChangeIndicator, setShowTabChangeIndicator] = useState(false)
 
@@ -167,6 +169,8 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel }: D
       setIsLoading(true)
       setLoadingMessage('Iniciando busca de dados...')
       setError(null)
+      setLoadingStartTime(Date.now())
+      setElapsedSeconds(0)
 
               // Resetar paginação quando os filtros mudarem
         setPagination(prev => ({ ...prev, offset: 0, has_more: false as boolean | undefined }))
@@ -223,6 +227,8 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel }: D
       } finally {
         setIsLoading(false)
         setLoadingMessage('')
+        setLoadingStartTime(null)
+        setElapsedSeconds(null)
       }
     }
 
@@ -234,6 +240,10 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel }: D
     setIsLoadingAll(true)
     setLoadingMessage('Carregando dados automaticamente...')
     setAutoLoadProgress(0)
+    if (!loadingStartTime) {
+      setLoadingStartTime(Date.now())
+      setElapsedSeconds(0)
+    }
 
     try {
       let currentOffset = pagination.limit // Começar do segundo lote
@@ -309,6 +319,7 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel }: D
     } finally {
       setIsLoadingAll(false)
       setAutoLoadProgress(0)
+      // Não resetar loadingStartTime aqui, pois pode estar sendo usado pelo loading principal
     }
   }
 
@@ -411,6 +422,18 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel }: D
     const title = getDocumentTitle()
     document.title = title
   }, [isLoading, isLoadingAll, autoLoadProgress, data.length, pagination.has_more, currentBatchNumber])
+
+  // Atualizar contador de segundos durante o carregamento
+  useEffect(() => {
+    if (!loadingStartTime) return
+
+    const interval = setInterval(() => {
+      const elapsed = (Date.now() - loadingStartTime) / 1000
+      setElapsedSeconds(elapsed)
+    }, 100) // Atualizar a cada 100ms para suavidade
+
+    return () => clearInterval(interval)
+  }, [loadingStartTime])
 
   // Agrupar dados por diferentes critérios - otimizado para performance
   const groupedData: { [key: string]: { [key: string]: DetailedDataItem[] } } = React.useMemo(() => {
@@ -930,6 +953,15 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel }: D
             <span className="text-gray-700 text-lg font-medium">{loadingMessage || 'Carregando dados detalhados...'}</span>
           </div>
           
+          {/* Contador de segundos */}
+          {elapsedSeconds !== null && (
+            <div className="mb-4 text-center">
+              <p className="text-sm text-gray-600">
+                Tempo decorrido: <span className="font-medium text-blue-600">{Math.round(elapsedSeconds)}s</span>
+              </p>
+            </div>
+          )}
+          
           {/* Barra de progresso para carregamento automático */}
           {isLoadingAll && (
             <div className="w-full max-w-md mb-4">
@@ -1029,6 +1061,8 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel }: D
     setIsLoading(true)
     setLoadingMessage('Recarregando dados com nova ordenação...')
     setError(null)
+    setLoadingStartTime(Date.now())
+    setElapsedSeconds(0)
 
     // Resetar paginação
     setPagination(prev => ({ ...prev, offset: 0, has_more: false, order_by: orderBy }))
@@ -1074,6 +1108,8 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel }: D
     } finally {
       setIsLoading(false)
       setLoadingMessage('')
+      setLoadingStartTime(null)
+      setElapsedSeconds(null)
     }
   }
 
@@ -1254,6 +1290,11 @@ const DetailedData = ({ startDate, endDate, selectedTable, attributionModel }: D
             <span className="text-sm text-blue-700 font-medium">
               Carregando mais dados... Lote {currentBatchNumber}
             </span>
+            {elapsedSeconds !== null && (
+              <span className="text-xs text-blue-600">
+                ({Math.round(elapsedSeconds)}s)
+              </span>
+            )}
             <div className="w-32 bg-blue-200 rounded-full h-2">
               <div 
                 className="bg-blue-600 h-2 rounded-full transition-all duration-300"

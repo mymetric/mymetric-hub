@@ -540,18 +540,25 @@ export const api = {
   },
 
   // API 2.0 - Overview (padrão job/polling como mídia paga)
-  async createOverviewJob(token: string, customer: string): Promise<any> {
+  // customer: nome do cliente (ex: "coffeemais")
+  // endpoint: endpoint da API (ex: "overview", "paid_media/campaigns_results", etc.)
+  async createOverviewJob(token: string, customer: string, endpoint?: string): Promise<any> {
     try {
       const API_V2_URL = 'https://clownfish-app-l84ar.ondigitalocean.app/api/request'
 
+      // Se endpoint não foi fornecido, usar 'overview' como padrão
+      const finalEndpoint = endpoint || 'overview'
+      const finalCustomer = customer
+
       const params: any = {
-        customer
+        customer: finalCustomer
       }
 
       console.log('🌐 Create Overview Job Request:', {
         url: API_V2_URL,
         method: 'POST',
-        customer,
+        customer: finalCustomer,
+        endpoint: finalEndpoint,
         note: 'Busca automática dos últimos 90 dias'
       })
 
@@ -562,7 +569,7 @@ export const api = {
           'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
-          endpoint: 'overview',
+          endpoint: finalEndpoint,
           params
         }),
       })

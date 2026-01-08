@@ -35,6 +35,11 @@ export default defineConfig({
     host: true,
     port: 5173,
     proxy: {
+      '/api/dashboard': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        secure: false,
+      },
       '/api': {
         target: 'https://api.mymetric.app',
         changeOrigin: true,
