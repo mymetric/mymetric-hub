@@ -6623,6 +6623,102 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
             widget.sortDirection,
             widget.rowLimit
           )
+
+          const widgetTableFullData = getWidgetTableData(
+            widget.selectedDimensions,
+            widget.selectedMetrics,
+            widget.sortField,
+            widget.sortDirection,
+            null
+          )
+
+          const canShowMoreRows =
+            widget.rowLimit !== null &&
+            typeof widget.rowLimit === 'number' &&
+            widgetTableFullData.length > widgetTableData.length
+
+          const handleShowMoreRows = () => {
+            const current = typeof widget.rowLimit === 'number' ? widget.rowLimit : 10
+            updateWidget(widget.id, { rowLimit: current + 10 })
+          }
+
+          const handleDownloadWidgetTableXLSX = () => {
+            if (
+              !widget.selectedDimensions ||
+              !widget.selectedMetrics ||
+              widget.selectedDimensions.length === 0 ||
+              widget.selectedMetrics.length === 0 ||
+              widgetTableFullData.length === 0
+            ) {
+              alert('Não há dados para exportar neste widget.')
+              return
+            }
+
+            try {
+              const dataToExport = widgetTableFullData.map((row: any) => {
+                const out: Record<string, any> = {}
+
+                // Dimensões
+                widget.selectedDimensions!.forEach(dimKey => {
+                  const dim = widgetDimensions.find(d => d.key === dimKey)
+                  out[dim?.label || dimKey] = row[dimKey] ?? '-'
+                })
+
+                // Métricas
+                widget.selectedMetrics!.forEach(metKey => {
+                  const met = widgetMetrics.find(m => m.key === metKey)
+                  const value = typeof row[metKey] === 'number' ? row[metKey] : 0
+
+                  if (!met) {
+                    out[metKey] = value
+                    return
+                  }
+
+                  if (met.type === 'percentage') {
+                    // Excel: porcentagem como decimal
+                    out[met.label] = value / 100
+                  } else {
+                    // currency/number: manter número
+                    out[met.label] = value
+                  }
+                })
+
+                return out
+              })
+
+              const wb = XLSX.utils.book_new()
+              const ws = XLSX.utils.json_to_sheet(dataToExport)
+              XLSX.utils.book_append_sheet(wb, ws, 'Dados')
+
+              const safeTitle = String(widget.title || 'tabela')
+                .toLowerCase()
+                .replace(/[^\w-]+/g, '_')
+                .slice(0, 40)
+
+              const today = new Date()
+              const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+              const safeTable = selectedTable.replace(/[^\w-]/g, '_')
+              const filename = `overview-${safeTable}-${safeTitle}-${dateStr}.xlsx`
+
+              XLSX.writeFile(wb, filename)
+            } catch (error) {
+              console.error('Erro ao gerar XLSX do widget:', error)
+              alert('Erro ao gerar XLSX. Por favor, tente novamente.')
+            }
+          }
+
+          const applyTabFilterFromRow = (row: any) => {
+            if (!widget.selectedDimensions || widget.selectedDimensions.length === 0) return
+
+            setDimensionFilters(prev => {
+              const next: Record<string, Set<string>> = { ...prev }
+              widget.selectedDimensions!.forEach(dimKey => {
+                const value = row?.[dimKey]
+                next[dimKey] = new Set([String(value ?? '')])
+              })
+              return next
+            })
+          }
           
           return (
             <div
@@ -6658,14 +6754,37 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                widget.selectedMetrics && widget.selectedMetrics.length > 0 ? (
                 <>
                   <div className="px-6 py-4 border-b border-gray-200">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-start justify-between gap-4">
                       <div>
                         <h2 className="text-lg font-semibold text-gray-900">{widget.title || 'Dados Agrupados'}</h2>
                         <p className="text-sm text-gray-500 mt-1">
                           Agrupados por {widget.selectedDimensions.map(d => widgetDimensions.find(dim => dim.key === d)?.label).filter(Boolean).join(', ')}
           </p>
         </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          onClick={handleDownloadWidgetTableXLSX}
+                          className="px-3 py-2 text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg transition-colors"
+                          title="Baixar XLSX"
+                        >
+                          Baixar XLSX
+                        </button>
+                        {canShowMoreRows && (
+                          <button
+                            onClick={handleShowMoreRows}
+                            className="px-3 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                            title="Exibir mais linhas"
+                          >
+                            Ver mais
+                          </button>
+                        )}
+                      </div>
                     </div>
+                    {widget.rowLimit !== null && typeof widget.rowLimit === 'number' && widgetTableFullData.length > 0 && (
+                      <div className="mt-2 text-xs text-gray-500">
+                        Mostrando {Math.min(widgetTableData.length, widget.rowLimit)} de {formatNumber(widgetTableFullData.length)} linhas
+                      </div>
+                    )}
                   </div>
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
@@ -6733,7 +6852,12 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
                         {widgetTableData.map((row, idx) => (
-                          <tr key={idx}>
+                          <tr
+                            key={idx}
+                            className="hover:bg-blue-50 cursor-pointer transition-colors"
+                            onClick={() => applyTabFilterFromRow(row)}
+                            title="Clique para filtrar a aba por esta linha"
+                          >
                             {widget.selectedDimensions!.map(dimKey => (
                               <td key={dimKey} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                 {row[dimKey] || '-'}
