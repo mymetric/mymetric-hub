@@ -5,77 +5,89 @@ import { getFirestore } from 'firebase-admin/firestore';
 
 const app = express();
 
-// Middleware para ajustar o path no Vercel e adicionar logs
-app.use((req, res, next) => {
-  // No Vercel, o path pode vir como /api/dashboard/load, mas nossas rotas esperam /load
-  const originalPath = req.path || req.url.split('?')[0];
-  console.log('🔍 [VERCEL] Request recebido:', {
-    method: req.method,
-    originalPath,
-    originalUrl: req.url,
-    query: req.query
-  });
-  
-  if (originalPath.startsWith('/api/dashboard')) {
-    const newPath = originalPath.replace('/api/dashboard', '') || '/';
-    req.url = newPath + (req.url.includes('?') ? req.url.split('?')[1] : '');
-    req.path = newPath;
-    console.log('🔄 [VERCEL] Path ajustado:', { originalPath, newPath });
-  }
-  next();
-});
-
 // Middleware
 app.use(cors());
 app.use(express.json());
 
+// Middleware de logging
+app.use((req, res, next) => {
+  console.log('🔍 [VERCEL] Request recebido:', {
+    method: req.method,
+    path: req.path,
+    url: req.url,
+    query: req.query
+  });
+  next();
+});
+
 // Inicializar Firebase Admin SDK
-let db;
+let db = null;
+let firebaseError = null;
 const databaseId = process.env.GCP_DATABASE || 'api-admin';
 
-try {
-  const projectId = process.env.GCP_PROJECT_ID;
+// Função para inicializar Firebase (chamada de forma lazy)
+function initializeFirebase() {
+  if (db) {
+    return; // Já inicializado
+  }
   
-  if (!projectId) {
-    throw new Error('GCP_PROJECT_ID não encontrado nas variáveis de ambiente');
+  if (firebaseError) {
+    throw firebaseError; // Já tentou e falhou
   }
 
-  // Criar credenciais do service account
-  const serviceAccount = {
-    type: 'service_account',
-    project_id: projectId,
-    private_key_id: process.env.GCP_PRIVATE_KEY_ID,
-    private_key: process.env.GCP_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    client_email: process.env.GCP_CLIENT_EMAIL,
-    client_id: process.env.GCP_CLIENT_ID,
-    auth_uri: process.env.GCP_AUTH_URI || 'https://accounts.google.com/o/oauth2/auth',
-    token_uri: process.env.GCP_TOKEN_URI || 'https://oauth2.googleapis.com/token',
-    auth_provider_x509_cert_url: process.env.GCP_AUTH_PROVIDER_X509_CERT_URL || 'https://www.googleapis.com/oauth2/v1/certs',
-    client_x509_cert_url: process.env.GCP_CLIENT_X509_CERT_URL,
-    universe_domain: process.env.GCP_UNIVERSE_DOMAIN || 'googleapis.com'
-  };
+  try {
+    const projectId = process.env.GCP_PROJECT_ID;
+    
+    if (!projectId) {
+      throw new Error('GCP_PROJECT_ID não encontrado nas variáveis de ambiente');
+    }
 
-  // Inicializar Firebase Admin apenas se ainda não foi inicializado
-  if (getApps().length === 0) {
-    initializeApp({
-      credential: cert(serviceAccount),
-      projectId: projectId
-    });
-  }
+    // Criar credenciais do service account
+    const serviceAccount = {
+      type: 'service_account',
+      project_id: projectId,
+      private_key_id: process.env.GCP_PRIVATE_KEY_ID,
+      private_key: process.env.GCP_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      client_email: process.env.GCP_CLIENT_EMAIL,
+      client_id: process.env.GCP_CLIENT_ID,
+      auth_uri: process.env.GCP_AUTH_URI || 'https://accounts.google.com/o/oauth2/auth',
+      token_uri: process.env.GCP_TOKEN_URI || 'https://oauth2.googleapis.com/token',
+      auth_provider_x509_cert_url: process.env.GCP_AUTH_PROVIDER_X509_CERT_URL || 'https://www.googleapis.com/oauth2/v1/certs',
+      client_x509_cert_url: process.env.GCP_CLIENT_X509_CERT_URL,
+      universe_domain: process.env.GCP_UNIVERSE_DOMAIN || 'googleapis.com'
+    };
 
-  // Obter instância do Firestore
-  if (databaseId && databaseId !== '(default)') {
-    db = getFirestore(undefined, databaseId);
-    console.log('✅ Firestore Admin configurado para database:', databaseId);
-  } else {
-    db = getFirestore();
-    console.log('✅ Firestore Admin configurado para database default');
+    // Inicializar Firebase Admin apenas se ainda não foi inicializado
+    if (getApps().length === 0) {
+      initializeApp({
+        credential: cert(serviceAccount),
+        projectId: projectId
+      });
+    }
+
+    // Obter instância do Firestore
+    if (databaseId && databaseId !== '(default)') {
+      db = getFirestore(undefined, databaseId);
+      console.log('✅ Firestore Admin configurado para database:', databaseId);
+    } else {
+      db = getFirestore();
+      console.log('✅ Firestore Admin configurado para database default');
+    }
+    console.log('✅ Firebase Admin inicializado com sucesso:', { projectId, databaseId });
+  } catch (error) {
+    console.error('❌ Erro ao inicializar Firebase Admin:', error);
+    console.error('Stack:', error.stack);
+    firebaseError = error;
+    throw error;
   }
-  console.log('✅ Firebase Admin inicializado com sucesso:', { projectId, databaseId });
+}
+
+// Tentar inicializar Firebase (mas não quebrar se falhar)
+try {
+  initializeFirebase();
 } catch (error) {
-  console.error('❌ Erro ao inicializar Firebase Admin:', error);
-  console.error('Stack:', error.stack);
-  // Não fazer exit no Vercel, apenas logar o erro
+  // Logar mas não quebrar a função
+  console.error('⚠️ Firebase não inicializado no startup, será inicializado sob demanda');
 }
 
 const COLLECTION_NAME = 'dashboard_personalizations';
@@ -154,9 +166,18 @@ function hasAllAccess(accessControl, userTableName) {
 
 app.post('/save', async (req, res) => {
   try {
+    // Tentar inicializar Firebase se ainda não foi inicializado
     if (!db) {
-      console.error('❌ Firestore não inicializado');
-      return res.status(500).json({ error: 'Firestore não inicializado. Verifique as variáveis de ambiente.' });
+      try {
+        initializeFirebase();
+      } catch (error) {
+        console.error('❌ Erro ao inicializar Firestore:', error);
+        return res.status(500).json({ 
+          error: 'Firestore não inicializado', 
+          message: error.message,
+          hint: 'Verifique as variáveis de ambiente no Vercel'
+        });
+      }
     }
     
     const { tableName, config, userId, email, accessControl, userTableName } = req.body;
@@ -258,9 +279,18 @@ app.post('/save', async (req, res) => {
 
 app.get('/load', async (req, res) => {
   try {
+    // Tentar inicializar Firebase se ainda não foi inicializado
     if (!db) {
-      console.error('❌ Firestore não inicializado');
-      return res.status(500).json({ error: 'Firestore não inicializado. Verifique as variáveis de ambiente.' });
+      try {
+        initializeFirebase();
+      } catch (error) {
+        console.error('❌ Erro ao inicializar Firestore:', error);
+        return res.status(500).json({ 
+          error: 'Firestore não inicializado', 
+          message: error.message,
+          hint: 'Verifique as variáveis de ambiente no Vercel'
+        });
+      }
     }
     
     const { tableName, userId, email } = req.query;
@@ -440,15 +470,43 @@ app.get('/data-sources', async (req, res) => {
 
 // Endpoint de health check
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    service: 'firestore-api',
-    firestoreInitialized: !!db,
+  try {
+    const envVars = {
+      hasProjectId: !!process.env.GCP_PROJECT_ID,
+      hasPrivateKey: !!process.env.GCP_PRIVATE_KEY,
+      hasClientEmail: !!process.env.GCP_CLIENT_EMAIL,
+      databaseId: process.env.GCP_DATABASE || 'api-admin'
+    };
+    
+    res.json({ 
+      status: 'ok', 
+      service: 'firestore-api',
+      firestoreInitialized: !!db,
+      envVars,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Erro no health check:', error);
+    res.status(500).json({ 
+      status: 'error',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Middleware de tratamento de erros global
+app.use((err, req, res, next) => {
+  console.error('❌ Erro não tratado:', err);
+  res.status(500).json({ 
+    error: 'Internal Server Error',
+    message: err.message,
     timestamp: new Date().toISOString()
   });
 });
 
-// Exportar handler para Vercel
-// O Vercel automaticamente passa req e res para o app Express
+// Handler para Vercel
+// O Vercel com [...].js já remove o prefixo /api/dashboard automaticamente
+// Então /api/dashboard/health vira /health
 export default app;
 
