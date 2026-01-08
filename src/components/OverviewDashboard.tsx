@@ -53,11 +53,20 @@ import {
   Grid,
   List,
   Columns,
+  Calculator,
   type LucideIcon
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
 import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import * as XLSX from 'xlsx'
+import { 
+  applyCalculatedMetricsToRows,
+  evaluateFormula,
+  evaluateAggregateFormula,
+  hasAggregateFunctions,
+  extractFormulaIdentifiers,
+  type CalculatedMetric
+} from '../utils/calculatedMetrics'
 
 interface OverviewDataItem {
   add_to_carts: number
@@ -120,6 +129,7 @@ interface Widget {
   rowLimit?: number | null
   title?: string
   customTabId?: string // ID da sub aba à qual este widget pertence
+  dataSource?: string // Endpoint da collection 'tables' do Firestore que será usado para buscar dados
 }
 
 // Interface para sub abas personalizadas
@@ -130,12 +140,34 @@ interface CustomTab {
   order: number
   createdAt: string
   updatedAt: string
+  isUniversal?: boolean // Se true, a aba é acessível para todos os clientes
+  createdBy?: string // Email do usuário que criou a aba (para abas universais)
+  dataSource?: string // Endpoint da fonte de dados associada a esta aba
+}
+
+// Interface para fonte de dados disponível
+interface DataSource {
+  endpoint: string // Nome do endpoint (ex: "overview", "coffeemais/overview")
+  label: string // Nome amigável para exibição
+  restricted?: boolean // Se true, é restrito a clientes específicos
+  dateField?: string // Campo usado como data para filtros (padrão: "event_date")
+  metrics?: Array<{
+    key: string
+    label: string
+    type: 'number' | 'currency' | 'percentage'
+    isCalculated?: boolean
+    formula?: string
+  }> // Métricas mapeadas desta fonte
+  dimensions?: Array<{key: string, label: string}> // Dimensões mapeadas desta fonte
+  isLoaded?: boolean // Se os dados foram carregados e mapeados
+  isLoading?: boolean // Se está carregando dados
 }
 
 // Interface para todas as configurações do dashboard
 interface DashboardConfig {
   widgets: Widget[]
   customTabs?: CustomTab[] // Sub abas personalizadas
+  dataSources?: DataSource[] // Fontes de dados disponíveis para este dashboard
   // Configurações legadas (mantidas para compatibilidade durante migração)
   legacy?: {
     cardMetrics?: string[]
@@ -151,20 +183,86 @@ interface DashboardConfig {
   version: string // Versão do schema para migrações futuras
 }
 
-// Utilitário centralizado para gerenciar configurações no localStorage
+// Utilitário centralizado para gerenciar configurações no localStorage e Firestore
 class DashboardStorage {
   private static readonly STORAGE_PREFIX = 'overview-dashboard'
   private static readonly CURRENT_VERSION = '2.0'
+  private static firestoreInitialized = false
+
+  // Inicializar Firestore de forma lazy
+  static async initFirestore() {
+    console.log('🔄 [initFirestore-1] Iniciando initFirestore, firestoreInitialized:', this.firestoreInitialized)
+    if (this.firestoreInitialized) {
+      console.log('🔄 [initFirestore-2] Firestore já inicializado, retornando')
+      return
+    }
+    
+    try {
+      // Verificar se o Firestore está configurado
+      // Usa o mesmo projectId do GCP_PROJECT_ID que está no .env
+      const projectId = 'mymetric-hub-shopify' // Mesmo valor do GCP_PROJECT_ID
+      const hasFirestoreConfig = projectId
+      console.log('🔄 [initFirestore-3] projectId:', projectId, 'hasFirestoreConfig:', hasFirestoreConfig)
+      
+      if (hasFirestoreConfig) {
+        try {
+          console.log('🔄 [initFirestore-4] Importando firebase...')
+          // Importar dinamicamente para evitar erros se Firebase não estiver configurado
+          await import('../services/firebase') // Garantir que o Firebase está inicializado primeiro
+          console.log('🔄 [initFirestore-5] Firebase importado, importando dashboardFirestore...')
+          await import('../services/dashboardFirestore')
+          console.log('🔄 [initFirestore-6] dashboardFirestore importado')
+          this.firestoreInitialized = true
+          console.log('✅ [initFirestore-7] Firestore inicializado com sucesso')
+        } catch (error) {
+          console.error('❌ [initFirestore-ERRO] Erro ao inicializar Firestore:', error)
+          console.error('Detalhes do erro:', {
+            message: (error as any)?.message,
+            stack: (error as any)?.stack,
+            name: (error as any)?.name
+          })
+          this.firestoreInitialized = false
+        }
+      } else {
+        console.warn('⚠️ [initFirestore-SKIP] Firestore não configurado - projectId não encontrado')
+      }
+    } catch (error) {
+      console.warn('⚠️ [initFirestore-ERRO] Firestore não disponível, usando apenas localStorage:', error)
+    }
+  }
 
   // Obter chave de storage para um cliente
   private static getStorageKey(tableName: string): string {
     return `${this.STORAGE_PREFIX}-${tableName}`
   }
 
-  // Carregar todas as configurações de um cliente
-  static loadConfig(tableName: string): DashboardConfig | null {
+  // Carregar todas as configurações de um cliente (versão assíncrona - tenta Firestore primeiro, depois localStorage)
+  static async loadConfigAsync(tableName: string): Promise<DashboardConfig | null> {
     if (!tableName) return null
 
+    try {
+      // Tentar carregar do Firestore primeiro
+      await this.initFirestore()
+      if (this.firestoreInitialized) {
+        try {
+          const { DashboardFirestore } = await import('../services/dashboardFirestore')
+          const firestoreConfig = await DashboardFirestore.loadConfig(tableName)
+          if (firestoreConfig) {
+            // Sincronizar com localStorage como backup
+            const storageKey = this.getStorageKey(tableName)
+            localStorage.setItem(storageKey, JSON.stringify(firestoreConfig))
+            console.log('✅ Configuração carregada do Firestore e sincronizada com localStorage')
+            return firestoreConfig
+          }
+        } catch (error) {
+          console.warn('⚠️ Erro ao carregar do Firestore, tentando localStorage:', error)
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ Firestore não disponível, usando localStorage:', error)
+    }
+
+    // Fallback para localStorage
     try {
       const storageKey = this.getStorageKey(tableName)
       const saved = localStorage.getItem(storageKey)
@@ -185,17 +283,55 @@ class DashboardStorage {
         return parsed as DashboardConfig
       }
     } catch (error) {
+      console.error('❌ Erro ao carregar configurações do localStorage:', error)
+    }
+
+    return null
+  }
+
+  // Carregar todas as configurações de um cliente (versão síncrona - tenta localStorage primeiro, mas Firestore é primário)
+  // NOTA: Esta função é síncrona para compatibilidade, mas o sistema agora usa Firestore como primário
+  // Para carregar do Firestore, use loadConfigAsync()
+  static loadConfig(tableName: string): DashboardConfig | null {
+    if (!tableName) return null
+
+    try {
+      // Tentar carregar do localStorage (cache/backup)
+      const storageKey = this.getStorageKey(tableName)
+      const saved = localStorage.getItem(storageKey)
+      
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        
+        if (parsed.widgets && Array.isArray(parsed.widgets) && parsed.widgets.length > 0 && parsed.version === this.CURRENT_VERSION) {
+          return parsed as DashboardConfig
+        }
+        
+        if (!parsed.version || parsed.version !== this.CURRENT_VERSION) {
+          return this.migrateFromLegacy(tableName, parsed)
+        }
+        
+        return parsed as DashboardConfig
+      }
+    } catch (error) {
       console.error('❌ Erro ao carregar configurações:', error)
     }
 
     return null
   }
 
-  // Salvar todas as configurações de um cliente
-  static saveConfig(tableName: string, config: Partial<DashboardConfig>): void {
-    if (!tableName) return
+  // Salvar todas as configurações de um cliente (salva em localStorage e Firestore)
+  static async saveConfig(tableName: string, config: Partial<DashboardConfig>): Promise<void> {
+    console.log('💾 [saveConfig-1] saveConfig chamado:', { tableName, config: { widgets: config.widgets?.length, customTabs: config.customTabs?.length } })
+    // TEMPORÁRIO: log bem visível
+    console.warn('🔔 DEBUG saveConfig:', tableName)
+    if (!tableName) {
+      console.warn('⚠️ [saveConfig-SKIP] tableName vazio, retornando')
+      return
+    }
 
     try {
+      console.log('💾 [saveConfig-2] Iniciando salvamento...')
       const storageKey = this.getStorageKey(tableName)
       
       // Carregar existente diretamente do localStorage para evitar migração durante save
@@ -271,8 +407,48 @@ class DashboardStorage {
         updated.customTabs = config.customTabs
       }
 
-      localStorage.setItem(storageKey, JSON.stringify(updated))
-      console.log('💾 Configurações salvas:', { tableName, widgets: updated.widgets.length, customTabs: updated.customTabs?.length || 0 })
+      // Salvar no Firestore primeiro (fonte primária)
+      console.log('🔄 [1] Iniciando processo de salvamento no Firestore (fonte primária)...')
+      try {
+        const { DashboardFirestore } = await import('../services/dashboardFirestore')
+        console.log('📤 [2] Tentando salvar no Firestore...', { 
+          tableName, 
+          widgets: updated.widgets.length, 
+          customTabs: updated.customTabs?.length || 0,
+          widgetsWithDataSource: updated.widgets.filter(w => w.dataSource).map(w => ({ id: w.id, dataSource: w.dataSource }))
+        })
+        // Garantir que widgets tenham dataSource preservado
+        const widgetsToSave = updated.widgets.map(w => ({
+          ...w,
+          // Preservar dataSource se existir, mesmo que seja string vazia (será tratado como null no backend)
+          ...(w.dataSource !== undefined && w.dataSource !== null ? { dataSource: w.dataSource } : {})
+        }))
+        const configToSave = {
+          ...updated,
+          widgets: widgetsToSave
+        }
+        console.log('📤 [2.5] Widgets a serem salvos com dataSource:', widgetsToSave.map(w => ({ id: w.id, type: w.type, dataSource: w.dataSource })))
+        await DashboardFirestore.saveConfig(tableName, configToSave)
+        console.log('✅ [3] Configurações salvas no Firestore com sucesso!', { tableName })
+        
+        // Após salvar no Firestore com sucesso, salvar no localStorage como backup/cache
+        console.log('💾 [4] Salvando no localStorage como backup...')
+        localStorage.setItem(storageKey, JSON.stringify(updated))
+        console.log('💾 [5] Configurações salvas no localStorage (backup):', { tableName, widgets: updated.widgets.length, customTabs: updated.customTabs?.length || 0 })
+      } catch (error) {
+        console.error('❌ [ERRO] Erro ao salvar no Firestore:', error)
+        console.error('Detalhes do erro:', {
+          message: (error as any)?.message,
+          code: (error as any)?.code,
+          stack: (error as any)?.stack,
+          name: (error as any)?.name
+        })
+        
+        // Se falhar no Firestore, salvar no localStorage como fallback
+        console.warn('⚠️ Salvando no localStorage como fallback (Firestore falhou)')
+        localStorage.setItem(storageKey, JSON.stringify(updated))
+        console.log('💾 Configurações salvas no localStorage (fallback):', { tableName })
+      }
     } catch (error) {
       console.error('❌ Erro ao salvar configurações:', error)
     }
@@ -313,16 +489,30 @@ class DashboardStorage {
     return updatedTab
   }
 
-  static deleteCustomTab(tableName: string, tabId: string): void {
+  static async deleteCustomTab(tableName: string, tabId: string): Promise<void> {
     const tabs = this.getCustomTabs(tableName)
+    const tabToDelete = tabs.find(t => t.id === tabId)
+    const isUniversal = tabToDelete?.isUniversal === true
+    
     const updatedTabs = tabs.filter(t => t.id !== tabId)
-    this.saveConfig(tableName, { customTabs: updatedTabs })
+    await this.saveConfig(tableName, { customTabs: updatedTabs })
+    
+    // Se for uma aba universal, também remover do documento _universal
+    if (isUniversal) {
+      try {
+        const { DashboardFirestore } = await import('../services/dashboardFirestore')
+        await DashboardFirestore.deleteUniversalTab(tabId)
+        console.log('✅ Aba universal removida do documento _universal:', tabId)
+      } catch (error) {
+        console.error('❌ Erro ao remover aba universal do documento _universal:', error)
+      }
+    }
     
     // Remover widgets associados a esta aba
     const config = this.loadConfig(tableName)
     if (config?.widgets) {
       const updatedWidgets = config.widgets.filter(w => w.customTabId !== tabId)
-      this.saveConfig(tableName, { widgets: updatedWidgets })
+      await this.saveConfig(tableName, { widgets: updatedWidgets })
     }
   }
 
@@ -522,10 +712,309 @@ const iconMap: Record<string, LucideIcon> = {
 // Todas as personalizações (dimensões, métricas, cards, timeline, filtros, ordem) são salvas no localStorage
 // usando selectedTable como identificador único do cliente, garantindo que cada cliente tenha suas próprias configurações
 const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashboardProps) => {
+  console.log('🎬 [DEBUG] OverviewDashboard renderizado:', {
+    selectedTable,
+    startDate,
+    endDate,
+    timestamp: new Date().toISOString()
+  })
+  
+  // Helper para verificar se o usuário tem nível de acesso "all"
+  const hasAllAccess = useMemo(() => {
+    try {
+      // 1. Tentar login-response
+      const loginResponse = localStorage.getItem('login-response')
+      if (loginResponse) {
+        const parsed = JSON.parse(loginResponse)
+        const hasAccess = parsed.table_name === 'all' || parsed.access_control === 'all'
+        console.log('🔍 Verificação de acesso "all":', { 
+          table_name: parsed.table_name,
+          access_control: parsed.access_control,
+          hasAllAccess: hasAccess
+        })
+        return hasAccess
+      }
+      
+      // 2. Tentar mymetric-auth (fallback)
+      const authData = localStorage.getItem('mymetric-auth')
+      if (authData) {
+        const parsed = JSON.parse(authData)
+        const user = parsed.user || parsed
+        const hasAccess = user?.tablename === 'all' || user?.access_control === 'all'
+        console.log('🔍 Verificação de acesso "all" (mymetric-auth):', { 
+          tablename: user?.tablename,
+          access_control: user?.access_control,
+          hasAllAccess: hasAccess
+        })
+        return hasAccess
+      }
+      
+      // 3. Tentar mymetric-auth-complete (fallback)
+      const authComplete = localStorage.getItem('mymetric-auth-complete')
+      if (authComplete) {
+        const parsed = JSON.parse(authComplete)
+        const user = parsed.authData?.user || parsed.user
+        const hasAccess = user?.tablename === 'all' || user?.access_control === 'all'
+        console.log('🔍 Verificação de acesso "all" (mymetric-auth-complete):', { 
+          tablename: user?.tablename,
+          access_control: user?.access_control,
+          hasAllAccess: hasAccess
+        })
+        return hasAccess
+      }
+    } catch (error) {
+      console.error('Erro ao verificar nível de acesso do usuário:', error)
+    }
+    console.log('⚠️ Usuário não tem acesso "all" - edição de abas universais bloqueada')
+    return false
+  }, [])
+
+  // Helper para verificar se o usuário tem email @mymetric.com.br (mantido para compatibilidade)
+  const isMyMetricUser = useMemo(() => {
+    try {
+      // Tentar múltiplas fontes de email
+      let email = ''
+      
+      // 1. Tentar login-response
+      const loginResponse = localStorage.getItem('login-response')
+      if (loginResponse) {
+        const parsed = JSON.parse(loginResponse)
+        email = parsed.email || parsed.user?.email || parsed.user_email || ''
+        console.log('🔍 login-response:', { parsed, email })
+      }
+      
+      // 2. Tentar mymetric-auth (fallback)
+      if (!email) {
+        const authData = localStorage.getItem('mymetric-auth')
+        if (authData) {
+          const parsed = JSON.parse(authData)
+          email = parsed.user?.email || parsed.email || ''
+          console.log('🔍 mymetric-auth:', { parsed, email })
+        }
+      }
+      
+      // 3. Tentar mymetric-auth-complete (fallback)
+      if (!email) {
+        const authComplete = localStorage.getItem('mymetric-auth-complete')
+        if (authComplete) {
+          const parsed = JSON.parse(authComplete)
+          email = parsed.authData?.user?.email || parsed.email || ''
+          console.log('🔍 mymetric-auth-complete:', { parsed, email })
+        }
+      }
+      
+      const isMyMetric = email && email.includes('@mymetric.com.br')
+      console.log('🔍 Verificação de usuário MyMetric:', { 
+        email, 
+        isMyMetric,
+        sources: {
+          loginResponse: !!loginResponse,
+          mymetricAuth: !!localStorage.getItem('mymetric-auth'),
+          mymetricAuthComplete: !!localStorage.getItem('mymetric-auth-complete')
+        }
+      })
+      return isMyMetric
+    } catch (error) {
+      console.error('Erro ao verificar email do usuário:', error)
+    }
+    console.log('⚠️ Usuário não é @mymetric.com.br - checkbox de aba universal não será exibido')
+    return false
+  }, [])
+
   const [data, setData] = useState<OverviewDataItem[]>([])
   const [allData, setAllData] = useState<OverviewDataItem[]>([])
+  // Dados por fonte de dados (dataSource -> dados)
+  const [dataBySource, setDataBySource] = useState<Map<string, OverviewDataItem[]>>(new Map())
+  const [allDataBySource, setAllDataBySource] = useState<Map<string, OverviewDataItem[]>>(new Map())
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  
+  // Função para extrair métricas e dimensões disponíveis dos dados
+  const extractMetricsAndDimensions = useCallback((dataItems: OverviewDataItem[]) => {
+    if (!dataItems || dataItems.length === 0) {
+      // Retornar padrões se não há dados
+      return {
+        dimensions: [
+          { key: 'event_date', label: 'Data' },
+          { key: 'platform', label: 'Plataforma' },
+          { key: 'traffic_category', label: 'Categoria de Tráfego' },
+          { key: 'city', label: 'Cidade' },
+          { key: 'region', label: 'Região' },
+          { key: 'country', label: 'País' }
+        ],
+        metrics: [
+          { key: 'sessions', label: 'Sessões', type: 'number' },
+          { key: 'clicks', label: 'Cliques', type: 'number' },
+          { key: 'add_to_carts', label: 'Adições ao Carrinho', type: 'number' },
+          { key: 'orders', label: 'Pedidos', type: 'number' },
+          { key: 'paid_orders', label: 'Pedidos Pagos', type: 'number' },
+          { key: 'revenue', label: 'Receita', type: 'currency' },
+          { key: 'paid_revenue', label: 'Receita Paga', type: 'currency' },
+          { key: 'cost', label: 'Investimento', type: 'currency' },
+          { key: 'leads', label: 'Leads', type: 'number' },
+          { key: 'new_customers', label: 'Novos Clientes', type: 'number' },
+          { key: 'revenue_new_customers', label: 'Receita Novos Clientes', type: 'currency' }
+        ]
+      }
+    }
+
+    // Analisar o primeiro item para descobrir campos disponíveis
+    const sample = dataItems[0]
+    const extractedDimensions: {key: string, label: string}[] = []
+    const extractedMetrics: {key: string, label: string, type: 'number' | 'currency' | 'percentage'}[] = []
+    
+    // Campos conhecidos que são sempre dimensões
+    const knownDimensions = ['event_date', 'platform', 'traffic_category', 'city', 'region', 'country', 'campaign', 'ad_group', 'keyword', 'device', 'browser', 'os']
+    
+    // Campos conhecidos que são sempre métricas numéricas
+    const knownNumericMetrics = ['sessions', 'clicks', 'add_to_carts', 'orders', 'paid_orders', 'leads', 'new_customers']
+    
+    // Campos conhecidos que são métricas monetárias
+    const knownCurrencyMetrics = ['revenue', 'paid_revenue', 'cost', 'revenue_new_customers', 'spend', 'impressions']
+    
+    Object.keys(sample).forEach(key => {
+      const value = sample[key as keyof OverviewDataItem]
+      const valueType = typeof value
+      
+      // Se é uma dimensão conhecida
+      if (knownDimensions.includes(key)) {
+        const label = key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+        extractedDimensions.push({ key, label })
+        return
+      }
+      
+      // Se é uma métrica conhecida
+      if (knownNumericMetrics.includes(key)) {
+        const label = key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+        extractedMetrics.push({ key, label, type: 'number' })
+        return
+      }
+      
+      if (knownCurrencyMetrics.includes(key)) {
+        const label = key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+        extractedMetrics.push({ key, label, type: 'currency' })
+        return
+      }
+      
+      // Classificar baseado no tipo do valor
+      if (valueType === 'string' || key.includes('date') || key.includes('id') || key.includes('name')) {
+        // Provável dimensão
+        const label = key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+        if (!extractedDimensions.find(d => d.key === key)) {
+          extractedDimensions.push({ key, label })
+        }
+      } else if (valueType === 'number') {
+        // Provável métrica
+        const label = key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+        // Não classificar automaticamente como currency - todas serão 'number' por padrão
+        // Apenas detectar percentage baseado no nome
+        const isPercentage = /rate|percent|percentage|ratio/i.test(key)
+        
+        let type: 'number' | 'currency' | 'percentage' = 'number'
+        if (isPercentage) type = 'percentage'
+        // Currency não será detectado automaticamente - deve ser configurado manualmente se necessário
+        
+        if (!extractedMetrics.find(m => m.key === key)) {
+          extractedMetrics.push({ key, label, type })
+        }
+      }
+    })
+    
+    // Ordenar dimensões e métricas
+    extractedDimensions.sort((a, b) => a.label.localeCompare(b.label))
+    extractedMetrics.sort((a, b) => a.label.localeCompare(b.label))
+    
+    return { dimensions: extractedDimensions, metrics: extractedMetrics }
+  }, [])
+
+  // Estado para todas as fontes de dados disponíveis (da API)
+  const [allAvailableDataSources, setAllAvailableDataSources] = useState<DataSource[]>([])
+  
+  // Estado para fontes de dados configuradas no dashboard (com métricas/dimensões mapeadas)
+  const [configuredDataSources, setConfiguredDataSources] = useState<DataSource[]>([])
+
+  // Estados para sub abas personalizadas (precisam estar antes de getWidgetMetricsAndDimensions)
+  const [customTabs, setCustomTabs] = useState<CustomTab[]>(() => {
+    if (!selectedTable) return []
+    return DashboardStorage.getCustomTabs(selectedTable).sort((a, b) => a.order - b.order)
+  })
+
+  // Estados para jobs e dados por fonte de dados (precisam estar antes de getWidgetMetricsAndDimensions)
+  const jobsBySourceRef = useRef<Map<string, string>>(new Map()) // dataSource -> jobId
+  const isProcessingBySourceRef = useRef<Map<string, boolean>>(new Map()) // dataSource -> isProcessing
+  const previousDataBySourceRef = useRef<Map<string, OverviewDataItem[]>>(new Map()) // dataSource -> dados do período anterior
+  const isLoadingBySource = useState<Map<string, boolean>>(new Map())[0]
+  const setIsLoadingBySource = useState<Map<string, boolean>>(new Map())[1]
+  
+  // Estado centralizado de carregamento por aba
+  const [isTabLoading, setIsTabLoading] = useState(false)
+  const [tabLoadingProgress, setTabLoadingProgress] = useState<{
+    total: number
+    loading: number
+    loaded: number
+    dataSources: string[]
+  }>({ total: 0, loading: 0, loaded: 0, dataSources: [] })
+  
+  // Estado para rastrear elapsed_seconds por dataSource
+  const [elapsedSecondsBySource, setElapsedSecondsBySource] = useState<Map<string, number>>(new Map())
+
+  // Função para obter métricas e dimensões de um widget específico
+  const getWidgetMetricsAndDimensions = useCallback((widget: Widget) => {
+    // Determinar qual dataSource usar: widget > aba > padrão
+    let widgetDataSource: string | undefined = widget.dataSource
+    
+    // Se o widget não tem dataSource, verificar se a aba tem
+    if (!widgetDataSource && widget.customTabId) {
+      const tab = customTabs.find(t => t.id === widget.customTabId)
+      if (tab?.dataSource) {
+        widgetDataSource = tab.dataSource
+        console.log('📊 Widget herdando dataSource da aba para métricas:', widget.customTabId, widgetDataSource)
+      }
+    }
+    
+    // Se há um dataSource (do widget ou da aba), usar métricas mapeadas dessa fonte
+    if (widgetDataSource) {
+      // Primeiro, tentar usar métricas mapeadas da fonte de dados configurada
+      const configuredSource = configuredDataSources.find(ds => ds.endpoint === widgetDataSource)
+      if (configuredSource && configuredSource.metrics && configuredSource.dimensions) {
+        console.log('📊 Usando métricas mapeadas da fonte de dados:', widgetDataSource, {
+          metrics: configuredSource.metrics.length,
+          dimensions: configuredSource.dimensions.length
+        })
+        return {
+          metrics: configuredSource.metrics,
+          dimensions: configuredSource.dimensions
+        }
+      }
+      
+      // Se não há métricas mapeadas, tentar extrair dos dados carregados
+      const widgetData = dataBySource.get(widgetDataSource) || []
+      if (widgetData.length > 0) {
+        console.log('📊 Extraindo métricas dos dados carregados:', widgetDataSource, widgetData.length, 'registros')
+        return extractMetricsAndDimensions(widgetData)
+      }
+      
+      // Se os dados ainda não foram carregados, iniciar carregamento
+      console.log('🔄 Dados ainda não carregados para fonte:', widgetDataSource, '- iniciando carregamento')
+      const isProcessing = isProcessingBySourceRef.current.get(widgetDataSource)
+      const isLoading = isLoadingBySource.get(widgetDataSource)
+      if (!isProcessing && !isLoading) {
+        // fetchDataSourceData será definido depois, então não podemos chamá-lo aqui diretamente
+        // Em vez disso, retornar métricas vazias e o useEffect que monitora widgets iniciará o carregamento
+      }
+      
+      // Retornar métricas vazias temporariamente (serão atualizadas quando dados carregarem)
+      return { metrics: [], dimensions: [] }
+    }
+    
+    // Caso contrário, usar dados padrão e métricas/dimensões padrão
+    if (data.length > 0) {
+      return extractMetricsAndDimensions(data)
+    }
+    
+    // Fallback para métricas e dimensões padrão
+    return extractMetricsAndDimensions([])
+  }, [data, dataBySource, customTabs, configuredDataSources, extractMetricsAndDimensions, isLoadingBySource])
   
   // Estados para job/polling
   const [jobId, setJobId] = useState<string | null>(null)
@@ -559,15 +1048,11 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   // Ref para evitar adicionar widgets duplicados
   const addingWidgetRef = useRef(false)
 
-  // Estados para sub abas personalizadas
-  const [customTabs, setCustomTabs] = useState<CustomTab[]>(() => {
-    if (!selectedTable) return []
-    return DashboardStorage.getCustomTabs(selectedTable).sort((a, b) => a.order - b.order)
-  })
+  // Estados para sub abas personalizadas (customTabs já foi declarado acima)
   const [activeCustomTab, setActiveCustomTab] = useState<string | null>(null) // null = mostrar widgets sem aba
   const [showCustomTabModal, setShowCustomTabModal] = useState(false)
   const [editingCustomTab, setEditingCustomTab] = useState<CustomTab | null>(null)
-  const [customTabFormData, setCustomTabFormData] = useState({ name: '', icon: 'BarChart3', order: 0 })
+  const [customTabFormData, setCustomTabFormData] = useState({ name: '', icon: 'BarChart3', order: 0, isUniversal: false, dataSource: '' })
   const [draggedCustomTab, setDraggedCustomTab] = useState<string | null>(null)
 
   // Estados para edição de widgets individuais
@@ -578,6 +1063,8 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   
   // Estado para modal de adicionar widget
   const [showAddWidgetModal, setShowAddWidgetModal] = useState(false)
+  // Estado para controlar a etapa do modal (seleção de fonte ou tipo de widget)
+  const [addWidgetStep, setAddWidgetStep] = useState<'selectDataSource' | 'selectWidgetType'>('selectDataSource')
   
   // Estado para modo de edição/visualização (padrão: visualização)
   const [isEditMode, setIsEditMode] = useState(false)
@@ -590,6 +1077,157 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   
   // Estado para busca de métricas na sidebar
   const [metricSearchTerm, setMetricSearchTerm] = useState('')
+  
+  // Estado para modal de gerenciamento de fontes de dados
+  const [showDataSourcesModal, setShowDataSourcesModal] = useState(false)
+  
+  // Estado para mostrar amostra de dados de uma fonte
+  const [showingDataSample, setShowingDataSample] = useState<string | null>(null)
+
+  // Estado para modal de métricas calculadas por fonte
+  const [calculatedMetricsDataSource, setCalculatedMetricsDataSource] = useState<string | null>(null)
+  const [editingCalculatedMetricKey, setEditingCalculatedMetricKey] = useState<string | null>(null)
+  const [calculatedMetricForm, setCalculatedMetricForm] = useState<{
+    key: string
+    label: string
+    type: 'number' | 'currency' | 'percentage'
+    formula: string
+  }>({ key: '', label: '', type: 'number', formula: '' })
+
+  const closeCalculatedMetricsModal = useCallback(() => {
+    setCalculatedMetricsDataSource(null)
+    setEditingCalculatedMetricKey(null)
+    setCalculatedMetricForm({ key: '', label: '', type: 'number', formula: '' })
+  }, [])
+
+  const recomputeCalculatedMetricsForSource = useCallback((endpoint: string, sourcesOverride?: DataSource[]) => {
+    const sources = sourcesOverride || configuredDataSources
+    const source = sources.find(ds => ds.endpoint === endpoint)
+    if (!source) return
+    const calculated = (source.metrics || [])
+      .filter((m: any) => m?.isCalculated && typeof m?.formula === 'string')
+      .map((m: any) => ({
+        key: m.key,
+        label: m.label,
+        type: m.type,
+        isCalculated: true,
+        formula: m.formula
+      })) as CalculatedMetric[]
+
+    if (!calculated.length) return
+
+    const allRows = allDataBySource.get(endpoint) || []
+    
+    // IMPORTANTE: Para métricas agregadas (como sum() / sum()), precisamos aplicar o filtro de data ANTES do cálculo
+    // Para métricas não-agregadas (linha por linha), calculamos em todos os dados e filtramos depois
+    const hasAggregateMetrics = calculated.some(m => hasAggregateFunctions(m.formula))
+    
+    // Preparar dados filtrados se necessário (para métricas agregadas com filtro de data)
+    let rowsToCalculate = allRows
+    if (hasAggregateMetrics && startDate && endDate) {
+      const dateField = source.dateField || 'event_date'
+      const startDateObj = new Date(startDate)
+      const endDateObj = new Date(endDate)
+      endDateObj.setHours(23, 59, 59, 999)
+      rowsToCalculate = allRows.filter((item: any) => {
+        const dateValue = item[dateField]
+        if (!dateValue) return false
+        const d = new Date(dateValue)
+        if (isNaN(d.getTime())) return false
+        return d >= startDateObj && d <= endDateObj
+      })
+      console.log(`🔍 Filtro de data aplicado antes do cálculo de métricas agregadas: ${rowsToCalculate.length} linhas de ${allRows.length} totais`)
+    }
+    
+    // Aplicar métricas calculadas nos dados apropriados
+    const computedFiltered = applyCalculatedMetricsToRows(
+      rowsToCalculate as unknown as Record<string, unknown>[],
+      calculated
+    ) as unknown as OverviewDataItem[]
+
+    // Se há métricas agregadas, os valores calculados devem ser aplicados a todas as linhas
+    // (porque são valores agregados do período)
+    let finalAllRows: OverviewDataItem[]
+    if (hasAggregateMetrics && rowsToCalculate.length < allRows.length) {
+      // Separar métricas agregadas das não-agregadas
+      const aggregateMetrics = calculated.filter(m => hasAggregateFunctions(m.formula))
+      const nonAggregateMetrics = calculated.filter(m => !hasAggregateFunctions(m.formula))
+      
+      // Extrair valores agregados (são os mesmos para todas as linhas do período filtrado)
+      const aggregateValues = new Map<string, number>()
+      if (computedFiltered.length > 0) {
+        aggregateMetrics.forEach(m => {
+          aggregateValues.set(m.key, computedFiltered[0][m.key] as number)
+        })
+      }
+      
+      // Para métricas não-agregadas, calcular em todos os dados
+      if (nonAggregateMetrics.length > 0) {
+        const computedNonAggregate = applyCalculatedMetricsToRows(
+          allRows as unknown as Record<string, unknown>[],
+          nonAggregateMetrics
+        ) as unknown as OverviewDataItem[]
+        
+        // Combinar: métricas agregadas (do período filtrado) + métricas não-agregadas (calculadas linha por linha)
+        finalAllRows = allRows.map((row: any, index: number) => {
+          const nonAggRow = computedNonAggregate[index] || row
+          const result = {...row}
+          // Adicionar métricas não-agregadas
+          nonAggregateMetrics.forEach(m => {
+            result[m.key] = nonAggRow[m.key]
+          })
+          // Adicionar métricas agregadas (mesmo valor para todas as linhas)
+          aggregateValues.forEach((value, key) => {
+            result[key] = value
+          })
+          return result
+        }) as OverviewDataItem[]
+      } else {
+        // Apenas métricas agregadas: aplicar o mesmo valor agregado a todas as linhas
+        finalAllRows = allRows.map((row: any) => {
+          const result = {...row}
+          aggregateValues.forEach((value, key) => {
+            result[key] = value
+          })
+          return result
+        }) as OverviewDataItem[]
+      }
+    } else {
+      // Sem métricas agregadas ou sem filtro: usar cálculo direto
+      finalAllRows = computedFiltered
+    }
+
+    setAllDataBySource(prev => {
+      const next = new Map(prev)
+      next.set(endpoint, finalAllRows)
+      return next
+    })
+
+    // Atualizar também o dataset filtrado (respeitando dateField e range atual)
+    let filteredRows = finalAllRows
+    if (startDate && endDate) {
+      const dateField = source.dateField || 'event_date'
+      const startDateObj = new Date(startDate)
+      const endDateObj = new Date(endDate)
+      endDateObj.setHours(23, 59, 59, 999)
+      filteredRows = finalAllRows.filter((item: any) => {
+        const dateValue = item[dateField]
+        if (!dateValue) return false
+        const d = new Date(dateValue)
+        if (isNaN(d.getTime())) return false
+        return d >= startDateObj && d <= endDateObj
+      })
+    }
+
+    setDataBySource(prev => {
+      const next = new Map(prev)
+      next.set(endpoint, filteredRows)
+      return next
+    })
+  }, [allDataBySource, configuredDataSources, setAllDataBySource, setDataBySource, startDate, endDate, hasAggregateFunctions])
+  
+  
+  const [selectedDataSourceForNewWidget, setSelectedDataSourceForNewWidget] = useState<string | null>(null)
   
   // Estado para presets
   const [presets, setPresets] = useState<DashboardPreset[]>(() => {
@@ -701,20 +1339,103 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     }
   }, [editingWidget])
 
-  // Recarregar customTabs quando selectedTable mudar
+  // Testar conexão com Firestore quando selectedTable mudar (apenas uma vez)
   useEffect(() => {
     if (selectedTable) {
-      const tabs = DashboardStorage.getCustomTabs(selectedTable).sort((a, b) => a.order - b.order)
-      setCustomTabs(tabs)
-      // Se houver abas e nenhuma estiver ativa, ativar a primeira
-      if (tabs.length > 0 && activeCustomTab === null) {
-        setActiveCustomTab(tabs[0].id)
-      } else if (tabs.length === 0) {
-        setActiveCustomTab(null)
-      } else if (activeCustomTab && !tabs.find(t => t.id === activeCustomTab)) {
-        // Se a aba ativa não existe mais, ativar a primeira
-        setActiveCustomTab(tabs[0].id)
+      // Testar conexão com Firestore
+      DashboardStorage.initFirestore()
+        .then(async () => {
+          console.log('🧪 Testando conexão com Firestore...')
+          const { DashboardFirestore } = await import('../services/dashboardFirestore')
+          const result = await DashboardFirestore.testConnection()
+          if (result.success) {
+            console.log('✅ Teste de conexão com Firestore: SUCESSO!', result.message)
+          } else {
+            console.error('❌ Teste de conexão com Firestore: FALHOU!', result.message, result.error)
+          }
+        })
+        .catch((error) => {
+          console.error('❌ Erro ao testar conexão com Firestore:', error)
+        })
+    }
+  }, [selectedTable])
+
+  // Nota: A busca de fontes disponíveis agora é feita no useEffect que carrega allAvailableDataSources (linha ~1450)
+  // E as fontes configuradas são carregadas junto com o DashboardConfig (linha ~1250)
+  
+  // Definir fonte padrão para novos widgets quando configuredDataSources mudar
+  // IMPORTANTE: Não alterar quando activeCustomTab mudar - a fonte de dados deve ser independente da aba
+  useEffect(() => {
+    if (configuredDataSources.length === 1) {
+      setSelectedDataSourceForNewWidget(configuredDataSources[0].endpoint)
+    } else if (configuredDataSources.length > 1) {
+      // Se há múltiplas fontes, definir a primeira não restrita ou a primeira disponível
+      // Mas apenas se ainda não foi definido (preservar seleção do usuário)
+      const currentSelection = selectedDataSourceForNewWidget
+      if (!currentSelection || !configuredDataSources.find(s => s.endpoint === currentSelection)) {
+        const defaultSource = configuredDataSources.find(s => !s.restricted) || configuredDataSources[0]
+        setSelectedDataSourceForNewWidget(defaultSource?.endpoint || null)
       }
+    } else {
+      setSelectedDataSourceForNewWidget(null)
+    }
+  }, [configuredDataSources]) // Apenas quando configuredDataSources mudar, NÃO quando activeCustomTab mudar
+
+  // Recarregar customTabs quando selectedTable mudar (carregar do Firestore primeiro)
+  useEffect(() => {
+    if (selectedTable) {
+      console.log('🔄 Carregando abas para cliente:', selectedTable)
+      // Carregar do Firestore primeiro (fonte primária) - isso já inclui abas universais
+      DashboardStorage.loadConfigAsync(selectedTable)
+        .then((config) => {
+          const tabs = (config?.customTabs || []).sort((a, b) => a.order - b.order)
+          console.log('📑 Abas carregadas:', {
+            total: tabs.length,
+            clientTabs: tabs.filter(t => !t.isUniversal).length,
+            universalTabs: tabs.filter(t => t.isUniversal).length,
+            tabs: tabs.map(t => ({ name: t.name, isUniversal: t.isUniversal, dataSource: t.dataSource }))
+          })
+          setCustomTabs(tabs)
+          
+          // Carregar fontes de dados configuradas
+          if (config?.dataSources && Array.isArray(config.dataSources)) {
+            console.log('📊 Fontes de dados carregadas do Firestore:', config.dataSources.length)
+            setConfiguredDataSources(config.dataSources)
+          } else {
+            console.log('⚠️ Nenhuma fonte de dados encontrada na configuração')
+            setConfiguredDataSources([])
+          }
+          
+          // Abrir a primeira aba customizada ao carregar o dashboard
+          if (tabs.length > 0) {
+            setActiveCustomTab(tabs[0].id)
+            console.log('📑 Primeira aba customizada ativada ao abrir o dashboard:', tabs[0].name)
+          } else {
+            setActiveCustomTab(null)
+            console.log('📑 Nenhuma aba customizada disponível')
+          }
+        })
+        .catch((error) => {
+          console.error('❌ Erro ao carregar customTabs do Firestore:', error)
+          // Fallback: tentar localStorage
+          const tabs = DashboardStorage.getCustomTabs(selectedTable).sort((a, b) => a.order - b.order)
+          console.log('📑 Abas carregadas do localStorage (fallback):', tabs.length)
+          setCustomTabs(tabs)
+          
+          // Abrir a primeira aba customizada ao carregar o dashboard (fallback)
+          if (tabs.length > 0) {
+            setActiveCustomTab(tabs[0].id)
+            console.log('📑 Primeira aba customizada ativada ao abrir o dashboard (fallback):', tabs[0].name)
+          } else {
+            setActiveCustomTab(null)
+            console.log('📑 Nenhuma aba customizada disponível (fallback)')
+          }
+        })
+      
+      // Tentar inicializar Firestore quando selectedTable mudar
+      DashboardStorage.initFirestore().catch((error) => {
+        console.warn('⚠️ Erro ao inicializar Firestore:', error)
+      })
     } else {
       setCustomTabs([])
       setActiveCustomTab(null)
@@ -724,12 +1445,22 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
 
   // Filtrar widgets por sub aba ativa
   const filteredWidgets = useMemo(() => {
+    console.log('🔍 Filtrando widgets:', {
+      totalWidgets: widgets.length,
+      activeCustomTab,
+      widgetsWithTabId: widgets.filter(w => w.customTabId).length,
+      widgetsWithoutTabId: widgets.filter(w => !w.customTabId).length
+    })
+    
     if (activeCustomTab === null) {
-      // Mostrar widgets sem sub aba (customTabId undefined ou null)
-      return widgets.filter(w => !w.customTabId)
+      // Se não há aba ativa, não mostrar widgets
+      console.log('📋 Nenhuma aba ativa, não mostrando widgets')
+      return []
     }
     // Mostrar widgets da sub aba ativa
-    return widgets.filter(w => w.customTabId === activeCustomTab)
+    const filtered = widgets.filter(w => w.customTabId === activeCustomTab)
+    console.log('📋 Widgets filtrados (aba específica):', filtered.length, 'para aba', activeCustomTab)
+    return filtered
   }, [widgets, activeCustomTab])
 
   // Ref para rastrear se é a primeira renderização dos widgets
@@ -747,7 +1478,25 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
 
     // Só salvar se os widgets realmente mudaram
     if (selectedTable && JSON.stringify(prevWidgetsRef.current) !== JSON.stringify(widgets)) {
+      console.log('💾 [SAVE-1] Widgets mudaram, salvando...', { 
+        widgets: widgets.length, 
+        selectedTable,
+        prevWidgets: prevWidgetsRef.current.length 
+      })
+      console.log('💾 [SAVE-1.5] Widgets com dataSource:', widgets.map(w => ({ id: w.id, type: w.type, dataSource: w.dataSource })))
+      console.log('💾 [SAVE-2] Chamando DashboardStorage.saveConfig...')
+      // TEMPORÁRIO: alert para debug
+      if (window.location.hostname === 'localhost') {
+        console.warn('🔔 DEBUG: Widgets mudaram, iniciando salvamento')
+      }
       DashboardStorage.saveConfig(selectedTable, { widgets })
+        .then(() => {
+          console.log('💾 [SAVE-3] DashboardStorage.saveConfig concluído')
+        })
+        .catch((error) => {
+          console.error('❌ [SAVE-ERRO] Erro ao salvar widgets:', error)
+          console.error('Stack:', error?.stack)
+        })
       prevWidgetsRef.current = widgets
     }
   }, [widgets, selectedTable])
@@ -760,17 +1509,75 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     if (selectedTable) {
       // Só carregar se ainda não carregou OU se não há widgets no estado
       if (!hasLoadedWidgetsRef.current || widgets.length === 0) {
-        const config = DashboardStorage.loadConfig(selectedTable)
-        if (config?.widgets && config.widgets.length > 0) {
-          setWidgets(config.widgets)
-          prevWidgetsRef.current = config.widgets
-          isWidgetsInitialMountRef.current = true // Resetar flag para não salvar na próxima renderização
-          hasLoadedWidgetsRef.current = true
-          console.log('🔄 Widgets recarregados:', config.widgets.length, 'widgets')
-        } else if (widgets.length > 0) {
-          // Se não há widgets salvos mas há widgets no estado, preservar (não limpar)
-          console.log('⚠️ Nenhum widget encontrado no storage, preservando widgets atuais:', widgets.length)
-        }
+        // Carregar do Firestore primeiro (fonte primária)
+        DashboardStorage.loadConfigAsync(selectedTable)
+          .then((config) => {
+            console.log('📥 [LOAD] Config carregada do Firestore:', {
+              hasConfig: !!config,
+              widgetsCount: config?.widgets?.length || 0,
+              widgets: config?.widgets,
+              customTabsCount: config?.customTabs?.length || 0
+            })
+            
+            if (config) {
+              // Sempre atualizar widgets, mesmo se vazio (para limpar estado antigo)
+              if (config.widgets && Array.isArray(config.widgets)) {
+                // Verificar se dataSource está presente nos widgets e preservá-lo
+                const widgetsWithDataSource = config.widgets.map(w => {
+                  console.log('🔍 Widget carregado:', { id: w.id, type: w.type, dataSource: w.dataSource, hasDataSource: 'dataSource' in w })
+                  // Garantir que o campo dataSource seja preservado mesmo se for null ou undefined
+                  return {
+                    ...w,
+                    // Preservar dataSource se existir (mesmo que seja null ou string vazia)
+                    ...(w.dataSource !== undefined ? { dataSource: w.dataSource } : {})
+                  }
+                })
+                console.log('📊 Widgets processados:', widgetsWithDataSource.map(w => ({ id: w.id, type: w.type, dataSource: w.dataSource })))
+                setWidgets(widgetsWithDataSource)
+                prevWidgetsRef.current = widgetsWithDataSource
+                isWidgetsInitialMountRef.current = true
+                hasLoadedWidgetsRef.current = true
+                console.log('✅ Widgets carregados do Firestore:', widgetsWithDataSource.length, 'widgets')
+                console.log('📊 Widgets com dataSource:', widgetsWithDataSource.filter(w => w.dataSource).map(w => ({ id: w.id, dataSource: w.dataSource })))
+              } else {
+                // Se não há widgets na config, limpar
+                console.log('⚠️ Config sem widgets, limpando estado')
+                setWidgets([])
+                prevWidgetsRef.current = []
+                isWidgetsInitialMountRef.current = true
+                hasLoadedWidgetsRef.current = true
+              }
+            } else {
+              // Fallback: tentar localStorage
+              console.log('⚠️ Config não encontrada no Firestore, tentando localStorage...')
+              const localConfig = DashboardStorage.loadConfig(selectedTable)
+              if (localConfig?.widgets && Array.isArray(localConfig.widgets) && localConfig.widgets.length > 0) {
+                setWidgets(localConfig.widgets)
+                prevWidgetsRef.current = localConfig.widgets
+                isWidgetsInitialMountRef.current = true
+                hasLoadedWidgetsRef.current = true
+                console.log('✅ Widgets recarregados do localStorage (fallback):', localConfig.widgets.length, 'widgets')
+              } else {
+                console.log('⚠️ Nenhum widget encontrado em nenhuma fonte')
+                setWidgets([])
+                prevWidgetsRef.current = []
+                isWidgetsInitialMountRef.current = true
+                hasLoadedWidgetsRef.current = true
+              }
+            }
+          })
+          .catch((error) => {
+            console.error('❌ Erro ao carregar widgets do Firestore:', error)
+            // Fallback: tentar localStorage
+            const localConfig = DashboardStorage.loadConfig(selectedTable)
+            if (localConfig?.widgets && localConfig.widgets.length > 0) {
+              setWidgets(localConfig.widgets)
+              prevWidgetsRef.current = localConfig.widgets
+              isWidgetsInitialMountRef.current = true
+              hasLoadedWidgetsRef.current = true
+              console.log('🔄 Widgets recarregados do localStorage (fallback após erro):', localConfig.widgets.length, 'widgets')
+            }
+          })
       }
     }
     
@@ -861,13 +1668,16 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   }, [selectedTable]) // Executar apenas quando selectedTable mudar
 
   // Funções para gerenciar widgets
-  const addWidget = (type: 'cards' | 'timeline' | 'table' | 'runrate') => {
+  const addWidget = (type: 'cards' | 'timeline' | 'table' | 'runrate', dataSource?: string) => {
     // Prevenir adição duplicada
     if (addingWidgetRef.current) {
       return
     }
     
     addingWidgetRef.current = true
+    
+    // Se não foi fornecido dataSource, usar o selecionado ou null (usa selectedTable como padrão)
+    const widgetDataSource = dataSource || selectedDataSourceForNewWidget || null
     
     const newWidget: Widget = {
       id: `widget-${Date.now()}-${Math.random()}-${type}`,
@@ -885,9 +1695,16 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
              type === 'timeline' ? 'Timeline de Métricas' : 
              type === 'runrate' ? 'Run Rate da Meta' :
              'Dados Agrupados',
-      customTabId: activeCustomTab || undefined // Associar à sub aba ativa
+      customTabId: activeCustomTab || undefined, // Associar à sub aba ativa
+      // Sempre incluir dataSource se fornecido (mesmo que seja string vazia, será tratado como null)
+      ...(widgetDataSource && widgetDataSource.trim() !== '' ? { dataSource: widgetDataSource } : {})
     }
-    setWidgets(prev => [...prev, newWidget])
+    console.log('🆕 Novo widget criado:', { id: newWidget.id, type: newWidget.type, dataSource: newWidget.dataSource, widgetDataSource })
+    setWidgets(prev => {
+      const newWidgets = [...prev, newWidget]
+      console.log('📋 Widgets após adicionar novo:', newWidgets.map(w => ({ id: w.id, type: w.type, dataSource: w.dataSource })))
+      return newWidgets
+    })
     setEditingWidget({ id: newWidget.id, type })
     
     // Resetar após um pequeno delay
@@ -901,7 +1718,10 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
       const newWidgets = prev.filter(w => w.id !== id)
       // Salvar imediatamente
       if (selectedTable) {
-        DashboardStorage.saveConfig(selectedTable, { widgets: newWidgets })
+        console.log('💾 Removendo widget, salvando...', { widgets: newWidgets.length })
+        DashboardStorage.saveConfig(selectedTable, { widgets: newWidgets }).catch((error) => {
+          console.error('❌ Erro ao salvar após remover widget:', error)
+        })
       }
       return newWidgets
     })
@@ -912,17 +1732,75 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
       setWidgets([])
       // Salvar imediatamente
       if (selectedTable) {
-        DashboardStorage.saveConfig(selectedTable, { widgets: [] })
+        console.log('💾 Removendo todos os widgets, salvando...')
+        DashboardStorage.saveConfig(selectedTable, { widgets: [] }).catch((error) => {
+          console.error('❌ Erro ao salvar após remover todos os widgets:', error)
+        })
       }
     }
   }
 
+  // ========== FUNÇÕES DE GERENCIAMENTO DE FONTES DE DADOS ==========
+  
+  // Carregar todas as fontes disponíveis da API
+  useEffect(() => {
+    if (selectedTable) {
+      (async () => {
+        try {
+          const { DashboardFirestore } = await import('../services/dashboardFirestore')
+          const sources = await DashboardFirestore.getDataSources(selectedTable)
+          // O backend já filtra corretamente baseado no clientSlug:
+          // - Endpoints com clientSlug vazio são acessíveis a todos
+          // - Endpoints com clientSlug igual ao selectedTable são incluídos
+          // - Endpoints com clientSlug diferente são excluídos
+          setAllAvailableDataSources(sources)
+          console.log('✅ Fontes disponíveis carregadas:', {
+            total: sources.length,
+            forClient: selectedTable,
+            endpoints: sources.map(s => s.endpoint)
+          })
+        } catch (error) {
+          console.error('❌ Erro ao buscar fontes disponíveis:', error)
+          setAllAvailableDataSources([])
+        }
+      })()
+    } else {
+      // Se não há cliente selecionado, limpar as fontes disponíveis
+      setAllAvailableDataSources([])
+    }
+  }, [selectedTable])
+
   const updateWidget = (id: string, updates: Partial<Widget>) => {
     setWidgets(prev => {
+      const widget = prev.find(w => w.id === id)
       const updated = prev.map(w => w.id === id ? { ...w, ...updates } : w)
-      // Salvar imediatamente no localStorage
+      const updatedWidget = updated.find(w => w.id === id)
+      
+      // Se o dataSource foi atualizado, iniciar busca imediatamente
+      if (updates.dataSource && updatedWidget?.dataSource) {
+        const oldDataSource = widget?.dataSource
+        const newDataSource = updatedWidget.dataSource
+        
+        if (oldDataSource !== newDataSource) {
+          console.log('🔄 DataSource atualizado, iniciando busca imediata:', {
+            widgetId: id,
+            oldDataSource,
+            newDataSource
+          })
+          
+          // Iniciar busca para o novo dataSource será feito quando fetchDataSourceData estiver disponível
+          // Será tratado pelo useEffect que monitora widgets com dataSource
+          console.log('🔄 DataSource atualizado, busca será iniciada automaticamente:', newDataSource)
+        }
+      }
+      
+      // Salvar imediatamente
       if (selectedTable) {
-        DashboardStorage.saveConfig(selectedTable, { widgets: updated })
+        console.log('💾 Atualizando widget, salvando...', { widgetId: id, updates, updatedWidget: updatedWidget?.dataSource })
+        console.log('💾 Widgets a serem salvos:', updated.map(w => ({ id: w.id, type: w.type, dataSource: w.dataSource })))
+        DashboardStorage.saveConfig(selectedTable, { widgets: updated }).catch((error) => {
+          console.error('❌ Erro ao salvar após atualizar widget:', error)
+        })
       }
       return updated
     })
@@ -981,13 +1859,33 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   }
 
   // Funções para reordenar widgets no modal
-  const moveWidgetUp = (index: number) => {
-    if (index === 0 || !selectedTable) return
+  const moveWidgetUp = (filteredIndex: number) => {
+    if (filteredIndex === 0 || !selectedTable) return
     
     setWidgets(prev => {
+      // Obter apenas os widgets da sub aba ativa
+      const filtered = activeCustomTab === null
+        ? []
+        : prev.filter(w => w.customTabId === activeCustomTab)
+      
+      if (filteredIndex === 0 || filteredIndex >= filtered.length) return prev
+      
+      // Encontrar o widget no array completo
+      const widgetToMove = filtered[filteredIndex]
+      const widgetToSwap = filtered[filteredIndex - 1]
+      
+      if (!widgetToMove || !widgetToSwap) return prev
+      
       const newWidgets = [...prev]
-      const [removed] = newWidgets.splice(index, 1)
-      newWidgets.splice(index - 1, 0, removed)
+      const indexToMove = newWidgets.findIndex(w => w.id === widgetToMove.id)
+      const indexToSwap = newWidgets.findIndex(w => w.id === widgetToSwap.id)
+      
+      if (indexToMove === -1 || indexToSwap === -1) return prev
+      
+      // Trocar posições
+      const temp = newWidgets[indexToSwap]
+      newWidgets[indexToSwap] = newWidgets[indexToMove]
+      newWidgets[indexToMove] = temp
       
       // Salvar imediatamente
       DashboardStorage.saveConfig(selectedTable, { widgets: newWidgets })
@@ -997,16 +1895,39 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     })
   }
 
-  const moveWidgetDown = (index: number) => {
-    if (index === widgets.length - 1 || !selectedTable) return
+  const moveWidgetDown = (filteredIndex: number) => {
+    if (!selectedTable) return
     
     setWidgets(prev => {
+      // Obter apenas os widgets da sub aba ativa
+      const filtered = activeCustomTab === null
+        ? []
+        : prev.filter(w => w.customTabId === activeCustomTab)
+      
+      if (filteredIndex >= filtered.length - 1) return prev
+      
+      // Encontrar o widget no array completo
+      const widgetToMove = filtered[filteredIndex]
+      const widgetToSwap = filtered[filteredIndex + 1]
+      
+      if (!widgetToMove || !widgetToSwap) return prev
+      
       const newWidgets = [...prev]
-      const [removed] = newWidgets.splice(index, 1)
-      newWidgets.splice(index + 1, 0, removed)
+      const indexToMove = newWidgets.findIndex(w => w.id === widgetToMove.id)
+      const indexToSwap = newWidgets.findIndex(w => w.id === widgetToSwap.id)
+      
+      if (indexToMove === -1 || indexToSwap === -1) return prev
+      
+      // Trocar posições
+      const temp = newWidgets[indexToSwap]
+      newWidgets[indexToSwap] = newWidgets[indexToMove]
+      newWidgets[indexToMove] = temp
       
       // Salvar imediatamente
-      DashboardStorage.saveConfig(selectedTable, { widgets: newWidgets })
+      console.log('💾 Reordenando widgets (down), salvando...', { widgets: newWidgets.length })
+      DashboardStorage.saveConfig(selectedTable, { widgets: newWidgets }).catch((error) => {
+        console.error('❌ Erro ao salvar widgets reordenados:', error)
+      })
       console.log('✅ Widgets reordenados e salvos:', newWidgets.length)
       
       return newWidgets
@@ -1061,9 +1982,6 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     }
   }
 
-  // Obter widget atual sendo editado
-  const currentWidget = editingWidget ? widgets.find(w => w.id === editingWidget.id) : null
-  
   const toggleTimelineMetric = (metricKey: string) => {
     // Se estiver editando um widget específico, atualizar o widget
     if (editingWidget && editingWidget.type === 'timeline' && currentWidget) {
@@ -1099,36 +2017,246 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   }
   
   
-  // Função para obter o valor da métrica
-  const getMetricValue = (metricKey: string): number => {
-    if (metricKey === 'sessions') return totals.sessions
-    if (metricKey === 'clicks') return totals.clicks
-    if (metricKey === 'add_to_carts') return totals.add_to_carts
-    if (metricKey === 'orders') return totals.orders
-    if (metricKey === 'paid_orders') return totals.paid_orders
-    if (metricKey === 'revenue') return totals.revenue
-    if (metricKey === 'paid_revenue') return totals.paid_revenue
-    if (metricKey === 'cost') return totals.cost
-    if (metricKey === 'leads') return totals.leads
-    if (metricKey === 'new_customers') return totals.new_customers
-    if (metricKey === 'revenue_new_customers') return totals.revenue_new_customers
-    if (metricKey === 'conversion_rate') return conversionRate
-    if (metricKey === 'add_to_cart_rate') return addToCartRate
-    if (metricKey === 'leads_conversion_rate') return leadsConversionRate
-    if (metricKey === 'paid_conversion_rate') return paidConversionRate
-    if (metricKey === 'revenue_per_session') return revenuePerSession
-    if (metricKey === 'avg_order_value') return avgOrderValue
-    if (metricKey === 'roas') return roas
-    if (metricKey === 'new_customer_rate') return newCustomerRate
-    // Novas métricas
-    if (metricKey === 'paid_new_annual_orders') return totals.paid_new_annual_orders || 0
-    if (metricKey === 'paid_new_annual_revenue') return totals.paid_new_annual_revenue || 0
-    if (metricKey === 'paid_new_montly_orders') return totals.paid_new_montly_orders || 0
-    if (metricKey === 'paid_new_montly_revenue') return totals.paid_new_montly_revenue || 0
-    if (metricKey === 'paid_recurring_annual_orders') return totals.paid_recurring_annual_orders || 0
-    if (metricKey === 'paid_recurring_annual_revenue') return totals.paid_recurring_annual_revenue || 0
-    if (metricKey === 'paid_recurring_montly_orders') return totals.paid_recurring_montly_orders || 0
-    if (metricKey === 'paid_recurring_montly_revenue') return totals.paid_recurring_montly_revenue || 0
+  // Função para calcular totais a partir de dados específicos (dinâmica - soma todas as métricas numéricas)
+  // Função auxiliar para obter todas as métricas calculadas de todas as fontes de dados
+  const getAllCalculatedMetrics = useCallback((): CalculatedMetric[] => {
+    const allCalculated: CalculatedMetric[] = []
+    configuredDataSources.forEach(source => {
+      if (source.metrics) {
+        source.metrics.forEach((m: any) => {
+          if (m?.isCalculated && typeof m?.formula === 'string') {
+            allCalculated.push({
+              key: m.key,
+              label: m.label,
+              type: m.type || 'number',
+              isCalculated: true,
+              formula: m.formula
+            })
+          }
+        })
+      }
+    })
+    return allCalculated
+  }, [configuredDataSources])
+
+  const calculateTotalsFromData = useCallback((dataItems: OverviewDataItem[]) => {
+    if (!dataItems || dataItems.length === 0) {
+      return {} as any
+    }
+    
+    // Obter todas as métricas calculadas para excluí-las da soma
+    const calculatedMetrics = getAllCalculatedMetrics()
+    const calculatedMetricKeys = new Set(calculatedMetrics.map(m => m.key))
+    
+    // Também excluir métricas derivadas hardcoded
+    const hardcodedCalculatedMetrics = new Set([
+      'conversion_rate',
+      'add_to_cart_rate',
+      'leads_conversion_rate',
+      'paid_conversion_rate',
+      'revenue_per_session',
+      'avg_order_value',
+      'roas',
+      'new_customer_rate'
+    ])
+    
+    // Começar com valores padrão conhecidos
+    const baseTotals: any = {
+      sessions: 0,
+      clicks: 0,
+      add_to_carts: 0,
+      orders: 0,
+      paid_orders: 0,
+      revenue: 0,
+      paid_revenue: 0,
+      cost: 0,
+      leads: 0,
+      new_customers: 0,
+      revenue_new_customers: 0,
+      paid_new_annual_orders: 0,
+      paid_new_annual_revenue: 0,
+      paid_new_montly_orders: 0,
+      paid_new_montly_revenue: 0,
+      paid_recurring_annual_orders: 0,
+      paid_recurring_annual_revenue: 0,
+      paid_recurring_montly_orders: 0,
+      paid_recurring_montly_revenue: 0
+    }
+    
+    // Coletar todas as chaves numéricas de TODOS os itens (não apenas o primeiro)
+    // Isso garante que métricas que aparecem apenas em alguns registros sejam incluídas
+    const numericKeys = new Set<string>()
+    
+    // Verificar todos os itens para encontrar todas as chaves numéricas
+    dataItems.forEach((item: any) => {
+      Object.keys(item).forEach(key => {
+        const value = item[key]
+        // Ignorar campos que não são numéricos (strings, objetos, datas, etc)
+        // Mas ser mais permissivo - apenas excluir campos claramente não-numéricos
+        // IMPORTANTE: Excluir métricas calculadas - elas não devem ser somadas!
+        if (typeof value === 'number' && !isNaN(value) && 
+            !calculatedMetricKeys.has(key) && 
+            !hardcodedCalculatedMetrics.has(key)) {
+          // Excluir apenas campos que claramente não são métricas
+          const lowerKey = key.toLowerCase()
+          if (!lowerKey.includes('date') && 
+              !lowerKey.includes('_id') && 
+              !lowerKey.endsWith('_id') &&
+              !lowerKey.includes('name') &&
+              !lowerKey.includes('email') &&
+              !lowerKey.includes('url') &&
+              !lowerKey.includes('link')) {
+            numericKeys.add(key)
+            if (!(key in baseTotals)) {
+              baseTotals[key] = 0
+            }
+          }
+        }
+      })
+    })
+    
+    // Somar todos os valores numéricos (EXCLUINDO métricas calculadas)
+    const result = dataItems.reduce((acc, item: any) => {
+      numericKeys.forEach(key => {
+        const value = item[key]
+        if (typeof value === 'number' && !isNaN(value) &&
+            !calculatedMetricKeys.has(key) &&
+            !hardcodedCalculatedMetrics.has(key)) {
+          acc[key] = (acc[key] || 0) + value
+        }
+      })
+      return acc
+    }, { ...baseTotals })
+    
+    console.log('📊 [DEBUG] calculateTotalsFromData:', {
+      dataItemsCount: dataItems.length,
+      numericKeysCount: numericKeys.size,
+      calculatedMetricsExcluded: Array.from(calculatedMetricKeys),
+      numericKeys: Array.from(numericKeys).slice(0, 20), // Primeiras 20 para debug
+      sampleTotals: Object.keys(result).slice(0, 10).reduce((obj: any, key) => {
+        obj[key] = result[key]
+        return obj
+      }, {})
+    })
+    
+    return result
+  }, [getAllCalculatedMetrics])
+
+  // Função para obter o valor da métrica (agora aceita dados opcionais do widget e é dinâmica)
+  const getMetricValue = (metricKey: string, widgetData?: OverviewDataItem[]): number => {
+    // Se dados do widget foram fornecidos, calcular totais a partir deles
+    const widgetTotals = widgetData ? calculateTotalsFromData(widgetData) : null
+    const totalsToUse = widgetTotals || totals
+    
+    // Verificar se é uma métrica calculada (personalizada)
+    const allCalculatedMetrics = getAllCalculatedMetrics()
+    const calculatedMetric = allCalculatedMetrics.find(m => m.key === metricKey)
+    
+    if (calculatedMetric) {
+      // Recalcular métrica calculada a partir dos totais agregados
+      try {
+        // Para métricas calculadas com agregações (sum(), avg(), etc), usar evaluateAggregateFormula
+        if (hasAggregateFunctions(calculatedMetric.formula)) {
+          // Usar os dados originais para calcular agregações
+          const dataToCalculate = widgetData || filteredData
+          if (dataToCalculate.length > 0) {
+            const rawResult = evaluateAggregateFormula(calculatedMetric.formula, dataToCalculate as unknown as Record<string, unknown>[])
+            const result = calculatedMetric.type === 'percentage' ? rawResult * 100 : rawResult
+            console.log(`🧮 Métrica calculada agregada "${metricKey}": ${calculatedMetric.formula} = ${result}`)
+            return result
+          }
+        } else {
+          // Para métricas não-agregadas, calcular usando os totais
+          const rawResult = evaluateFormula(calculatedMetric.formula, totalsToUse as any)
+          const result = calculatedMetric.type === 'percentage' ? rawResult * 100 : rawResult
+          console.log(`🧮 Métrica calculada "${metricKey}": ${calculatedMetric.formula} = ${result}`)
+          console.log(`   Totais usados:`, {
+            paid_revenue: totalsToUse.paid_revenue,
+            cost: totalsToUse.cost,
+            revenue: totalsToUse.revenue
+          })
+          return result
+        }
+      } catch (error) {
+        console.error(`❌ Erro ao calcular métrica "${metricKey}":`, error)
+        return 0
+      }
+    }
+    
+    // Calcular métricas derivadas hardcoded se necessário
+    const widgetConversionRate = widgetTotals && widgetTotals.sessions > 0 
+      ? (widgetTotals.orders / widgetTotals.sessions) * 100 
+      : conversionRate
+    const widgetAddToCartRate = widgetTotals && widgetTotals.sessions > 0 
+      ? (widgetTotals.add_to_carts / widgetTotals.sessions) * 100 
+      : addToCartRate
+    const widgetLeadsConversionRate = widgetTotals && widgetTotals.leads > 0 
+      ? (widgetTotals.orders / widgetTotals.leads) * 100 
+      : leadsConversionRate
+    const widgetPaidConversionRate = widgetTotals && widgetTotals.orders > 0 
+      ? (widgetTotals.paid_orders / widgetTotals.orders) * 100 
+      : paidConversionRate
+    const widgetRevenuePerSession = widgetTotals && widgetTotals.sessions > 0 
+      ? widgetTotals.revenue / widgetTotals.sessions 
+      : revenuePerSession
+    const widgetAvgOrderValue = widgetTotals && widgetTotals.orders > 0 
+      ? widgetTotals.revenue / widgetTotals.orders 
+      : avgOrderValue
+    const widgetRoas = widgetTotals && widgetTotals.cost > 0 
+      ? widgetTotals.revenue / widgetTotals.cost 
+      : roas
+    const widgetNewCustomerRate = widgetTotals && widgetTotals.orders > 0 
+      ? (widgetTotals.new_customers / widgetTotals.orders) * 100 
+      : newCustomerRate
+    
+    // Métricas derivadas (calculadas hardcoded)
+    if (metricKey === 'conversion_rate') return widgetConversionRate
+    if (metricKey === 'add_to_cart_rate') return widgetAddToCartRate
+    if (metricKey === 'leads_conversion_rate') return widgetLeadsConversionRate
+    if (metricKey === 'paid_conversion_rate') return widgetPaidConversionRate
+    if (metricKey === 'revenue_per_session') return widgetRevenuePerSession
+    if (metricKey === 'avg_order_value') return widgetAvgOrderValue
+    if (metricKey === 'roas') return widgetRoas
+    if (metricKey === 'new_customer_rate') return widgetNewCustomerRate
+    
+    // Métricas diretas - buscar dinamicamente no totalsToUse
+    // Primeiro, tentar busca exata
+    if (metricKey in totalsToUse) {
+      const value = (totalsToUse as any)[metricKey]
+      if (value !== undefined && value !== null) {
+        return typeof value === 'number' ? value : 0
+      }
+    }
+    
+    // Se não encontrou com busca exata, tentar busca case-insensitive
+    const totalsKeys = Object.keys(totalsToUse)
+    const matchingKey = totalsKeys.find(key => key.toLowerCase() === metricKey.toLowerCase())
+    if (matchingKey) {
+      const value = (totalsToUse as any)[matchingKey]
+      if (value !== undefined && value !== null) {
+        console.log('🔍 [DEBUG] Métrica encontrada com busca case-insensitive:', {
+          metricKey,
+          matchingKey,
+          value
+        })
+        return typeof value === 'number' ? value : 0
+      }
+    }
+    
+    // Log de debug se não encontrou
+    if (widgetData && widgetData.length > 0) {
+      console.warn('⚠️ [DEBUG] Métrica não encontrada nos totais:', {
+        metricKey,
+        widgetDataLength: widgetData.length,
+        totalsKeys: totalsKeys.slice(0, 10), // Primeiras 10 chaves para debug
+        sampleDataKeys: widgetData[0] ? Object.keys(widgetData[0]).filter(k => {
+          const val = (widgetData[0] as any)[k]
+          return typeof val === 'number'
+        }) : []
+      })
+    }
+    
+    // Se não encontrou, retornar 0
     return 0
   }
   
@@ -1269,7 +2397,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     setDimensionFilters({})
   }
   
-  // Dimensões e métricas disponíveis
+  // Dimensões e métricas disponíveis (padrão - usado quando não há widget específico)
   const dimensions = [
     { key: 'event_date', label: 'Data' },
     { key: 'platform', label: 'Plataforma' },
@@ -1310,6 +2438,22 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     { key: 'paid_recurring_montly_orders', label: 'Pedidos Recorrentes Mensais Pagos', type: 'number' },
     { key: 'paid_recurring_montly_revenue', label: 'Receita Recorrentes Mensais Pagos', type: 'currency' }
   ]
+  
+  // Obter widget atual sendo editado e suas métricas/dimensões
+  const currentWidget = editingWidget ? widgets.find(w => w.id === editingWidget.id) : null
+  const widgetMetricsAndDimensions = useMemo(() => {
+    if (currentWidget) {
+      const result = getWidgetMetricsAndDimensions(currentWidget)
+      console.log('📊 Métricas/dimensões do widget:', {
+        widgetId: currentWidget.id,
+        dataSource: currentWidget.dataSource,
+        metricsCount: result.metrics.length,
+        dimensionsCount: result.dimensions.length
+      })
+      return result
+    }
+    return { dimensions, metrics }
+  }, [currentWidget, getWidgetMetricsAndDimensions, dimensions, metrics, configuredDataSources, dataBySource])
   
   // Estado para métricas de cards (baseado nas métricas)
   // Personalização salva por cliente usando selectedTable como identificador
@@ -1574,14 +2718,15 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   const toggleAllCardMetrics = () => {
     // Se estiver editando um widget específico, atualizar o widget
     if (editingWidget && editingWidget.type === 'cards' && currentWidget) {
+      const widgetMetrics = widgetMetricsAndDimensions.metrics
       const currentMetrics = currentWidget.cardMetrics || []
-      if (currentMetrics.length === metrics.length) {
+      if (currentMetrics.length === widgetMetrics.length) {
         updateWidget(editingWidget.id, { 
           cardMetrics: [],
           cardOrder: []
         })
       } else {
-        const allMetrics = metrics.map(m => m.key)
+        const allMetrics = widgetMetrics.map(m => m.key)
         updateWidget(editingWidget.id, { 
           cardMetrics: allMetrics,
           cardOrder: allMetrics
@@ -1601,11 +2746,12 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   const toggleAllTableMetrics = () => {
     // Se estiver editando um widget de tabela, atualizar o widget específico
     if (editingWidget && editingWidget.type === 'table' && currentWidget) {
+      const widgetMetrics = widgetMetricsAndDimensions.metrics
       const currentMetrics = currentWidget.selectedMetrics || []
-      if (currentMetrics.length === metrics.length) {
+      if (currentMetrics.length === widgetMetrics.length) {
         updateWidget(editingWidget.id, { selectedMetrics: [] })
       } else {
-        updateWidget(editingWidget.id, { selectedMetrics: metrics.map(m => m.key) })
+        updateWidget(editingWidget.id, { selectedMetrics: widgetMetrics.map(m => m.key) })
       }
       return
     }
@@ -1615,6 +2761,27 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
       setSelectedMetrics([])
     } else {
       setSelectedMetrics(metrics.map(m => m.key))
+    }
+  }
+  
+  const toggleAllDimensions = () => {
+    // Se estiver editando um widget de tabela, atualizar o widget específico
+    if (editingWidget && editingWidget.type === 'table' && currentWidget) {
+      const widgetDimensions = widgetMetricsAndDimensions.dimensions
+      const currentDimensions = currentWidget.selectedDimensions || []
+      if (currentDimensions.length === widgetDimensions.length) {
+        updateWidget(editingWidget.id, { selectedDimensions: [] })
+      } else {
+        updateWidget(editingWidget.id, { selectedDimensions: widgetDimensions.map(d => d.key) })
+      }
+      return
+    }
+
+    // Comportamento legado global
+    if (selectedDimensions.length === dimensions.length) {
+      setSelectedDimensions([])
+    } else {
+      setSelectedDimensions(dimensions.map(d => d.key))
     }
   }
   
@@ -1679,21 +2846,29 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
           setSelectedDimensions(parsed.dimensions || [])
           setSelectedMetrics(parsed.metrics || [])
         } catch {
-          setSelectedDimensions(dimensions.map(d => d.key))
+          // Usar valores padrão sem depender de dimensions/metrics que mudam a cada render
+          const defaultDimensions = ['event_date', 'platform', 'traffic_category', 'city', 'region', 'country']
+          setSelectedDimensions(defaultDimensions)
           const calculatedMetrics = ['conversion_rate', 'add_to_cart_rate', 'leads_conversion_rate', 'paid_conversion_rate', 'revenue_per_session', 'avg_order_value', 'roas', 'new_customer_rate']
-          const directMetrics = metrics.filter(m => !calculatedMetrics.includes(m.key))
-          setSelectedMetrics(directMetrics.map(m => m.key))
+          const allMetrics = ['sessions', 'clicks', 'add_to_carts', 'orders', 'paid_orders', 'revenue', 'paid_revenue', 'cost', 'leads', 'new_customers', 'revenue_new_customers', 'paid_new_annual_orders', 'paid_new_annual_revenue', 'paid_new_montly_orders', 'paid_new_montly_revenue', 'paid_recurring_annual_orders', 'paid_recurring_annual_revenue', 'paid_recurring_montly_orders', 'paid_recurring_montly_revenue']
+          const directMetrics = allMetrics.filter(m => !calculatedMetrics.includes(m))
+          setSelectedMetrics(directMetrics)
         }
       } else {
-        setSelectedDimensions(dimensions.map(d => d.key))
+        // Usar valores padrão sem depender de dimensions/metrics que mudam a cada render
+        const defaultDimensions = ['event_date', 'platform', 'traffic_category', 'city', 'region', 'country']
+        setSelectedDimensions(defaultDimensions)
         const calculatedMetrics = ['conversion_rate', 'add_to_cart_rate', 'leads_conversion_rate', 'paid_conversion_rate', 'revenue_per_session', 'avg_order_value', 'roas', 'new_customer_rate']
-        const directMetrics = metrics.filter(m => !calculatedMetrics.includes(m.key))
-        setSelectedMetrics(directMetrics.map(m => m.key))
+        const allMetrics = ['sessions', 'clicks', 'add_to_carts', 'orders', 'paid_orders', 'revenue', 'paid_revenue', 'cost', 'leads', 'new_customers', 'revenue_new_customers', 'paid_new_annual_orders', 'paid_new_annual_revenue', 'paid_new_montly_orders', 'paid_new_montly_revenue', 'paid_recurring_annual_orders', 'paid_recurring_annual_revenue', 'paid_recurring_montly_orders', 'paid_recurring_montly_revenue']
+        const directMetrics = allMetrics.filter(m => !calculatedMetrics.includes(m))
+        setSelectedMetrics(directMetrics)
       }
       prevSelectedTableRef.current = selectedTable
     }
-    
-    // Carregar presets do cliente (sempre, pois pode mudar mesmo sem mudar selectedTable)
+  }, [selectedTable]) // Removido dimensions e metrics das dependências para evitar loop infinito
+  
+  // Carregar presets do cliente separadamente (só quando selectedTable mudar)
+  useEffect(() => {
     const presetStorageKey = `overview-presets-${selectedTable}`
     const savedPresets = localStorage.getItem(presetStorageKey)
     if (savedPresets) {
@@ -1705,7 +2880,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     } else {
       setPresets([])
     }
-  }, [selectedTable, dimensions, metrics])
+  }, [selectedTable])
   
   // Funções para toggle de seleção
   const toggleDimension = (key: string) => {
@@ -1746,26 +2921,6 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
         ? prev.filter(m => m !== key)
         : [...prev, key]
     )
-  }
-  
-  const toggleAllDimensions = () => {
-    // Se estiver editando um widget de tabela, atualizar o widget específico
-    if (editingWidget && editingWidget.type === 'table' && currentWidget) {
-      const currentDims = currentWidget.selectedDimensions || []
-      if (currentDims.length === dimensions.length) {
-        updateWidget(editingWidget.id, { selectedDimensions: [] })
-      } else {
-        updateWidget(editingWidget.id, { selectedDimensions: dimensions.map(d => d.key) })
-      }
-      return
-    }
-
-    // Comportamento legado global
-    if (selectedDimensions.length === dimensions.length) {
-      setSelectedDimensions([])
-    } else {
-      setSelectedDimensions(dimensions.map(d => d.key))
-    }
   }
 
   // Funções para gerenciar presets
@@ -1923,13 +3078,11 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
 
       // Filtrar widgets apenas da sub aba ativa
       const widgetsToExport = activeCustomTab === null
-        ? allWidgets.filter(w => !w.customTabId)
+        ? []
         : allWidgets.filter(w => w.customTabId === activeCustomTab)
 
       // Obter nome da aba para o nome do arquivo
-      const tabName = activeCustomTab === null
-        ? 'Geral'
-        : customTabs.find(t => t.id === activeCustomTab)?.name || 'Aba'
+      const tabName = customTabs.find(t => t.id === activeCustomTab)?.name || 'Aba'
 
       const payload = {
         type: 'mymetric-overview-dashboard-config',
@@ -2004,8 +3157,8 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
         
         // Remover widgets da sub aba ativa antes de importar
         const widgetsToKeep = activeCustomTab === null
-          ? existingWidgets.filter(w => w.customTabId) // Manter widgets de outras abas
-          : existingWidgets.filter(w => w.customTabId !== activeCustomTab) // Manter widgets de outras abas e da aba "Geral"
+          ? existingWidgets // Se não há aba ativa, manter todos
+          : existingWidgets.filter(w => w.customTabId !== activeCustomTab) // Manter widgets de outras abas
 
         // Importar widgets e associá-los à sub aba ativa
         const importedWidgets: Widget[] = parsed.widgets.map((w: Widget) => ({
@@ -2020,9 +3173,12 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
         const importedPresets: DashboardPreset[] = Array.isArray(parsed.presets) ? parsed.presets : []
 
         // Salvar widgets via DashboardStorage
+        console.log('💾 Importando widgets, salvando...', { widgets: allWidgets.length })
         DashboardStorage.saveConfig(selectedTable, {
           widgets: allWidgets,
           legacy: parsed.legacy || undefined
+        }).catch((error) => {
+          console.error('❌ Erro ao salvar widgets importados:', error)
         })
 
         // Salvar presets no localStorage
@@ -2033,9 +3189,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
         setWidgets(allWidgets)
         setPresets(importedPresets)
 
-        const tabName = activeCustomTab === null
-          ? 'Geral'
-          : customTabs.find(t => t.id === activeCustomTab)?.name || 'aba atual'
+        const tabName = customTabs.find(t => t.id === activeCustomTab)?.name || 'aba atual'
         
         alert(`Configurações da aba "${tabName}" importadas com sucesso!`)
       } catch (error) {
@@ -2098,6 +3252,113 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     return ((current - previous) / previous) * 100
   }
 
+  // Função para buscar dados do período anterior para um dataSource específico
+  const fetchPreviousPeriodDataForSource = async (dataSource: string) => {
+    try {
+      if (!selectedTable || !startDate || !endDate) return
+
+      const previousPeriod = getPreviousPeriod()
+      console.log('📊 [DEBUG] Fetching previous period for dataSource:', dataSource, previousPeriod)
+      
+      const token = getV2Token()
+      if (!token) {
+        console.error('❌ Token não encontrado para buscar dados do período anterior da fonte:', dataSource)
+        return
+      }
+
+      // Usar a mesma lógica de fetchDataSourceData
+      const customer = selectedTable
+      const endpoint = dataSource
+      
+      console.log('📤 Criando job para período anterior:', { customer, endpoint, dataSource, period: previousPeriod })
+      
+      let jobResponse
+      try {
+        jobResponse = await api.createOverviewJob(token, customer, endpoint)
+      } catch (error) {
+        console.error('❌ [DEBUG] Erro ao criar job para período anterior:', {
+          dataSource,
+          customer,
+          endpoint,
+          error
+        })
+        return
+      }
+      
+      const jobId = jobResponse.id || jobResponse.job_id || jobResponse.request_id
+      
+      if (!jobId) {
+        console.error('❌ [DEBUG] Job ID não encontrado na resposta para período anterior:', {
+          dataSource,
+          jobResponse
+        })
+        return
+      }
+
+      console.log('✅ [DEBUG] Job criado para período anterior:', { dataSource, jobId })
+
+      // Polling do status do job
+      const pollStatus = async (): Promise<OverviewDataItem[]> => {
+        try {
+          const statusResponse = await api.getOverviewJobStatus(token, jobId)
+          
+          if (statusResponse.status === 'completed') {
+            // Job concluído, buscar dados com retry
+            const dataResponse = await getOverviewDataWithRetry(token, jobId, 5, 2000)
+            
+            if (dataResponse && dataResponse.data && Array.isArray(dataResponse.data)) {
+              const sourceData = dataResponse.data as OverviewDataItem[]
+              
+              // Aplicar filtro de data se necessário
+              let filteredData = sourceData
+              if (previousPeriod.start && previousPeriod.end) {
+                const configuredSource = configuredDataSources.find(ds => ds.endpoint === dataSource)
+                const dateField = configuredSource?.dateField || 'event_date'
+                
+                const startDateObj = new Date(previousPeriod.start)
+                const endDateObj = new Date(previousPeriod.end)
+                endDateObj.setHours(23, 59, 59, 999)
+                
+                filteredData = sourceData.filter((item: any) => {
+                  const dateValue = item[dateField]
+                  if (!dateValue) return false
+                  const itemDate = new Date(dateValue)
+                  if (isNaN(itemDate.getTime())) return false
+                  return itemDate >= startDateObj && itemDate <= endDateObj
+                })
+              }
+              
+              // Armazenar dados do período anterior para este dataSource
+              previousDataBySourceRef.current.set(dataSource, filteredData)
+              console.log('✅ [DEBUG] Dados do período anterior carregados para:', dataSource, filteredData.length, 'registros')
+              
+              return filteredData
+            }
+            
+            return []
+          }
+          
+          if (statusResponse.status === 'error' || statusResponse.status === 'failed') {
+            console.error('❌ [DEBUG] Job falhou para período anterior:', { dataSource, jobId, status: statusResponse.status })
+            return []
+          }
+          
+          // Continuar polling
+          await new Promise(resolve => setTimeout(resolve, 2000))
+          return pollStatus()
+        } catch (error) {
+          console.error('❌ [DEBUG] Erro ao verificar status do job para período anterior:', { dataSource, jobId, error })
+          return []
+        }
+      }
+      
+      return await pollStatus()
+    } catch (error) {
+      console.error('❌ [DEBUG] Erro ao buscar dados do período anterior para dataSource:', dataSource, error)
+      return []
+    }
+  }
+
   // Função para buscar dados do período anterior
   const fetchPreviousPeriodData = async () => {
     try {
@@ -2113,6 +3374,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
       const previousPeriod = getPreviousPeriod()
       console.log('📊 Fetching previous period:', previousPeriod)
       
+      // Buscar dados do período anterior para a tabela padrão
       const response = await api.getMetrics(token, {
         start_date: previousPeriod.start,
         end_date: previousPeriod.end,
@@ -2166,6 +3428,25 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
 
       console.log('✅ Previous period totals:', totals)
       setPreviousTotals(totals)
+      
+      // Buscar dados do período anterior para cada dataSource usado pelos widgets ativos
+      const activeDataSources = new Set<string>()
+      filteredWidgets.forEach(widget => {
+        let widgetDataSource = widget.dataSource
+        if (!widgetDataSource && widget.customTabId) {
+          const tab = customTabs.find(t => t.id === widget.customTabId)
+          widgetDataSource = tab?.dataSource
+        }
+        if (widgetDataSource) {
+          activeDataSources.add(widgetDataSource)
+        }
+      })
+      
+      // Buscar dados do período anterior para cada dataSource em paralelo
+      await Promise.all(Array.from(activeDataSources).map(dataSource => 
+        fetchPreviousPeriodDataForSource(dataSource)
+      ))
+      
     } catch (error) {
       console.error('❌ Error fetching previous period data:', error)
       setPreviousTotals({
@@ -2346,21 +3627,58 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     setData(filtered)
   }
 
+  // Função helper para fazer retry do getOverviewData
+  const getOverviewDataWithRetry = useCallback(async (
+    token: string,
+    jobId: string,
+    maxRetries: number = 5,
+    retryDelay: number = 2000
+  ): Promise<any> => {
+    let lastError: any = null
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const dataResponse = await api.getOverviewData(token, jobId)
+        
+        if (dataResponse && dataResponse.data) {
+          console.log(`✅ [RETRY] Dados recuperados com sucesso na tentativa ${attempt}/${maxRetries}`)
+          return dataResponse
+        }
+        
+        // Se não tem dados mas não deu erro, considerar como erro
+        throw new Error('Resposta sem dados')
+      } catch (error) {
+        lastError = error
+        console.warn(`⚠️ [RETRY] Tentativa ${attempt}/${maxRetries} falhou ao recuperar dados:`, error)
+        
+        // Se não é a última tentativa, aguardar antes de tentar novamente
+        if (attempt < maxRetries) {
+          const delay = retryDelay * Math.pow(2, attempt - 1) // Backoff exponencial
+          console.log(`⏳ [RETRY] Aguardando ${delay}ms antes da próxima tentativa...`)
+          await new Promise(resolve => setTimeout(resolve, delay))
+        }
+      }
+    }
+    
+    // Se todas as tentativas falharam, lançar o último erro
+    console.error(`❌ [RETRY] Todas as ${maxRetries} tentativas falharam ao recuperar dados`)
+    throw lastError || new Error('Falha ao recuperar dados após múltiplas tentativas')
+  }, [api])
+
   // Função para buscar dados com retry
   const fetchDataWithRetry = useCallback(async (token: string, currentJobId: string, maxRetries = 10, retryDelay = 3000) => {
     console.log('📥 Iniciando busca de dados de overview para job:', currentJobId)
     
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const dataResponse = await api.getOverviewData(token, currentJobId)
-        console.log('✅ Data fetched successfully:', {
-          jobId: currentJobId,
-          count: dataResponse?.count,
-          dataLength: dataResponse?.data?.length,
-          attempt
-        })
-        
-        if (dataResponse && dataResponse.data && Array.isArray(dataResponse.data)) {
+    try {
+      // Usar a função helper de retry
+      const dataResponse = await getOverviewDataWithRetry(token, currentJobId, maxRetries, retryDelay)
+      console.log('✅ Data fetched successfully:', {
+        jobId: currentJobId,
+        count: dataResponse?.count,
+        dataLength: dataResponse?.data?.length
+      })
+      
+      if (dataResponse && dataResponse.data && Array.isArray(dataResponse.data)) {
           // Verificar se o jobId ainda é o mesmo antes de atualizar os dados
           if (currentPollingJobIdRef.current && currentPollingJobIdRef.current !== currentJobId) {
             console.log('⚠️ Job ID mudou durante busca de dados, ignorando dados antigos')
@@ -2406,26 +3724,14 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
           return
         }
       } catch (error: any) {
-        console.error(`❌ Error fetching overview data (attempt ${attempt}/${maxRetries}):`, error)
-        
-        // Se for erro retryable (404), tentar novamente
-        if (error.isRetryable && attempt < maxRetries) {
-          console.log(`⏳ Aguardando ${retryDelay}ms antes de tentar novamente...`)
-          await new Promise(resolve => setTimeout(resolve, retryDelay))
-          continue
-        }
-        
-        // Se não for retryable ou excedeu tentativas, lançar erro
-        if (attempt === maxRetries) {
-          setJobStatus('error')
-          setError('Erro ao buscar dados. Tente novamente.')
-          setIsLoading(false)
-          setIsPolling(false)
-          throw error
-        }
+        console.error(`❌ Error fetching overview data após retry:`, error)
+        setJobStatus('error')
+        setError('Erro ao buscar dados. Tente novamente.')
+        setIsLoading(false)
+        setIsPolling(false)
+        throw error
       }
-    }
-  }, [startDate, endDate])
+  }, [startDate, endDate, getOverviewDataWithRetry, fetchPreviousPeriodData])
 
   // Função para fazer polling do status
   const startPolling = useCallback((currentJobId: string, token: string) => {
@@ -2664,8 +3970,1067 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
       // Buscar dados do período anterior quando datas mudarem
       fetchPreviousPeriodData()
     }
+    
+    // Também filtrar dados por fonte quando datas mudarem
+    if (startDate && endDate) {
+      setDataBySource(prev => {
+        const newMap = new Map()
+        prev.forEach((sourceAllData, dataSource) => {
+          // Obter o campo de data configurado para esta fonte
+          const configuredSource = configuredDataSources.find(ds => ds.endpoint === dataSource)
+          const dateField = configuredSource?.dateField || 'event_date'
+          
+          const startDateObj = new Date(startDate)
+          const endDateObj = new Date(endDate)
+          endDateObj.setHours(23, 59, 59, 999)
+          
+          console.log('🔵 [DEBUG] Reaplicando filtro de data (datas mudaram):', {
+            dataSource,
+            dateField,
+            startDate,
+            endDate,
+            totalRecords: sourceAllData.length
+          })
+          
+          const filtered = sourceAllData.filter((item: any) => {
+            const dateValue = item[dateField]
+            if (!dateValue) {
+              if (sourceAllData.indexOf(item) < 3) {
+                console.warn('⚠️ [DEBUG] Item sem campo de data ao reaplicar filtro:', {
+                  dataSource,
+                  dateField,
+                  item,
+                  availableFields: Object.keys(item)
+                })
+              }
+              return false
+            }
+            
+            const itemDate = new Date(dateValue)
+            if (isNaN(itemDate.getTime())) {
+              if (sourceAllData.indexOf(item) < 3) {
+                console.warn('⚠️ [DEBUG] Data inválida ao reaplicar filtro:', {
+                  dataSource,
+                  dateField,
+                  dateValue
+                })
+              }
+              return false
+            }
+            
+            return itemDate >= startDateObj && itemDate <= endDateObj
+          })
+          
+          console.log('✅ [DEBUG] Filtro reaplicado:', {
+            dataSource,
+            dateField,
+            totalBefore: sourceAllData.length,
+            filteredAfter: filtered.length
+          })
+          
+          newMap.set(dataSource, filtered)
+        })
+        return newMap
+      })
+    }
   }, [startDate, endDate, allData])
+
+  // Função para buscar dados de uma fonte específica
+  const fetchDataSourceData = useCallback(async (dataSource: string, currentAllDataBySource?: Map<string, OverviewDataItem[]>) => {
+    console.log('🔵 [DEBUG] fetchDataSourceData chamado:', {
+      dataSource,
+      selectedTable,
+      currentAllDataBySourceKeys: currentAllDataBySource ? Array.from(currentAllDataBySource.keys()) : [],
+      dataBySourceKeys: Array.from(dataBySource.keys()),
+      configuredDataSources: configuredDataSources.map(ds => ds.endpoint),
+      isConfigured: configuredDataSources.some(ds => ds.endpoint === dataSource)
+    })
+    
+    if (!dataSource || !selectedTable) {
+      console.log('⏸️ [DEBUG] Não buscando - dataSource ou selectedTable ausente:', { dataSource, selectedTable })
+      return
+    }
+
+    // Verificar se o dataSource está configurado (opcional, mas recomendado)
+    const isConfigured = configuredDataSources.some(ds => ds.endpoint === dataSource)
+    if (!isConfigured) {
+      console.warn('⚠️ [DEBUG] DataSource não está configurado, mas tentando carregar mesmo assim:', dataSource)
+    }
+
+    // Usar o Map passado ou o estado atual
+    const dataMap = currentAllDataBySource || allDataBySource
+    
+    // Verificar se já está processando
+    if (isProcessingBySourceRef.current.get(dataSource)) {
+      console.log('⏸️ [DEBUG] Dados da fonte já estão sendo carregados:', dataSource)
+      return
+    }
+    
+    // Verificar se já tem dados
+    if (dataMap && dataMap.has(dataSource)) {
+      const existingData = dataMap.get(dataSource)
+      console.log('⏸️ [DEBUG] Dados da fonte já carregados:', {
+        dataSource,
+        recordCount: existingData?.length || 0
+      })
+      return
+    }
+    
+    console.log('🚀 [DEBUG] Iniciando busca de dados para dataSource:', {
+      dataSource,
+      selectedTable,
+      isConfigured
+    })
+
+    const token = getV2Token()
+    if (!token) {
+      console.error('❌ Token não encontrado para buscar dados da fonte:', dataSource)
+      return
+    }
+
+    // Marcar como processando
+    isProcessingBySourceRef.current.set(dataSource, true)
+    setIsLoadingBySource(prev => {
+      const newMap = new Map(prev)
+      newMap.set(dataSource, true)
+      return newMap
+    })
+
+    try {
+      console.log('🔄 Iniciando busca de dados para fonte:', dataSource)
+      
+      // O selectedTable é o cliente (ex: "coffeemais")
+      // O dataSource é o endpoint (ex: "overview", "paid_media/campaigns_results", etc.)
+      const customer = selectedTable
+      const endpoint = dataSource
+      
+      console.log('📤 Criando job:', { customer, endpoint, dataSource })
+      
+      let jobResponse
+      try {
+        jobResponse = await api.createOverviewJob(token, customer, endpoint)
+      } catch (error) {
+        console.error('❌ [DEBUG] Erro ao criar job:', {
+          dataSource,
+          customer,
+          endpoint,
+          error
+        })
+        throw error
+      }
+      
+      const jobId = jobResponse.id || jobResponse.job_id || jobResponse.request_id
+      
+      if (!jobId) {
+        console.error('❌ [DEBUG] Job ID não encontrado na resposta:', {
+          dataSource,
+          jobResponse
+        })
+        throw new Error('Job ID não encontrado na resposta')
+      }
+
+      jobsBySourceRef.current.set(dataSource, jobId)
+      console.log('✅ [DEBUG] Job criado com sucesso para fonte:', { dataSource, jobId })
+
+      // Polling do status do job
+      const pollStatus = async (): Promise<void> => {
+        try {
+          const statusResponse = await api.getOverviewJobStatus(token, jobId)
+          
+          // Atualizar elapsed_seconds se disponível
+          if (statusResponse.elapsed_seconds !== undefined && statusResponse.elapsed_seconds !== null) {
+            setElapsedSecondsBySource(prev => {
+              const newMap = new Map(prev)
+              newMap.set(dataSource, statusResponse.elapsed_seconds)
+              return newMap
+            })
+          }
+          
+          if (statusResponse.status === 'completed') {
+            // Job concluído, buscar dados com retry
+            const dataResponse = await getOverviewDataWithRetry(token, jobId, 5, 2000)
+            
+            if (dataResponse && dataResponse.data && Array.isArray(dataResponse.data)) {
+              // Aplicar métricas calculadas (se houver) ANTES de salvar/filtrar
+              const configuredSource = configuredDataSources.find(ds => ds.endpoint === dataSource)
+              const calculatedMetrics = (configuredSource?.metrics || [])
+                .filter((m: any) => m?.isCalculated && typeof m?.formula === 'string')
+                .map((m: any) => ({
+                  key: m.key,
+                  label: m.label,
+                  type: m.type,
+                  isCalculated: true,
+                  formula: m.formula
+                })) as CalculatedMetric[]
+
+              const rawSourceData = dataResponse.data as OverviewDataItem[]
+              const sourceData = calculatedMetrics.length > 0
+                ? (applyCalculatedMetricsToRows(
+                    rawSourceData as unknown as Record<string, unknown>[],
+                    calculatedMetrics
+                  ) as unknown as OverviewDataItem[])
+                : rawSourceData
+              
+              // Filtrar por data se necessário
+              let filteredSourceData = sourceData
+              if (startDate && endDate) {
+                // Obter o campo de data configurado para esta fonte
+                const dateField = configuredSource?.dateField || 'event_date'
+                
+                const startDateObj = new Date(startDate)
+                const endDateObj = new Date(endDate)
+                // Ajustar endDate para incluir todo o dia (23:59:59)
+                endDateObj.setHours(23, 59, 59, 999)
+                
+                console.log('🔵 [DEBUG] Aplicando filtro de data:', {
+                  dataSource,
+                  dateField,
+                  startDate,
+                  endDate,
+                  startDateObj: startDateObj.toISOString(),
+                  endDateObj: endDateObj.toISOString(),
+                  totalRecords: sourceData.length,
+                  sampleDates: sourceData.slice(0, 5).map(item => {
+                    const dateValue = (item as any)[dateField]
+                    return {
+                      [dateField]: dateValue,
+                      dateFieldType: typeof dateValue,
+                      parsedDate: dateValue ? new Date(dateValue).toISOString() : null,
+                      allFields: Object.keys(item)
+                    }
+                  })
+                })
+                
+                filteredSourceData = sourceData.filter((item: any) => {
+                  const dateValue = item[dateField]
+                  
+                  if (!dateValue) {
+                    if (sourceData.indexOf(item) < 3) {
+                      console.warn('⚠️ [DEBUG] Item sem campo de data:', {
+                        dateField,
+                        item,
+                        availableFields: Object.keys(item)
+                      })
+                    }
+                    return false
+                  }
+                  
+                  const itemDate = new Date(dateValue)
+                  
+                  // Verificar se a data é válida
+                  if (isNaN(itemDate.getTime())) {
+                    if (sourceData.indexOf(item) < 3) {
+                      console.warn('⚠️ [DEBUG] Data inválida:', {
+                        dateField,
+                        dateValue,
+                        item
+                      })
+                    }
+                    return false
+                  }
+                  
+                  const isInRange = itemDate >= startDateObj && itemDate <= endDateObj
+                  
+                  if (!isInRange && sourceData.indexOf(item) < 3) {
+                    console.log('🔍 [DEBUG] Item fora do range (primeiros 3):', {
+                      dateField,
+                      dateValue,
+                      itemDate: itemDate.toISOString(),
+                      startDateObj: startDateObj.toISOString(),
+                      endDateObj: endDateObj.toISOString(),
+                      beforeStart: itemDate < startDateObj,
+                      afterEnd: itemDate > endDateObj
+                    })
+                  }
+                  
+                  return isInRange
+                })
+                
+                console.log('✅ [DEBUG] Filtro de data aplicado:', {
+                  dataSource,
+                  dateField,
+                  totalBefore: sourceData.length,
+                  filteredAfter: filteredSourceData.length,
+                  removed: sourceData.length - filteredSourceData.length
+                })
+              }
+
+              // Armazenar dados por fonte
+              console.log('🔵 [DEBUG] Armazenando dados no allDataBySource:', {
+                dataSource,
+                totalRecords: sourceData.length,
+                sampleRecord: sourceData[0] || null
+              })
+              
+              setAllDataBySource(prev => {
+                const newMap = new Map(prev)
+                newMap.set(dataSource, sourceData)
+                console.log('✅ [DEBUG] allDataBySource atualizado:', {
+                  dataSource,
+                  records: sourceData.length,
+                  allDataSources: Array.from(newMap.keys()),
+                  allDataCounts: Array.from(newMap.entries()).map(([key, value]) => ({ key, count: value.length }))
+                })
+                return newMap
+              })
+              
+              console.log('🔵 [DEBUG] Armazenando dados no dataBySource:', {
+                dataSource,
+                filteredRecords: filteredSourceData.length,
+                sampleRecord: filteredSourceData[0] || null
+              })
+              
+              setDataBySource(prev => {
+                const newMap = new Map(prev)
+                newMap.set(dataSource, filteredSourceData)
+                console.log('✅ [DEBUG] dataBySource atualizado:', {
+                  dataSource,
+                  records: filteredSourceData.length,
+                  allDataSources: Array.from(newMap.keys()),
+                  allDataCounts: Array.from(newMap.entries()).map(([key, value]) => ({ key, count: value.length }))
+                })
+                return newMap
+              })
+
+              console.log('✅ [DEBUG] Dados carregados e armazenados para fonte:', { 
+                dataSource, 
+                total: sourceData.length, 
+                filtered: filteredSourceData.length,
+                hasData: filteredSourceData.length > 0
+              })
+            }
+            
+            isProcessingBySourceRef.current.set(dataSource, false)
+            setIsLoadingBySource(prev => {
+              const newMap = new Map(prev)
+              newMap.set(dataSource, false)
+              return newMap
+            })
+            // Limpar elapsed_seconds quando concluído
+            setElapsedSecondsBySource(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(dataSource)
+              return newMap
+            })
+          } else if (statusResponse.status === 'error' || statusResponse.status === 'failed') {
+            console.error('❌ Job falhou para fonte:', dataSource)
+            isProcessingBySourceRef.current.set(dataSource, false)
+            setIsLoadingBySource(prev => {
+              const newMap = new Map(prev)
+              newMap.set(dataSource, false)
+              return newMap
+            })
+            // Limpar elapsed_seconds em caso de erro
+            setElapsedSecondsBySource(prev => {
+              const newMap = new Map(prev)
+              newMap.delete(dataSource)
+              return newMap
+            })
+          } else {
+            // Ainda processando, tentar novamente após 3 segundos
+            setTimeout(() => pollStatus(), 3000)
+          }
+        } catch (error) {
+          console.error('❌ Erro ao fazer polling para fonte:', dataSource, error)
+          isProcessingBySourceRef.current.set(dataSource, false)
+          setIsLoadingBySource(prev => {
+            const newMap = new Map(prev)
+            newMap.set(dataSource, false)
+            return newMap
+          })
+        }
+      }
+
+      // Iniciar polling
+      pollStatus()
+    } catch (error) {
+      console.error('❌ [DEBUG] Erro ao buscar dados da fonte:', {
+        dataSource,
+        selectedTable,
+        error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined
+      })
+      isProcessingBySourceRef.current.set(dataSource, false)
+      setIsLoadingBySource(prev => {
+        const newMap = new Map(prev)
+        newMap.set(dataSource, false)
+        return newMap
+      })
+    }
+  }, [startDate, endDate, allDataBySource, configuredDataSources, getV2Token, api, setIsLoadingBySource, selectedTable, getOverviewDataWithRetry])
+
+  // ========== FUNÇÕES DE GERENCIAMENTO DE FONTES DE DADOS (DEPOIS DE fetchDataSourceData) ==========
   
+  // Função para adicionar uma fonte de dados ao dashboard
+  const addDataSource = useCallback(async (source: DataSource) => {
+    if (!selectedTable) return
+    
+    // Verificar se já está configurada
+    setConfiguredDataSources(prev => {
+      if (prev.find(ds => ds.endpoint === source.endpoint)) {
+        console.log('⚠️ Fonte já está configurada:', source.endpoint)
+        return prev
+      }
+      
+      // Marcar como carregando
+      const newSource: DataSource = {
+        ...source,
+        isLoading: true,
+        isLoaded: false
+      }
+      
+      // Iniciar carregamento em background
+      setTimeout(async () => {
+        try {
+          // Carregar dados da fonte
+          await fetchDataSourceData(source.endpoint)
+        } catch (error) {
+          console.error('❌ Erro ao iniciar carregamento de fonte de dados:', error)
+          setConfiguredDataSources(prevSources => prevSources.filter(ds => ds.endpoint !== source.endpoint))
+        }
+      }, 100)
+      
+      return [...prev, newSource]
+    })
+  }, [selectedTable, fetchDataSourceData])
+
+  // useEffect para mapear métricas/dimensões quando dados são carregados
+  useEffect(() => {
+    configuredDataSources.forEach(source => {
+      if (source.isLoading && !source.isLoaded) {
+        const loadedData = allDataBySource.get(source.endpoint)
+        const isStillLoading = isLoadingBySource.get(source.endpoint) || isProcessingBySourceRef.current.get(source.endpoint)
+        
+        if (loadedData && loadedData.length > 0 && !isStillLoading) {
+          // Mapear métricas e dimensões
+          const { dimensions: mappedDimensions, metrics: mappedMetrics } = extractMetricsAndDimensions(loadedData)
+          
+          // Atualizar fonte com métricas e dimensões mapeadas
+          setConfiguredDataSources(prevSources => {
+            const updatedSources = prevSources.map(ds => 
+              ds.endpoint === source.endpoint 
+                ? {
+                    ...ds,
+                    // Preservar métricas customizadas (ex: calculadas) e manter mapeadas atualizadas
+                    metrics: (() => {
+                      const existing = Array.isArray(ds.metrics) ? ds.metrics : []
+                      const preserved = existing.filter((m: any) => m?.isCalculated || !mappedMetrics.find(mm => mm.key === m?.key))
+                      const byKey = new Map<string, any>()
+                      mappedMetrics.forEach(m => byKey.set(m.key, m))
+                      preserved.forEach(m => {
+                        if (m?.key) byKey.set(m.key, m)
+                      })
+                      return Array.from(byKey.values())
+                    })(),
+                    dimensions: mappedDimensions,
+                    isLoaded: true,
+                    isLoading: false
+                  }
+                : ds
+            )
+            
+            // Salvar no Firestore
+            DashboardStorage.saveConfig(selectedTable, { dataSources: updatedSources }).catch(error => {
+              console.error('❌ Erro ao salvar fontes de dados:', error)
+            })
+            
+            console.log('✅ Fonte de dados mapeada:', source.endpoint, {
+              metrics: mappedMetrics.length,
+              dimensions: mappedDimensions.length
+            })
+            
+            return updatedSources
+          })
+        }
+      }
+    })
+  }, [configuredDataSources, allDataBySource, isLoadingBySource, extractMetricsAndDimensions, selectedTable])
+
+  // Função para remover uma fonte de dados
+  const removeDataSource = useCallback(async (endpoint: string) => {
+    if (!selectedTable) return
+    
+    // Verificar se há widgets usando esta fonte
+    const widgetsUsingSource = widgets.filter(w => w.dataSource === endpoint)
+    if (widgetsUsingSource.length > 0) {
+      const confirmMessage = `Existem ${widgetsUsingSource.length} widget(s) usando esta fonte. Deseja remover mesmo assim? Os widgets serão atualizados para usar a fonte padrão.`
+      if (!window.confirm(confirmMessage)) {
+        return
+      }
+      
+      // Atualizar widgets para remover dataSource
+      setWidgets(prev => prev.map(w => 
+        w.dataSource === endpoint ? { ...w, dataSource: undefined } : w
+      ))
+    }
+    
+    // Remover fonte
+    const updatedSources = configuredDataSources.filter(ds => ds.endpoint !== endpoint)
+    setConfiguredDataSources(updatedSources)
+    
+    // Salvar no Firestore
+    await DashboardStorage.saveConfig(selectedTable, { 
+      dataSources: updatedSources,
+      widgets: widgets.map(w => w.dataSource === endpoint ? { ...w, dataSource: undefined } : w)
+    })
+    
+    console.log('✅ Fonte de dados removida:', endpoint)
+  }, [selectedTable, configuredDataSources, widgets])
+
+  // Função helper para obter dados para um widget específico baseado no dataSource
+  const getWidgetData = useCallback((widget: Widget): OverviewDataItem[] => {
+    console.log('🔵 [DEBUG] getWidgetData chamado:', {
+      widgetId: widget.id,
+      widgetType: widget.type,
+      widgetDataSource: widget.dataSource,
+      widgetCustomTabId: widget.customTabId,
+      activeCustomTab,
+      dataBySourceKeys: Array.from(dataBySource.keys()),
+      dataBySourceCounts: Array.from(dataBySource.entries()).map(([key, value]) => ({ key, count: value.length }))
+    })
+    
+    // Determinar qual dataSource usar: widget > aba > padrão
+    let widgetDataSource: string | undefined = widget.dataSource
+    
+    // Se o widget não tem dataSource, verificar se a aba tem
+    if (!widgetDataSource && widget.customTabId) {
+      const tab = customTabs.find(t => t.id === widget.customTabId)
+      if (tab?.dataSource) {
+        widgetDataSource = tab.dataSource
+        console.log('📊 [DEBUG] Widget herdando dataSource da aba:', {
+          widgetId: widget.id,
+          customTabId: widget.customTabId,
+          tabName: tab.name,
+          inheritedDataSource: widgetDataSource
+        })
+      }
+    }
+    
+    // Se há um dataSource (do widget ou da aba), usar dados específicos para essa fonte
+    if (widgetDataSource) {
+      // Tentar buscar com a chave exata primeiro
+      let sourceData = dataBySource.get(widgetDataSource) || []
+      let allSourceData = allDataBySource.get(widgetDataSource) || []
+      
+      // Se não encontrou, tentar encontrar a chave (pode haver diferença de formatação)
+      if (sourceData.length === 0) {
+        const allKeys = Array.from(dataBySource.keys())
+        const matchingKey = allKeys.find(key => {
+          // Comparação exata
+          if (key === widgetDataSource) return true
+          // Comparação ignorando espaços
+          if (key.trim() === widgetDataSource.trim()) return true
+          // Comparação case-insensitive
+          if (key.toLowerCase() === widgetDataSource.toLowerCase()) return true
+          return false
+        })
+        
+        if (matchingKey) {
+          console.log('🔍 [DEBUG] Chave encontrada com correspondência alternativa:', {
+            widgetDataSource,
+            matchingKey,
+            exactMatch: matchingKey === widgetDataSource
+          })
+          sourceData = dataBySource.get(matchingKey) || []
+          allSourceData = allDataBySource.get(matchingKey) || []
+        }
+      }
+      
+      // Verificar todas as chaves disponíveis para debug
+      const allDataBySourceKeys = Array.from(allDataBySource.keys())
+      const allDataBySourceEntries = Array.from(allDataBySource.entries()).map(([key, value]) => ({ 
+        key, 
+        keyType: typeof key,
+        keyLength: key.length,
+        count: value.length 
+      }))
+      const dataBySourceKeys = Array.from(dataBySource.keys())
+      const dataBySourceEntries = Array.from(dataBySource.entries()).map(([key, value]) => ({ 
+        key, 
+        keyType: typeof key,
+        keyLength: key.length,
+        count: value.length 
+      }))
+      
+      // Verificação detalhada de correspondência
+      const exactMatchAll = allDataBySourceKeys.find(k => k === widgetDataSource)
+      const exactMatchData = dataBySourceKeys.find(k => k === widgetDataSource)
+      const strictEqualityCheck = allDataBySourceKeys.map(k => ({
+        key: k,
+        matches: k === widgetDataSource,
+        widgetDataSource,
+        comparison: {
+          typeMatch: typeof k === typeof widgetDataSource,
+          lengthMatch: k.length === widgetDataSource.length,
+          charByChar: k.split('').map((c, i) => ({
+            pos: i,
+            keyChar: c,
+            widgetChar: widgetDataSource[i],
+            match: c === widgetDataSource[i]
+          }))
+        }
+      }))
+      
+      console.log('📊 [DEBUG] getWidgetData - usando dataSource específico:', {
+        widgetId: widget.id,
+        widgetDataSource,
+        widgetDataSourceType: typeof widgetDataSource,
+        widgetDataSourceLength: widgetDataSource.length,
+        sourceDataCount: sourceData.length,
+        allSourceDataCount: allSourceData.length,
+        hasData: sourceData.length > 0,
+        dataBySourceHasKey: dataBySource.has(widgetDataSource),
+        allDataBySourceHasKey: allDataBySource.has(widgetDataSource),
+        exactMatchAll,
+        exactMatchData,
+        allDataBySourceKeys,
+        allDataBySourceEntries,
+        dataBySourceKeys,
+        dataBySourceEntries,
+        strictEqualityCheck,
+        keyMatch: allDataBySourceKeys.includes(widgetDataSource) || dataBySourceKeys.includes(widgetDataSource)
+      })
+      
+      // Se não encontrou dados, verificar se há alguma chave similar
+      if (sourceData.length === 0 && allSourceData.length === 0) {
+        const similarKeys = allDataBySourceKeys.filter(key => 
+          key.includes(widgetDataSource) || widgetDataSource.includes(key) || 
+          key.replace(/\//g, '_') === widgetDataSource.replace(/\//g, '_')
+        )
+        if (similarKeys.length > 0) {
+          console.warn('⚠️ [DEBUG] DataSource não encontrado, mas há chaves similares:', {
+            widgetDataSource,
+            similarKeys,
+            suggestion: 'Verifique se há diferença na formatação da chave (espaços, caracteres especiais, etc.)'
+          })
+        } else {
+          console.error('❌ [DEBUG] DataSource não encontrado e nenhuma chave similar:', {
+            widgetDataSource,
+            availableKeys: allDataBySourceKeys,
+            widgetDataSourceChars: widgetDataSource.split('').map((c, i) => ({ pos: i, char: c, code: c.charCodeAt(0) }))
+          })
+        }
+      }
+      
+      // Removido: Não fazer side effects (fetchDataSourceData) durante renderização
+      // O carregamento deve ser feito apenas pelo useEffect que monitora widgets/activeCustomTab
+      // Isso evita múltiplas requisições para a mesma fonte quando vários widgets são renderizados
+      
+      if (sourceData.length > 0) {
+        console.log('✅ [DEBUG] getWidgetData retornando dados do dataSource:', {
+          widgetId: widget.id,
+          widgetDataSource,
+          recordCount: sourceData.length,
+          firstRecord: sourceData[0] || null
+        })
+      } else {
+        // Apenas logar - o useEffect já vai cuidar do carregamento
+        const isProcessing = isProcessingBySourceRef.current.get(widgetDataSource)
+        const isLoading = isLoadingBySource.get(widgetDataSource)
+        console.log('⏳ [DEBUG] Widget sem dados ainda (será carregado pelo useEffect):', {
+          widgetId: widget.id,
+          widgetDataSource,
+          isProcessing,
+          isLoading
+        })
+      }
+      
+      return sourceData
+    }
+    
+    // Se não tem dataSource, usar dados gerais (selectedTable)
+    console.log('📊 [DEBUG] getWidgetData usando dados gerais:', {
+      widgetId: widget.id,
+      generalDataCount: data.length,
+      hasGeneralData: data.length > 0
+    })
+      return data
+  }, [data, dataBySource, customTabs, activeCustomTab, allDataBySource])
+
+  // Função helper para verificar se um widget está carregando dados
+  const isWidgetLoading = useCallback((widget: Widget): boolean => {
+    // Se a aba está carregando, não mostrar indicador individual do widget (evita duplicação)
+    // O indicador centralizado da aba já está sendo exibido
+    if (isTabLoading) {
+      return false
+    }
+    
+    // Determinar qual dataSource usar: widget > aba > padrão
+    let widgetDataSource: string | undefined = widget.dataSource
+    
+    // Se o widget não tem dataSource, verificar se a aba tem
+    if (!widgetDataSource && widget.customTabId) {
+      const tab = customTabs.find(t => t.id === widget.customTabId)
+      if (tab?.dataSource) {
+        widgetDataSource = tab.dataSource
+      }
+    }
+    
+    // Se há um dataSource, verificar se está carregando
+    if (widgetDataSource) {
+      const isLoading = isLoadingBySource.get(widgetDataSource) || false
+      const isProcessing = isProcessingBySourceRef.current.get(widgetDataSource) || false
+      const widgetData = getWidgetData(widget)
+      const hasData = widgetData.length > 0
+      
+      // Está carregando se está processando/carregando E não tem dados ainda
+      return (isLoading || isProcessing) && !hasData
+    }
+    
+    // Se não tem dataSource, verificar loading geral
+    const hasData = data.length > 0
+    return isLoading && !hasData
+  }, [data, dataBySource, allDataBySource, customTabs, isLoadingBySource, getWidgetData, isTabLoading])
+
+  // Ref para rastrear última combinação processada e evitar requisições duplicadas
+  const lastProcessedRef = useRef<{
+    selectedTable: string | null
+    activeCustomTab: string | null
+    widgetIds: string
+    tabDataSources: string
+  } | null>(null)
+
+  // Cache de abas carregadas: rastreia quais abas já carregaram seus dados
+  // Chave: `${selectedTable}:${activeCustomTab}:${startDate}:${endDate}`
+  // Valor: Set<string> com os dataSources que já foram carregados para essa aba
+  const loadedTabsCacheRef = useRef<Map<string, Set<string>>>(new Map())
+
+  // useEffect para carregar dados apenas da aba ativa (com cache por aba)
+  useEffect(() => {
+    if (!selectedTable) {
+      console.log('⏸️ [DEBUG] selectedTable ausente, não carregando dataSources')
+      return
+    }
+    
+    // Criar chave única para o cache desta aba (inclui período de datas)
+    const cacheKey = `${selectedTable}:${activeCustomTab || 'default'}:${startDate}:${endDate}`
+    
+    // Obter cache desta aba ou criar novo
+    let tabCache = loadedTabsCacheRef.current.get(cacheKey)
+    if (!tabCache) {
+      tabCache = new Set<string>()
+      loadedTabsCacheRef.current.set(cacheKey, tabCache)
+      console.log('🆕 [CACHE] Criando novo cache para aba:', cacheKey)
+    }
+    
+    // Criar chave única para a combinação atual
+    const activeTabWidgets = activeCustomTab 
+      ? widgets.filter(w => w.customTabId === activeCustomTab)
+      : widgets.filter(w => !w.customTabId)
+    
+    const widgetIds = activeTabWidgets.map(w => w.id).sort().join(',')
+    const widgetDataSources = activeTabWidgets
+      .map(w => w.dataSource)
+      .filter(Boolean)
+      .sort()
+      .join(',')
+    const tabDataSource = activeCustomTab ? customTabs.find(t => t.id === activeCustomTab)?.dataSource || '' : ''
+    const tabDataSources = [tabDataSource, widgetDataSources].filter(Boolean).join(',')
+    
+    const currentKey = {
+      selectedTable,
+      activeCustomTab: activeCustomTab || null,
+      widgetIds,
+      tabDataSources
+    }
+    
+    // Verificar se já processamos essa combinação
+    const lastProcessed = lastProcessedRef.current
+    if (lastProcessed &&
+        lastProcessed.selectedTable === currentKey.selectedTable &&
+        lastProcessed.activeCustomTab === currentKey.activeCustomTab &&
+        lastProcessed.widgetIds === currentKey.widgetIds &&
+        lastProcessed.tabDataSources === currentKey.tabDataSources) {
+      console.log('⏸️ [DEBUG] Mesma combinação já processada, pulando carregamento:', currentKey)
+      return
+    }
+    
+    console.log('🔄 [DEBUG] useEffect de carregamento de dataSources EXECUTADO:', {
+      selectedTable,
+      activeCustomTab,
+      cacheKey,
+      cachedDataSources: Array.from(tabCache),
+      customTabsCount: customTabs.length,
+      widgetsCount: widgets.length,
+      activeTabWidgetsCount: activeTabWidgets.length
+    })
+    
+    // Coletar apenas os dataSources necessários para a aba ativa
+    const dataSourcesToLoad = new Set<string>()
+    
+    // Adicionar dataSource da aba ativa
+    if (activeCustomTab) {
+      const activeTab = customTabs.find(t => t.id === activeCustomTab)
+      console.log('📊 [DEBUG] Aba ativa encontrada:', {
+        activeCustomTab,
+        activeTab: activeTab ? { id: activeTab.id, name: activeTab.name, dataSource: activeTab.dataSource } : null
+      })
+      
+      if (activeTab?.dataSource) {
+        dataSourcesToLoad.add(activeTab.dataSource)
+        console.log('✅ [DEBUG] DataSource da aba ativa adicionado:', activeTab.dataSource)
+      } else {
+        console.log('⚠️ [DEBUG] Aba ativa não tem dataSource configurado:', activeTab?.name)
+      }
+    } else {
+      console.log('📊 [DEBUG] Nenhuma aba customizada ativa (aba padrão)')
+    }
+    
+    // Adicionar dataSources dos widgets da aba ativa (apenas se o widget tiver dataSource próprio)
+    // activeTabWidgets já foi declarado acima
+    console.log('📊 [DEBUG] Widgets da aba ativa:', {
+      activeCustomTab,
+      activeTabWidgetsCount: activeTabWidgets.length,
+      widgetsDetails: activeTabWidgets.map(w => ({
+        id: w.id,
+        type: w.type,
+        dataSource: w.dataSource,
+        customTabId: w.customTabId
+      }))
+    })
+    
+    activeTabWidgets.forEach(widget => {
+      // Apenas adicionar se o widget tiver dataSource próprio (não herdado da aba)
+      if (widget.dataSource) {
+        dataSourcesToLoad.add(widget.dataSource)
+        console.log('✅ [DEBUG] Widget com dataSource próprio adicionado:', widget.id, widget.dataSource)
+      } else {
+        console.log('📊 [DEBUG] Widget sem dataSource próprio (herdará da aba):', widget.id)
+      }
+      // Se o widget não tem dataSource próprio, ele herdará da aba (já adicionada acima)
+    })
+    
+    console.log('📊 [DEBUG] DataSources coletados para carregar:', {
+      activeCustomTab,
+      dataSourcesToLoad: Array.from(dataSourcesToLoad),
+      cachedDataSources: Array.from(tabCache),
+      currentAllDataBySource: Array.from(allDataBySource.keys()),
+      currentDataBySource: Array.from(dataBySource.keys()),
+      configuredDataSources: configuredDataSources.map(ds => ds.endpoint)
+    })
+    
+    // Se não há dataSources para carregar, logar e retornar
+    if (dataSourcesToLoad.size === 0) {
+      console.log('⚠️ [DEBUG] Nenhum dataSource para carregar:', {
+        activeCustomTab,
+        hasActiveTab: !!activeCustomTab,
+        activeTabHasDataSource: activeCustomTab ? customTabs.find(t => t.id === activeCustomTab)?.dataSource : null,
+        widgetsCount: activeTabWidgets.length,
+        widgetsWithDataSource: activeTabWidgets.filter(w => w.dataSource).length
+      })
+      // Resetar estado de carregamento se não há nada para carregar
+      setIsTabLoading(false)
+      setTabLoadingProgress({ total: 0, loading: 0, loaded: 0, dataSources: [] })
+      setElapsedSecondsBySource(new Map())
+      lastProcessedRef.current = currentKey
+      return
+    }
+    
+    // Filtrar dataSources que já estão no cache (já foram carregados para esta aba)
+    const dataSourcesToFetch: string[] = []
+    
+    dataSourcesToLoad.forEach(dataSource => {
+      // Verificar cache primeiro (dados já carregados para esta aba)
+      if (tabCache.has(dataSource)) {
+        console.log('✅ [CACHE] DataSource já carregado no cache desta aba:', {
+          dataSource,
+          cacheKey,
+          recordCount: allDataBySource.get(dataSource)?.length || 0
+        })
+        return
+      }
+      
+      // Verificar se já está carregado em memória (mesmo que não esteja no cache desta aba)
+      const hasData = allDataBySource.has(dataSource)
+      const isProcessing = isProcessingBySourceRef.current.get(dataSource)
+      const isLoading = isLoadingBySource.get(dataSource)
+      
+      // Se já está carregado, adicionar ao cache e não recarregar
+      if (hasData && !isProcessing && !isLoading) {
+        tabCache.add(dataSource)
+        console.log('✅ [CACHE] DataSource já está em memória, adicionando ao cache:', {
+          dataSource,
+          cacheKey,
+          recordCount: allDataBySource.get(dataSource)?.length || 0
+        })
+        return
+      }
+      
+      // Se está processando, não adicionar à lista (já está sendo carregado)
+      if (isProcessing || isLoading) {
+        console.log('⏳ [DEBUG] DataSource já está sendo carregado:', {
+          dataSource,
+          isProcessing,
+          isLoading
+        })
+        return
+      }
+      
+      // Precisa carregar
+      dataSourcesToFetch.push(dataSource)
+    })
+    
+    // Carregar todos os dataSources necessários
+    if (dataSourcesToFetch.length > 0) {
+      console.log('🚀 [CACHE] Iniciando carregamento de dataSources (não estão no cache):', {
+        count: dataSourcesToFetch.length,
+        dataSources: dataSourcesToFetch,
+        cacheKey
+      })
+      
+      // Marcar como processado ANTES de iniciar carregamento para evitar re-execuções durante o carregamento
+      lastProcessedRef.current = currentKey
+      
+      // Atualizar estado de carregamento centralizado
+      setIsTabLoading(true)
+      setTabLoadingProgress({
+        total: dataSourcesToLoad.size,
+        loading: dataSourcesToFetch.length,
+        loaded: dataSourcesToLoad.size - dataSourcesToFetch.length,
+        dataSources: dataSourcesToFetch
+      })
+      
+      // Iniciar carregamento - fetchDataSourceData gerencia o estado internamente
+      dataSourcesToFetch.forEach(dataSource => {
+        // Não usar await aqui para não bloquear - fetchDataSourceData é assíncrono e gerencia seu próprio estado
+        fetchDataSourceData(dataSource, allDataBySource).catch(error => {
+          console.error('❌ [DEBUG] Erro ao iniciar carregamento do dataSource:', dataSource, error)
+          // Atualizar progresso em caso de erro
+          setTabLoadingProgress(prev => ({
+            ...prev,
+            loading: Math.max(0, prev.loading - 1),
+            loaded: prev.loaded + 1
+          }))
+        })
+      })
+    } else {
+      // Se não há nada para carregar (tudo já está carregado ou no cache), marcar como processado
+      lastProcessedRef.current = currentKey
+      setIsTabLoading(false)
+      setTabLoadingProgress({
+        total: dataSourcesToLoad.size,
+        loading: 0,
+        loaded: dataSourcesToLoad.size,
+        dataSources: []
+      })
+      console.log('✅ [CACHE] Todos os dataSources já estão carregados ou no cache:', {
+        cacheKey,
+        cachedDataSources: Array.from(tabCache)
+      })
+    }
+  }, [widgets, customTabs, activeCustomTab, selectedTable, startDate, endDate, fetchDataSourceData, configuredDataSources, allDataBySource])
+
+  // Resetar estado de carregamento quando a aba mudar
+  useEffect(() => {
+    // Resetar estado de carregamento quando mudar de aba
+    setIsTabLoading(false)
+    setTabLoadingProgress({ total: 0, loading: 0, loaded: 0, dataSources: [] })
+    setElapsedSecondsBySource(new Map())
+  }, [activeCustomTab])
+
+  // Limpar cache quando selectedTable ou período de datas mudarem
+  useEffect(() => {
+    // Limpar todo o cache quando a tabela mudar (novo cliente)
+    console.log('🧹 [CACHE] Limpando cache devido a mudança de selectedTable ou datas:', {
+      selectedTable,
+      startDate,
+      endDate
+    })
+    // Resetar estado de carregamento quando mudar de tabela ou período
+    setIsTabLoading(false)
+    setTabLoadingProgress({ total: 0, loading: 0, loaded: 0, dataSources: [] })
+    setElapsedSecondsBySource(new Map())
+    // O cache será reconstruído automaticamente pelo useEffect acima quando necessário
+    // Não precisamos limpar manualmente, pois a chave do cache inclui selectedTable e datas
+    // Apenas limpar entradas antigas do cache se necessário para evitar vazamento de memória
+    const maxCacheSize = 50 // Limitar cache a 50 entradas
+    if (loadedTabsCacheRef.current.size > maxCacheSize) {
+      const entries = Array.from(loadedTabsCacheRef.current.entries())
+      // Remover as entradas mais antigas (mantém as mais recentes)
+      entries.slice(0, entries.length - maxCacheSize).forEach(([key]) => {
+        loadedTabsCacheRef.current.delete(key)
+        console.log('🧹 [CACHE] Removendo entrada antiga do cache:', key)
+      })
+    }
+  }, [selectedTable, startDate, endDate])
+
+  // Monitorar allDataBySource e adicionar ao cache quando novos dados forem carregados
+  useEffect(() => {
+    if (!selectedTable) return
+
+    // Criar chave única para o cache desta aba (inclui período de datas)
+    const cacheKey = `${selectedTable}:${activeCustomTab || 'default'}:${startDate}:${endDate}`
+    
+    // Obter ou criar cache desta aba
+    let tabCache = loadedTabsCacheRef.current.get(cacheKey)
+    if (!tabCache) {
+      tabCache = new Set<string>()
+      loadedTabsCacheRef.current.set(cacheKey, tabCache)
+    }
+
+    // Verificar quais dataSources foram carregados e adicionar ao cache
+    let hasNewData = false
+    allDataBySource.forEach((data, dataSource) => {
+      if (data && data.length > 0 && !tabCache.has(dataSource)) {
+        tabCache.add(dataSource)
+        hasNewData = true
+        console.log('✅ [CACHE] DataSource detectado como carregado e adicionado ao cache:', {
+          dataSource,
+          cacheKey,
+          recordCount: data.length
+        })
+      }
+    })
+    
+    // Atualizar estado de carregamento quando novos dados forem carregados
+    if (hasNewData && isTabLoading) {
+      // Verificar se todos os dataSources necessários foram carregados
+      const activeTabWidgets = activeCustomTab 
+        ? widgets.filter(w => w.customTabId === activeCustomTab)
+        : widgets.filter(w => !w.customTabId)
+      
+      const dataSourcesNeeded = new Set<string>()
+      if (activeCustomTab) {
+        const activeTab = customTabs.find(t => t.id === activeCustomTab)
+        if (activeTab?.dataSource) {
+          dataSourcesNeeded.add(activeTab.dataSource)
+        }
+      }
+      activeTabWidgets.forEach(widget => {
+        if (widget.dataSource) {
+          dataSourcesNeeded.add(widget.dataSource)
+        }
+      })
+      
+      // Verificar quantos já foram carregados
+      const loadedCount = Array.from(dataSourcesNeeded).filter(ds => {
+        const hasData = allDataBySource.has(ds) && (allDataBySource.get(ds)?.length || 0) > 0
+        const isStillLoading = isLoadingBySource.get(ds) || isProcessingBySourceRef.current.get(ds)
+        return hasData && !isStillLoading
+      }).length
+      
+      const loadingCount = Array.from(dataSourcesNeeded).filter(ds => {
+        return isLoadingBySource.get(ds) || isProcessingBySourceRef.current.get(ds)
+      }).length
+      
+      setTabLoadingProgress(prev => ({
+        total: dataSourcesNeeded.size,
+        loading: loadingCount,
+        loaded: loadedCount,
+        dataSources: Array.from(dataSourcesNeeded).filter(ds => 
+          isLoadingBySource.get(ds) || isProcessingBySourceRef.current.get(ds)
+        )
+      }))
+      
+      // Se todos foram carregados, marcar como completo
+      if (loadingCount === 0 && loadedCount === dataSourcesNeeded.size) {
+        setIsTabLoading(false)
+        console.log('✅ [TAB] Todos os dataSources da aba foram carregados')
+      }
+    }
+  }, [allDataBySource, selectedTable, activeCustomTab, startDate, endDate, isTabLoading, widgets, customTabs, isLoadingBySource])
+
   // Aplicar filtros de dimensões aos dados
   const filteredData = useMemo(() => {
     if (Object.keys(dimensionFilters).length === 0) {
@@ -2683,6 +5048,24 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
       return true
     })
   }, [data, dimensionFilters])
+  
+  // Função helper para obter filteredData para um widget específico baseado no dataSource
+  const getWidgetFilteredData = useCallback((widget: Widget): OverviewDataItem[] => {
+    const widgetData = getWidgetData(widget)
+    if (Object.keys(dimensionFilters).length === 0) {
+      return widgetData
+    }
+    
+    return widgetData.filter(item => {
+      for (const [dimensionKey, filterValues] of Object.entries(dimensionFilters)) {
+        const itemValue = String(item[dimensionKey as keyof OverviewDataItem] || '')
+        if (!filterValues.has(itemValue)) {
+          return false
+        }
+      }
+      return true
+    })
+  }, [getWidgetData, dimensionFilters])
 
   // Preparar dados para timeline usando dados filtrados
   const timelineData = useMemo(() => {
@@ -2858,9 +5241,120 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   const previousNewCustomerRate = previousTotals.orders > 0 ? (previousTotals.new_customers / previousTotals.orders) * 100 : 0
 
   // Função para obter o growth de uma métrica
-  const getMetricGrowth = (metricKey: string): number | undefined => {
+  const getMetricGrowth = (metricKey: string, widgetData?: OverviewDataItem[], widgetPreviousData?: OverviewDataItem[]): number | undefined => {
     if (isLoadingPrevious) return undefined
     
+    // Se dados do widget foram fornecidos, calcular crescimento baseado nesses dados
+    if (widgetData && widgetData.length > 0) {
+      const widgetTotals = calculateTotalsFromData(widgetData)
+      
+      // Se há dados do período anterior específicos do widget, usar eles
+      if (widgetPreviousData && widgetPreviousData.length > 0) {
+        const widgetPreviousTotals = calculateTotalsFromData(widgetPreviousData)
+        
+        // Buscar valor atual e anterior dinamicamente
+        const currentValue = widgetTotals[metricKey as keyof typeof widgetTotals]
+        const previousValue = widgetPreviousTotals[metricKey as keyof typeof widgetPreviousTotals]
+        
+        if (currentValue !== undefined && previousValue !== undefined) {
+          const growth = calculateGrowth(
+            typeof currentValue === 'number' ? currentValue : 0,
+            typeof previousValue === 'number' ? previousValue : 0
+          )
+          console.log('📊 [DEBUG] Crescimento calculado (widget específico):', {
+            metricKey,
+            currentValue,
+            previousValue,
+            growth
+          })
+          return growth
+        }
+        
+        // Para métricas derivadas, calcular a partir dos totais do widget
+        if (metricKey === 'conversion_rate') {
+          const current = widgetTotals.sessions > 0 ? (widgetTotals.orders / widgetTotals.sessions) * 100 : 0
+          const previous = widgetPreviousTotals.sessions > 0 ? (widgetPreviousTotals.orders / widgetPreviousTotals.sessions) * 100 : 0
+          return calculateGrowth(current, previous)
+        }
+        if (metricKey === 'add_to_cart_rate') {
+          const current = widgetTotals.sessions > 0 ? (widgetTotals.add_to_carts / widgetTotals.sessions) * 100 : 0
+          const previous = widgetPreviousTotals.sessions > 0 ? (widgetPreviousTotals.add_to_carts / widgetPreviousTotals.sessions) * 100 : 0
+          return calculateGrowth(current, previous)
+        }
+        if (metricKey === 'revenue_per_session') {
+          const current = widgetTotals.sessions > 0 ? widgetTotals.revenue / widgetTotals.sessions : 0
+          const previous = widgetPreviousTotals.sessions > 0 ? widgetPreviousTotals.revenue / widgetPreviousTotals.sessions : 0
+          return calculateGrowth(current, previous)
+        }
+        if (metricKey === 'avg_order_value') {
+          const current = widgetTotals.orders > 0 ? widgetTotals.revenue / widgetTotals.orders : 0
+          const previous = widgetPreviousTotals.orders > 0 ? widgetPreviousTotals.revenue / widgetPreviousTotals.orders : 0
+          return calculateGrowth(current, previous)
+        }
+        if (metricKey === 'roas') {
+          const current = widgetTotals.cost > 0 ? widgetTotals.revenue / widgetTotals.cost : 0
+          const previous = widgetPreviousTotals.cost > 0 ? widgetPreviousTotals.revenue / widgetPreviousTotals.cost : 0
+          return calculateGrowth(current, previous)
+        }
+      }
+      
+      // Se não há dados do período anterior específicos, tentar usar dados globais como fallback
+      // Calcular usando os totais do widget atual vs dados globais do período anterior
+      // widgetTotals já foi declarado acima, reutilizando-o
+      const currentValue = widgetTotals[metricKey as keyof typeof widgetTotals]
+      const previousValue = (previousTotals as any)[metricKey]
+      
+      if (currentValue !== undefined && previousValue !== undefined) {
+        const growth = calculateGrowth(
+          typeof currentValue === 'number' ? currentValue : 0,
+          typeof previousValue === 'number' ? previousValue : 0
+        )
+        console.log('📊 [DEBUG] Crescimento calculado (widget atual vs global anterior):', {
+          metricKey,
+          currentValue,
+          previousValue,
+          growth
+        })
+        return growth
+      }
+      
+      console.log('⚠️ [DEBUG] Widget sem dados do período anterior e métrica não encontrada:', {
+        metricKey,
+        widgetDataLength: widgetData.length,
+        widgetPreviousDataLength: widgetPreviousData?.length || 0,
+        widgetTotalsKeys: Object.keys(widgetTotals).slice(0, 10)
+      })
+    }
+    
+    // Fallback para dados globais - primeiro tentar busca dinâmica
+    const currentValue = (totals as any)[metricKey]
+    const previousValue = (previousTotals as any)[metricKey]
+    
+    if (currentValue !== undefined && previousValue !== undefined) {
+      return calculateGrowth(
+        typeof currentValue === 'number' ? currentValue : 0,
+        typeof previousValue === 'number' ? previousValue : 0
+      )
+    }
+    
+    // Se não encontrou com busca direta, tentar busca case-insensitive
+    const totalsKeys = Object.keys(totals)
+    const previousTotalsKeys = Object.keys(previousTotals)
+    const matchingCurrentKey = totalsKeys.find(key => key.toLowerCase() === metricKey.toLowerCase())
+    const matchingPreviousKey = previousTotalsKeys.find(key => key.toLowerCase() === metricKey.toLowerCase())
+    
+    if (matchingCurrentKey && matchingPreviousKey) {
+      const current = (totals as any)[matchingCurrentKey]
+      const previous = (previousTotals as any)[matchingPreviousKey]
+      if (current !== undefined && previous !== undefined) {
+        return calculateGrowth(
+          typeof current === 'number' ? current : 0,
+          typeof previous === 'number' ? previous : 0
+        )
+      }
+    }
+    
+    // Fallback para métricas hardcoded conhecidas (comportamento original)
     if (metricKey === 'sessions') return calculateGrowth(totals.sessions, previousTotals.sessions)
     if (metricKey === 'clicks') return calculateGrowth(totals.clicks, previousTotals.clicks)
     if (metricKey === 'add_to_carts') return calculateGrowth(totals.add_to_carts, previousTotals.add_to_carts)
@@ -2881,26 +5375,36 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     if (metricKey === 'roas') return calculateGrowth(roas, previousRoas)
     if (metricKey === 'new_customer_rate') return calculateGrowth(newCustomerRate, previousNewCustomerRate)
     // Novas métricas
-    if (metricKey === 'paid_new_annual_orders') return calculateGrowth(totals.paid_new_annual_orders || 0, previousTotals.paid_new_annual_orders)
-    if (metricKey === 'paid_new_annual_revenue') return calculateGrowth(totals.paid_new_annual_revenue || 0, previousTotals.paid_new_annual_revenue)
-    if (metricKey === 'paid_new_montly_orders') return calculateGrowth(totals.paid_new_montly_orders || 0, previousTotals.paid_new_montly_orders)
-    if (metricKey === 'paid_new_montly_revenue') return calculateGrowth(totals.paid_new_montly_revenue || 0, previousTotals.paid_new_montly_revenue)
-    if (metricKey === 'paid_recurring_annual_orders') return calculateGrowth(totals.paid_recurring_annual_orders || 0, previousTotals.paid_recurring_annual_orders)
-    if (metricKey === 'paid_recurring_annual_revenue') return calculateGrowth(totals.paid_recurring_annual_revenue || 0, previousTotals.paid_recurring_annual_revenue)
-    if (metricKey === 'paid_recurring_montly_orders') return calculateGrowth(totals.paid_recurring_montly_orders || 0, previousTotals.paid_recurring_montly_orders)
-    if (metricKey === 'paid_recurring_montly_revenue') return calculateGrowth(totals.paid_recurring_montly_revenue || 0, previousTotals.paid_recurring_montly_revenue)
+    if (metricKey === 'paid_new_annual_orders') return calculateGrowth(totals.paid_new_annual_orders || 0, previousTotals.paid_new_annual_orders || 0)
+    if (metricKey === 'paid_new_annual_revenue') return calculateGrowth(totals.paid_new_annual_revenue || 0, previousTotals.paid_new_annual_revenue || 0)
+    if (metricKey === 'paid_new_montly_orders') return calculateGrowth(totals.paid_new_montly_orders || 0, previousTotals.paid_new_montly_orders || 0)
+    if (metricKey === 'paid_new_montly_revenue') return calculateGrowth(totals.paid_new_montly_revenue || 0, previousTotals.paid_new_montly_revenue || 0)
+    if (metricKey === 'paid_recurring_annual_orders') return calculateGrowth(totals.paid_recurring_annual_orders || 0, previousTotals.paid_recurring_annual_orders || 0)
+    if (metricKey === 'paid_recurring_annual_revenue') return calculateGrowth(totals.paid_recurring_annual_revenue || 0, previousTotals.paid_recurring_annual_revenue || 0)
+    if (metricKey === 'paid_recurring_montly_orders') return calculateGrowth(totals.paid_recurring_montly_orders || 0, previousTotals.paid_recurring_montly_orders || 0)
+    if (metricKey === 'paid_recurring_montly_revenue') return calculateGrowth(totals.paid_recurring_montly_revenue || 0, previousTotals.paid_recurring_montly_revenue || 0)
+    
+    // Se não encontrou, retornar undefined (não mostrar comparativo)
+    console.warn('⚠️ [DEBUG] Métrica não encontrada para crescimento:', metricKey, {
+      totalsKeys: totalsKeys.slice(0, 10),
+      previousTotalsKeys: previousTotalsKeys.slice(0, 10)
+    })
     return undefined
   }
 
   const formatCurrency = (value: number) => {
+    // Removido formatação de moeda - usar apenas número
     return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 0
     }).format(value)
   }
 
   const formatNumber = (value: number) => {
-    return new Intl.NumberFormat('pt-BR').format(value)
+    return new Intl.NumberFormat('pt-BR', {
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 0
+    }).format(value)
   }
 
   // Calcular run rate da meta do mês
@@ -2976,14 +5480,14 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
           {/* Run Rate Projetado */}
           <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 text-center border border-blue-100">
             <p className="text-sm font-medium text-blue-700 mb-2">Run Rate Projetado</p>
-            <p className="text-xl font-bold text-blue-900">{formatCurrency(runRate)}</p>
+            <p className="text-xl font-bold text-blue-900">{new Intl.NumberFormat('pt-BR').format(runRate)}</p>
             <p className="text-xs text-blue-600 mt-1">Projeção mensal</p>
           </div>
 
           {/* Meta Mensal */}
           <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 text-center border border-purple-100">
             <p className="text-sm font-medium text-purple-700 mb-2">Meta Mensal</p>
-            <p className="text-xl font-bold text-purple-900">{formatCurrency(monthlyGoal)}</p>
+            <p className="text-xl font-bold text-purple-900">{new Intl.NumberFormat('pt-BR').format(monthlyGoal)}</p>
             <p className="text-xs text-purple-600 mt-1">Objetivo</p>
           </div>
 
@@ -3274,7 +5778,8 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     const formatValue = () => {
       switch (format) {
         case 'currency':
-          return formatCurrency(value)
+          // Removido formatação de moeda - tratar como número
+          return formatNumber(value)
         case 'percentage':
           return `${value.toFixed(2)}%`
         default:
@@ -3413,36 +5918,28 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
       )}
 
 
-      {/* Run Rate da Meta (legado - só mostrar se não houver widgets do novo sistema) */}
-      {widgets.length === 0 && (
-      <RunRateHighlight 
-        runRateData={runRateData} 
-        isLoadingGoals={isLoadingGoals}
-        isLoadingCurrentMonth={isLoadingCurrentMonth}
-      />
-      )}
 
       {/* Botão para adicionar widgets */}
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsEditMode(!isEditMode)}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl transition-all duration-200 shadow-sm hover:shadow-md active:scale-95 ${
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-normal rounded-lg transition-all duration-200 ${
               isEditMode
-                ? 'text-blue-700 bg-blue-50 border border-blue-300 hover:bg-blue-100'
-                : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                ? 'text-blue-600 bg-blue-50/50 border border-blue-200/50 hover:bg-blue-50'
+                : 'text-gray-500 bg-transparent border border-gray-200/50 hover:bg-gray-50/50'
             }`}
-            title={isEditMode ? 'Modo Edição - Clique para visualização' : 'Modo Visualização - Clique para edição'}
+            title={isEditMode ? 'Clique para salvar as alterações' : 'Clique para editar'}
           >
             {isEditMode ? (
               <>
-                <Pencil className="w-4 h-4" />
-                Modo Edição
+                <Save className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Salvar</span>
               </>
             ) : (
               <>
-                <Eye className="w-4 h-4" />
-                Modo Visualização
+                <Pencil className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Editar</span>
               </>
             )}
           </button>
@@ -3452,7 +5949,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
             <button
               onClick={() => {
                 setEditingCustomTab(null)
-                setCustomTabFormData({ name: '', icon: 'BarChart3', order: 0 })
+                setCustomTabFormData({ name: '', icon: 'BarChart3', order: 0, isUniversal: false, dataSource: '' })
                 setShowCustomTabModal(true)
               }}
               className="flex items-center gap-2 px-4 py-2 text-sm text-white bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-700 hover:to-purple-600 font-medium rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl active:scale-95"
@@ -3467,7 +5964,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
               <button
                 onClick={handleExportDashboardConfig}
                 className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 font-medium rounded-xl transition-all duration-200 shadow-sm hover:shadow-md active:scale-95"
-                title={`Exportar configurações da aba atual (${activeCustomTab === null ? 'Geral' : customTabs.find(t => t.id === activeCustomTab)?.name || 'atual'})`}
+                title={`Exportar configurações da aba atual (${customTabs.find(t => t.id === activeCustomTab)?.name || 'atual'})`}
               >
                 <Download className="w-4 h-4" />
                 Exportar Aba
@@ -3475,7 +5972,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
               <button
                 onClick={handleImportDashboardConfigClick}
                 className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 font-medium rounded-xl transition-all duration-200 shadow-sm hover:shadow-md active:scale-95"
-                title={`Importar configurações para a aba atual (${activeCustomTab === null ? 'Geral' : customTabs.find(t => t.id === activeCustomTab)?.name || 'atual'})`}
+                title={`Importar configurações para a aba atual (${customTabs.find(t => t.id === activeCustomTab)?.name || 'atual'})`}
               >
                 <FolderOpen className="w-4 h-4" />
                 Importar Aba
@@ -3494,7 +5991,32 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                 </button>
               )}
               <button
-                onClick={() => setShowAddWidgetModal(true)}
+                onClick={() => setShowDataSourcesModal(true)}
+                className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 font-medium rounded-xl transition-all duration-200 shadow-sm hover:shadow-md active:scale-95"
+              >
+                <Database className="w-4 h-4 text-gray-500" />
+                Fontes de Dados
+              </button>
+              <button
+                onClick={() => {
+                  // Verificar se há uma aba ativa com dataSource
+                  if (activeCustomTab) {
+                    const activeTab = customTabs.find(t => t.id === activeCustomTab)
+                    if (activeTab?.dataSource) {
+                      // Se a aba tem dataSource, usar ele e ir direto para seleção de tipo
+                      setSelectedDataSourceForNewWidget(activeTab.dataSource)
+                      setAddWidgetStep('selectWidgetType')
+                    } else {
+                      // Se a aba não tem dataSource, mostrar aviso
+                      alert('Esta aba não tem uma fonte de dados configurada. Configure a fonte de dados da aba antes de adicionar widgets.')
+                      return
+                    }
+                  } else {
+                    alert('Selecione uma aba antes de adicionar widgets.')
+                    return
+                  }
+                  setShowAddWidgetModal(true)
+                }}
                 className="flex items-center gap-2 px-4 py-2 text-sm text-white bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 font-medium rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl active:scale-95"
               >
                 <Plus className="w-4 h-4" />
@@ -3509,26 +6031,22 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
       {customTabs.length > 0 && (
         <div className="mb-6">
           <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
-            {/* Botão para mostrar widgets sem sub aba */}
-            <button
-              onClick={() => setActiveCustomTab(null)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap transition-all duration-200 ${
-                activeCustomTab === null
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              <Layout className="w-4 h-4" />
-              <span>Geral</span>
-            </button>
-            
             {/* Sub abas personalizadas */}
             {customTabs.map((tab) => {
               const IconComponent = iconMap[tab.icon] || BarChart3
               return (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveCustomTab(tab.id)}
+                  onClick={() => {
+                    console.log('🔄 Mudando de aba:', { 
+                      de: activeCustomTab, 
+                      para: tab.id,
+                      selectedDataSourceForNewWidget 
+                    })
+                    setActiveCustomTab(tab.id)
+                    // Não alterar selectedDataSourceForNewWidget ao mudar de aba
+                    // A fonte de dados deve ser independente da aba
+                  }}
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap transition-all duration-200 ${
                     activeCustomTab === tab.id
                       ? 'bg-blue-600 text-white shadow-md'
@@ -3571,29 +6089,69 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
+                          // Bloquear edição de abas universais para usuários sem acesso "all"
+                          if (tab.isUniversal && !hasAllAccess) {
+                            alert('Apenas usuários com nível de acesso "all" podem editar abas universais.')
+                            return
+                          }
                           setEditingCustomTab(tab)
-                          setCustomTabFormData({ name: tab.name, icon: tab.icon, order: tab.order })
+                          setCustomTabFormData({ 
+                            name: tab.name, 
+                            icon: tab.icon, 
+                            order: tab.order,
+                            isUniversal: tab.isUniversal || false,
+                            dataSource: tab.dataSource || ''
+                          })
                           setShowCustomTabModal(true)
                         }}
-                        className="p-1 hover:bg-blue-700 rounded opacity-70 hover:opacity-100"
-                        title="Editar aba"
+                        className={`p-1 rounded opacity-70 hover:opacity-100 ${
+                          tab.isUniversal && !hasAllAccess 
+                            ? 'hover:bg-gray-400 cursor-not-allowed' 
+                            : 'hover:bg-blue-700'
+                        }`}
+                        title={
+                          tab.isUniversal && !hasAllAccess 
+                            ? 'Apenas usuários com acesso "all" podem editar abas universais'
+                            : 'Editar aba'
+                        }
+                        disabled={tab.isUniversal && !hasAllAccess}
                       >
                         <Pencil className="w-3 h-3" />
                       </button>
                       <button
-                        onClick={(e) => {
+                        onClick={async (e) => {
                           e.stopPropagation()
+                          // Bloquear deleção de abas universais para usuários sem acesso "all"
+                          if (tab.isUniversal && !hasAllAccess) {
+                            alert('Apenas usuários com nível de acesso "all" podem excluir abas universais.')
+                            return
+                          }
                           if (confirm(`Tem certeza que deseja excluir a aba "${tab.name}"? Os widgets desta aba também serão removidos.`)) {
-                            DashboardStorage.deleteCustomTab(selectedTable, tab.id)
-                            const updated = customTabs.filter(t => t.id !== tab.id)
-                            setCustomTabs(updated)
-                            if (activeCustomTab === tab.id) {
-                              setActiveCustomTab(updated.length > 0 ? updated[0].id : null)
+                            try {
+                              await DashboardStorage.deleteCustomTab(selectedTable, tab.id)
+                              const updated = customTabs.filter(t => t.id !== tab.id)
+                              setCustomTabs(updated)
+                              if (activeCustomTab === tab.id) {
+                                setActiveCustomTab(updated.length > 0 ? updated[0].id : null)
+                              }
+                              console.log('✅ Aba deletada com sucesso')
+                            } catch (error) {
+                              console.error('❌ Erro ao deletar aba:', error)
+                              alert('Erro ao deletar aba. Tente novamente.')
                             }
                           }
                         }}
-                        className="p-1 hover:bg-red-600 rounded opacity-70 hover:opacity-100"
-                        title="Excluir aba"
+                        className={`p-1 rounded opacity-70 hover:opacity-100 ${
+                          tab.isUniversal && !hasAllAccess 
+                            ? 'hover:bg-gray-400 cursor-not-allowed' 
+                            : 'hover:bg-red-600'
+                        }`}
+                        title={
+                          tab.isUniversal && !hasAllAccess 
+                            ? 'Apenas usuários com acesso "all" podem excluir abas universais'
+                            : 'Excluir aba'
+                        }
+                        disabled={tab.isUniversal && !hasAllAccess}
                       >
                         <X className="w-3 h-3" />
                       </button>
@@ -3608,7 +6166,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
               <button
                 onClick={() => {
                   setEditingCustomTab(null)
-                  setCustomTabFormData({ name: '', icon: 'BarChart3', order: customTabs.length })
+                  setCustomTabFormData({ name: '', icon: 'BarChart3', order: customTabs.length, isUniversal: false, dataSource: '' })
                   setShowCustomTabModal(true)
                 }}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200 transition-all duration-200"
@@ -3619,6 +6177,62 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
               </button>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Indicador de carregamento centralizado da aba */}
+      {isTabLoading && (
+        <div className="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+              <div>
+                <p className="text-sm font-medium text-blue-900">
+                  Carregando dados da aba...
+                </p>
+                {tabLoadingProgress.total > 0 && (
+                  <p className="text-xs text-blue-700 mt-1">
+                    {tabLoadingProgress.loaded} de {tabLoadingProgress.total} fonte{tabLoadingProgress.total !== 1 ? 's' : ''} carregada{tabLoadingProgress.total !== 1 ? 's' : ''}
+                    {tabLoadingProgress.loading > 0 && (
+                      <span className="ml-2">
+                        ({tabLoadingProgress.loading} carregando...)
+                      </span>
+                    )}
+                  </p>
+                )}
+              </div>
+            </div>
+            {tabLoadingProgress.dataSources.length > 0 && (
+              <div className="flex flex-wrap gap-2 items-center">
+                {tabLoadingProgress.dataSources.map((ds) => {
+                  const elapsedSeconds = elapsedSecondsBySource.get(ds)
+                  return (
+                    <span
+                      key={ds}
+                      className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-md font-medium flex items-center gap-1"
+                    >
+                      {configuredDataSources.find(s => s.endpoint === ds)?.label || ds}
+                      {elapsedSeconds !== undefined && (
+                        <span className="text-blue-600 font-semibold">
+                          ({Math.round(elapsedSeconds)}s)
+                        </span>
+                      )}
+                    </span>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+          {tabLoadingProgress.total > 0 && (
+            <div className="mt-3 w-full bg-blue-200 rounded-full h-2 overflow-hidden">
+              <div
+                className="bg-blue-600 h-full rounded-full transition-all duration-300 ease-out"
+                style={{
+                  width: `${(tabLoadingProgress.loaded / tabLoadingProgress.total) * 100}%`
+                }}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -3654,20 +6268,44 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                   <h3 className="text-base font-semibold text-gray-900">{widget.title}</h3>
                 </div>
               )}
-              {widget.cardMetrics && widget.cardMetrics.length > 0 ? (
+              {isWidgetLoading(widget) ? (
+                <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-200 flex items-center justify-center">
+                  <div className="flex flex-col items-center gap-3">
+                    <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+                    <span className="text-sm text-gray-600">Carregando dados...</span>
+                  </div>
+                </div>
+              ) : widget.cardMetrics && widget.cardMetrics.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  {(widget.cardOrder || widget.cardMetrics).filter(key => {
-                    if (!widget.cardMetrics?.includes(key)) return false
-                    const newMetrics = ['paid_new_annual_orders', 'paid_new_annual_revenue', 'paid_new_montly_orders', 'paid_new_montly_revenue', 'paid_recurring_annual_orders', 'paid_recurring_annual_revenue', 'paid_recurring_montly_orders', 'paid_recurring_montly_revenue']
-                    if (newMetrics.includes(key)) {
-                      const value = getMetricValue(key)
-                      return value > 0
+                  {(() => {
+                    // Obter dados específicos do widget se tiver dataSource
+                    const widgetData = getWidgetData(widget)
+                    const widgetMetrics = getWidgetMetricsAndDimensions(widget).metrics
+                    
+                    // Determinar dataSource do widget para buscar dados do período anterior
+                    let widgetDataSource: string | undefined = widget.dataSource
+                    if (!widgetDataSource && widget.customTabId) {
+                      const tab = customTabs.find(t => t.id === widget.customTabId)
+                      widgetDataSource = tab?.dataSource
                     }
-                    return true
-                  }).map((cardKey) => {
-                    const metric = metrics.find(m => m.key === cardKey)
-                    if (!metric) return null
-                    const value = getMetricValue(cardKey)
+                    
+                    // Obter dados do período anterior para este widget
+                    const widgetPreviousData = widgetDataSource 
+                      ? previousDataBySourceRef.current.get(widgetDataSource) || []
+                      : []
+                    
+                    return (widget.cardOrder || widget.cardMetrics).filter(key => {
+                      if (!widget.cardMetrics?.includes(key)) return false
+                      const newMetrics = ['paid_new_annual_orders', 'paid_new_annual_revenue', 'paid_new_montly_orders', 'paid_new_montly_revenue', 'paid_recurring_annual_orders', 'paid_recurring_annual_revenue', 'paid_recurring_montly_orders', 'paid_recurring_montly_revenue']
+                      if (newMetrics.includes(key)) {
+                        const value = getMetricValue(key, widgetData)
+                        return value > 0
+                      }
+                      return true
+                    }).map((cardKey) => {
+                      const metric = widgetMetrics.find(m => m.key === cardKey) || metrics.find(m => m.key === cardKey)
+                      if (!metric) return null
+                      const value = getMetricValue(cardKey, widgetData)
                     const Icon = getMetricIcon(cardKey)
                     let format: 'number' | 'currency' | 'percentage' = 'number'
                     if (metric.type === 'currency') format = 'currency'
@@ -3686,7 +6324,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                                 <span className="text-xs text-gray-500">Comparando...</span>
                               </div>
                             ) : (() => {
-                              const growth = getMetricGrowth(cardKey)
+                              const growth = getMetricGrowth(cardKey, widgetData, widgetPreviousData)
                               return growth !== undefined && growth !== 0 && (
                                 <div className="flex items-center gap-1">
                                   {growth > 0 ? <ArrowUpRight className="w-4 h-4 text-green-600" /> : <ArrowDownRight className="w-4 h-4 text-red-600" />}
@@ -3698,7 +6336,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                             })()}
                           </div>
                           <h3 className="text-gray-600 text-sm font-medium mb-1">{metric.label}</h3>
-                          <p className="text-2xl font-bold text-gray-900">{value.toFixed(3)}x</p>
+                          <p className="text-2xl font-bold text-gray-900">{value.toFixed(2)}x</p>
                         </div>
                       )
                     }
@@ -3712,11 +6350,12 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                           format={format}
                           color="blue"
                           isDragOver={false}
-                          growth={getMetricGrowth(cardKey)}
+                          growth={getMetricGrowth(cardKey, widgetData, widgetPreviousData)}
                         />
                       </div>
                     )
-                  })}
+                  })
+                  })()}
                 </div>
               ) : (
                 <div className="bg-white rounded-xl shadow-lg p-4 border border-gray-200 text-center text-gray-500">
@@ -3728,13 +6367,17 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
         }
         
         if (widget.type === 'timeline') {
+          // Obter dados específicos do widget se tiver dataSource
+          const widgetData = getWidgetData(widget)
+          const dataToUse = widgetData.length > 0 ? widgetData : filteredData
+          
           // Preparar dados da timeline para este widget específico
           const getWidgetTimelineData = (widgetMetrics: string[] | undefined) => {
             if (!widgetMetrics || widgetMetrics.length === 0) return []
             
             const timelineDataMap = new Map<string, any>()
             
-            filteredData.forEach(item => {
+            dataToUse.forEach(item => {
               const date = item.event_date
               if (!timelineDataMap.has(date)) {
                 timelineDataMap.set(date, { date })
@@ -3773,7 +6416,14 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              {widget.timelineMetrics && widget.timelineMetrics.length > 0 && widgetTimelineData.length > 0 ? (
+              {isWidgetLoading(widget) ? (
+                <div className="flex items-center justify-center py-16">
+                  <div className="flex flex-col items-center gap-3">
+                    <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+                    <span className="text-sm text-gray-600">Carregando dados...</span>
+                  </div>
+                </div>
+              ) : widget.timelineMetrics && widget.timelineMetrics.length > 0 && widgetTimelineData.length > 0 ? (
                 <>
                   <div className="mb-4">
                     <h3 className="text-base font-semibold text-gray-900">{widget.title || 'Timeline de Métricas'}</h3>
@@ -3840,11 +6490,15 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                             }).format(Math.round(value || 0))
                           }
                           if (metric.type === 'currency') {
-                            return formatCurrency(value)
+                            // Removido formatação de moeda - tratar como número
+                            return new Intl.NumberFormat('pt-BR', { 
+                              maximumFractionDigits: 0,
+                              minimumFractionDigits: 0 
+                            }).format(Math.round(value || 0))
                           } else if (metric.type === 'percentage') {
                             return `${Math.round(value)}%`
                           } else if (name === 'roas') {
-                            return value.toFixed(3) + 'x'
+                            return value.toFixed(2) + 'x'
                           }
                           const roundedValue = Math.round(value || 0)
                           return new Intl.NumberFormat('pt-BR', { 
@@ -3893,6 +6547,11 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
         }
         
         if (widget.type === 'table') {
+          // Obter métricas e dimensões específicas para este widget
+          const widgetMetricsAndDims = getWidgetMetricsAndDimensions(widget)
+          const widgetDimensions = widgetMetricsAndDims.dimensions
+          const widgetMetrics = widgetMetricsAndDims.metrics
+          
           // Função para lidar com ordenação ao clicar no cabeçalho
           const handleTableSort = (field: string) => {
             const currentSortField = widget.sortField
@@ -3928,9 +6587,12 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
               return []
             }
             
+            // Usar dados filtrados específicos para este widget baseado no dataSource
+            const widgetFilteredData = getWidgetFilteredData(widget)
+            
             const grouped = new Map<string, any>()
             
-            filteredData.forEach(item => {
+            widgetFilteredData.forEach(item => {
               const groupKey = selectedDims.map(dim => String(item[dim as keyof OverviewDataItem] || '')).join('|')
               
               if (!grouped.has(groupKey)) {
@@ -4001,7 +6663,14 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              {widget.selectedDimensions && widget.selectedDimensions.length > 0 && 
+              {isWidgetLoading(widget) ? (
+                <div className="flex items-center justify-center py-16">
+                  <div className="flex flex-col items-center gap-3">
+                    <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+                    <span className="text-sm text-gray-600">Carregando dados...</span>
+                  </div>
+                </div>
+              ) : widget.selectedDimensions && widget.selectedDimensions.length > 0 && 
                widget.selectedMetrics && widget.selectedMetrics.length > 0 ? (
                 <>
                   <div className="px-6 py-4 border-b border-gray-200">
@@ -4009,7 +6678,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                       <div>
                         <h2 className="text-lg font-semibold text-gray-900">{widget.title || 'Dados Agrupados'}</h2>
                         <p className="text-sm text-gray-500 mt-1">
-                          Agrupados por {widget.selectedDimensions.map(d => dimensions.find(dim => dim.key === d)?.label).filter(Boolean).join(', ')}
+                          Agrupados por {widget.selectedDimensions.map(d => widgetDimensions.find(dim => dim.key === d)?.label).filter(Boolean).join(', ')}
           </p>
         </div>
                     </div>
@@ -4019,8 +6688,11 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                       <thead className="bg-gray-50">
                         <tr>
                           {widget.selectedDimensions.map(dimKey => {
-                            const dimension = dimensions.find(d => d.key === dimKey)
-                            if (!dimension) return null
+                            const dimension = widgetDimensions.find(d => d.key === dimKey)
+                            if (!dimension) {
+                              console.warn('⚠️ Dimensão não encontrada:', dimKey, 'Disponíveis:', widgetDimensions.map(d => d.key))
+                              return null
+                            }
                             const isSorted = widget.sortField === dimKey
                             const sortDirection = widget.sortDirection || 'asc'
                             return (
@@ -4045,8 +6717,11 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                             )
                           })}
                           {widget.selectedMetrics.map(metKey => {
-                            const metric = metrics.find(m => m.key === metKey)
-                            if (!metric) return null
+                            const metric = widgetMetrics.find(m => m.key === metKey)
+                            if (!metric) {
+                              console.warn('⚠️ Métrica não encontrada:', metKey, 'Disponíveis:', widgetMetrics.map(m => m.key))
+                              return null
+                            }
                             const isSorted = widget.sortField === metKey
                             const sortDirection = widget.sortDirection || 'asc'
                             return (
@@ -4081,11 +6756,11 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                               </td>
                             ))}
                             {widget.selectedMetrics!.map(metKey => {
-                              const metric = metrics.find(m => m.key === metKey)
+                              const metric = widgetMetrics.find(m => m.key === metKey)
                               const value = row[metKey] || 0
                               return (
                                 <td key={metKey} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                                  {metric?.type === 'currency' ? formatCurrency(value) :
+                                  {metric?.type === 'currency' ? new Intl.NumberFormat('pt-BR').format(value) :
                                    metric?.type === 'percentage' ? `${value.toFixed(1)}%` :
                                    new Intl.NumberFormat('pt-BR').format(value)}
                                 </td>
@@ -4136,11 +6811,20 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                   <h3 className="text-base font-semibold text-gray-900">{widget.title}</h3>
                 </div>
               )}
-      <RunRateHighlight 
-        runRateData={runRateData} 
-        isLoadingGoals={isLoadingGoals}
-        isLoadingCurrentMonth={isLoadingCurrentMonth}
-      />
+              {isWidgetLoading(widget) ? (
+                <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-200 flex items-center justify-center">
+                  <div className="flex flex-col items-center gap-3">
+                    <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+                    <span className="text-sm text-gray-600">Carregando dados...</span>
+                  </div>
+                </div>
+              ) : (
+                <RunRateHighlight 
+                  runRateData={runRateData} 
+                  isLoadingGoals={isLoadingGoals}
+                  isLoadingCurrentMonth={isLoadingCurrentMonth}
+                />
+              )}
             </div>
           )
         }
@@ -4178,7 +6862,15 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
               <X className="w-4 h-4" />
             </button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {isLoading && data.length === 0 ? (
+            <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-200 flex items-center justify-center">
+              <div className="flex flex-col items-center gap-3">
+                <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+                <span className="text-sm text-gray-600">Carregando dados...</span>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {(() => {
             // Filtrar e manter a ordem do cardOrder
             const visibleCards = cardOrder.filter(key => {
@@ -4240,7 +6932,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                     })()}
                   </div>
                   <h3 className="text-gray-600 text-sm font-medium mb-1">{metric.label}</h3>
-                  <p className="text-2xl font-bold text-gray-900">{value.toFixed(3)}x</p>
+                  <p className="text-2xl font-bold text-gray-900">{value.toFixed(2)}x</p>
                 </div>
               )
             }
@@ -4262,12 +6954,22 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
               </div>
             )
           })}
-          </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* Timeline (legado - só mostrar se não houver widgets do novo sistema) */}
-      {widgets.length === 0 && timelineMetrics.length > 0 && timelineData.length > 0 && (
+      {widgets.length === 0 && timelineMetrics.length > 0 && (
+        <>
+          {isLoading && timelineData.length === 0 ? (
+            <div className="mb-6 bg-white rounded-xl shadow-lg p-8 border border-gray-200 flex items-center justify-center">
+              <div className="flex flex-col items-center gap-3">
+                <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+                <span className="text-sm text-gray-600">Carregando dados...</span>
+              </div>
+            </div>
+          ) : timelineData.length > 0 && (
         <div className="mb-6 relative group bg-white rounded-xl shadow-lg p-4 border border-gray-200">
           <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
             <button
@@ -4361,12 +7063,16 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                       }).format(Math.round(value || 0))
                     }
                     if (metric.type === 'currency') {
-                      return formatCurrency(value)
+                      // Removido formatação de moeda - tratar como número
+                      return new Intl.NumberFormat('pt-BR', { 
+                        maximumFractionDigits: 0,
+                        minimumFractionDigits: 0 
+                      }).format(Math.round(value || 0))
                     } else if (metric.type === 'percentage') {
                       // Arredondar porcentagem sem decimais
                       return `${Math.round(value)}%`
                     } else if (name === 'roas') {
-                      return value.toFixed(3) + 'x'
+                      return value.toFixed(2) + 'x'
                     }
                     // Para todas as outras métricas, arredondar e formatar com separador de milhar, sem decimais
                     const roundedValue = Math.round(value || 0)
@@ -4408,6 +7114,8 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
               </LineChart>
             </ResponsiveContainer>
         </div>
+          )}
+        </>
       )}
 
       {data.length > 0 && (
@@ -4447,7 +7155,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                       <button
                         onClick={handleExportDashboardConfig}
                         className="text-xs font-semibold text-gray-600 hover:text-gray-800 px-2 py-1.5 rounded-lg hover:bg-gray-100 transition-all duration-200 flex items-center gap-1"
-                        title={`Exportar configurações da aba atual (${activeCustomTab === null ? 'Geral' : customTabs.find(t => t.id === activeCustomTab)?.name || 'atual'})`}
+                        title={`Exportar configurações da aba atual (${customTabs.find(t => t.id === activeCustomTab)?.name || 'atual'})`}
                       >
                         <Download className="w-3.5 h-3.5" />
                         Exportar Aba
@@ -4455,7 +7163,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                       <button
                         onClick={handleImportDashboardConfigClick}
                         className="text-xs font-semibold text-gray-600 hover:text-gray-800 px-2 py-1.5 rounded-lg hover:bg-gray-100 transition-all duration-200 flex items-center gap-1"
-                        title={`Importar configurações para a aba atual (${activeCustomTab === null ? 'Geral' : customTabs.find(t => t.id === activeCustomTab)?.name || 'atual'})`}
+                        title={`Importar configurações para a aba atual (${customTabs.find(t => t.id === activeCustomTab)?.name || 'atual'})`}
                       >
                         <FolderOpen className="w-3.5 h-3.5" />
                         Importar Aba
@@ -4818,96 +7526,783 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
             />
           )}
           
+          {/* Modal para gerenciar fontes de dados */}
+          {showDataSourcesModal && (
+            <>
+              <div
+                className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 transition-opacity duration-300"
+                onClick={() => setShowDataSourcesModal(false)}
+              />
+              <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl bg-white rounded-xl shadow-2xl z-50 max-h-[90vh] overflow-hidden flex flex-col">
+                <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                  <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <Database className="w-5 h-5 text-blue-600" />
+                    Gerenciar Fontes de Dados
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        console.log('🔄 [DEBUG] Botão de recarregar fontes clicado')
+                        // Forçar recarregamento de todas as fontes configuradas
+                        configuredDataSources.forEach(source => {
+                          if (source.isLoaded && allDataBySource.has(source.endpoint)) {
+                            // Limpar dados existentes para forçar recarregamento
+                            setAllDataBySource(prev => {
+                              const newMap = new Map(prev)
+                              newMap.delete(source.endpoint)
+                              return newMap
+                            })
+                            setDataBySource(prev => {
+                              const newMap = new Map(prev)
+                              newMap.delete(source.endpoint)
+                              return newMap
+                            })
+                            isProcessingBySourceRef.current.set(source.endpoint, false)
+                            setIsLoadingBySource(prev => {
+                              const newMap = new Map(prev)
+                              newMap.set(source.endpoint, false)
+                              return newMap
+                            })
+                            console.log('🔄 [DEBUG] Dados limpos para recarregar:', source.endpoint)
+                          }
+                          // Forçar carregamento
+                          if (source.endpoint) {
+                            console.log('🚀 [DEBUG] Forçando carregamento de:', source.endpoint)
+                            fetchDataSourceData(source.endpoint, allDataBySource)
+                          }
+                        })
+                      }}
+                      className="px-3 py-1.5 text-xs bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-all"
+                      title="Recarregar todas as fontes de dados"
+                    >
+                      🔄 Recarregar
+                    </button>
+                    <button
+                      onClick={() => setShowDataSourcesModal(false)}
+                      className="p-2 hover:bg-gray-200/60 rounded-lg transition-all"
+                    >
+                      <X className="w-4 h-4 text-gray-600" />
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-y-auto p-6">
+                  <p className="text-sm text-gray-600 mb-4">
+                    Configure quais fontes de dados estarão disponíveis para os widgets deste dashboard. 
+                    Ao adicionar uma fonte, os dados serão carregados e as métricas/dimensões serão mapeadas automaticamente.
+                  </p>
+                  
+                  {/* Lista de fontes configuradas */}
+                  <div className="mb-6">
+                    <h3 className="text-base font-semibold text-gray-900 mb-3">Fontes Configuradas</h3>
+                    {configuredDataSources.length === 0 ? (
+                      <div className="p-4 text-center text-sm text-gray-500 bg-gray-50 rounded-lg border border-gray-200">
+                        Nenhuma fonte de dados configurada. Adicione uma fonte abaixo.
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {configuredDataSources.map((source) => (
+                          <React.Fragment key={source.endpoint}>
+                            <div
+                              className="p-4 bg-gray-50 rounded-lg border border-gray-200 flex items-center justify-between"
+                            >
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="font-medium text-gray-900">{source.label}</span>
+                                  {source.restricted && (
+                                    <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">
+                                      Restrito
+                                    </span>
+                                  )}
+                                  {source.isLoading && (
+                                    <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+                                  )}
+                                  {source.isLoaded && (
+                                    <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded">
+                                      Carregado
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-gray-500 mb-2 break-all">{source.endpoint}</p>
+                                {source.isLoaded && (
+                                  <div className="text-xs text-gray-600">
+                                    {source.metrics?.length || 0} métricas • {source.dimensions?.length || 0} dimensões
+                                  </div>
+                                )}
+                                <div className="text-xs text-gray-600 mt-1">
+                                  Campo de data: <strong>{source.dateField || 'event_date'}</strong>
+                                </div>
+                                {source.isLoaded && allDataBySource.get(source.endpoint) && (
+                                  <div className="text-xs text-gray-600 mt-1">
+                                    Dados: {allDataBySource.get(source.endpoint)?.length || 0} registros totais
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {source.isLoaded && allDataBySource.get(source.endpoint) && (
+                                  <button
+                                    onClick={() => setShowingDataSample(showingDataSample === source.endpoint ? null : source.endpoint)}
+                                    className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-all"
+                                    title="Ver amostra dos dados"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => {
+                                    setCalculatedMetricsDataSource(source.endpoint)
+                                    setEditingCalculatedMetricKey(null)
+                                    setCalculatedMetricForm({ key: '', label: '', type: 'number', formula: '' })
+                                  }}
+                                  className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-all"
+                                  title="Métricas calculadas"
+                                >
+                                  <Calculator className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    const currentDateField = source.dateField || 'event_date'
+                                    const newDateField = prompt(
+                                      `Configurar campo de data para "${source.label}":\n\nDigite o nome do campo que contém a data nos dados.\n\nCampo atual: ${currentDateField}`,
+                                      currentDateField
+                                    )
+                                    if (newDateField !== null && newDateField.trim()) {
+                                      const updatedSources = configuredDataSources.map(ds =>
+                                        ds.endpoint === source.endpoint
+                                          ? { ...ds, dateField: newDateField.trim() }
+                                          : ds
+                                      )
+                                      setConfiguredDataSources(updatedSources)
+                                      DashboardStorage.saveConfig(selectedTable, { dataSources: updatedSources }).catch(error => {
+                                        console.error('❌ Erro ao salvar configuração de campo de data:', error)
+                                      })
+                                      console.log('✅ Campo de data atualizado:', source.endpoint, newDateField.trim())
+                                    }
+                                  }}
+                                  className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                  title="Configurar campo de data"
+                                >
+                                  <Calendar className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => removeDataSource(source.endpoint)}
+                                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                                  title="Remover fonte"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                            {/* Totais das métricas e dimensões */}
+                            {showingDataSample === source.endpoint && allDataBySource.get(source.endpoint) && (() => {
+                              const sourceData = allDataBySource.get(source.endpoint) || []
+                              const sourceMetrics = source.metrics || []
+                              const sourceDimensions = source.dimensions || []
+                              
+                              // Calcular totais das métricas configuradas
+                              const metricTotals = sourceMetrics.reduce((acc, metric) => {
+                                const total = sourceData.reduce((sum, item: any) => {
+                                  const value = item[metric.key]
+                                  if (typeof value === 'number') {
+                                    return sum + value
+                                  }
+                                  return sum
+                                }, 0)
+                                
+                                acc[metric.key] = {
+                                  label: metric.label,
+                                  total,
+                                  type: metric.type
+                                }
+                                return acc
+                              }, {} as Record<string, { label: string; total: number; type: string }>)
+                              
+                              // Calcular valores únicos por dimensão
+                              const dimensionUniqueCounts = sourceDimensions.reduce((acc, dimension) => {
+                                const uniqueValues = new Set<string>()
+                                sourceData.forEach((item: any) => {
+                                  const value = item[dimension.key]
+                                  if (value !== null && value !== undefined && value !== '') {
+                                    uniqueValues.add(String(value))
+                                  }
+                                })
+                                acc[dimension.key] = {
+                                  label: dimension.label,
+                                  uniqueCount: uniqueValues.size
+                                }
+                                return acc
+                              }, {} as Record<string, { label: string; uniqueCount: number }>)
+                              
+                              return (
+                                <div className="mt-3 space-y-3">
+                                  {/* Totais das Métricas */}
+                                  <div className="p-4 bg-white rounded-lg border-2 border-green-300">
+                                    <div className="flex items-center justify-between mb-3">
+                                      <h4 className="text-sm font-semibold text-gray-900">Totais das Métricas</h4>
+                                      <button
+                                        onClick={() => setShowingDataSample(null)}
+                                        className="text-gray-400 hover:text-gray-600"
+                                      >
+                                        <X className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                    <div className="text-xs space-y-2">
+                                      <div className="text-gray-500 mb-2">
+                                        {sourceData.length} registros processados
+                                      </div>
+                                      {Object.keys(metricTotals).length > 0 ? (
+                                        <div className="space-y-2">
+                                          {Object.entries(metricTotals).map(([key, metric]) => (
+                                            <div key={key} className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200">
+                                              <span className="font-medium text-gray-700">{metric.label}:</span>
+                                              <span className="font-semibold text-gray-900">
+                                                {metric.type === 'currency' 
+                                                  ? new Intl.NumberFormat('pt-BR').format(metric.total)
+                                                  : metric.type === 'percentage'
+                                                  ? `${metric.total.toFixed(2)}%`
+                                                  : new Intl.NumberFormat('pt-BR').format(metric.total)
+                                                }
+                                              </span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <div className="text-gray-500 text-center py-4">
+                                          Nenhuma métrica configurada para esta fonte
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Dimensões e Valores Únicos */}
+                                  <div className="p-4 bg-white rounded-lg border-2 border-blue-300">
+                                    <div className="flex items-center justify-between mb-3">
+                                      <h4 className="text-sm font-semibold text-gray-900">Dimensões Reconhecidas</h4>
+                                    </div>
+                                    <div className="text-xs space-y-2">
+                                      {Object.keys(dimensionUniqueCounts).length > 0 ? (
+                                        <div className="space-y-2">
+                                          {Object.entries(dimensionUniqueCounts).map(([key, dimension]) => (
+                                            <div key={key} className="flex items-center justify-between p-2 bg-blue-50 rounded border border-blue-200">
+                                              <span className="font-medium text-gray-700">{dimension.label}:</span>
+                                              <span className="font-semibold text-blue-900">
+                                                {new Intl.NumberFormat('pt-BR').format(dimension.uniqueCount)} valores únicos
+                                              </span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <div className="text-gray-500 text-center py-4">
+                                          Nenhuma dimensão reconhecida para esta fonte
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            })()}
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Lista de fontes disponíveis para adicionar */}
+                  <div>
+                    <h3 className="text-base font-semibold text-gray-900 mb-3">Adicionar Fonte de Dados</h3>
+                    {allAvailableDataSources.length === 0 ? (
+                      <div className="p-4 text-center text-sm text-gray-500 bg-gray-50 rounded-lg border border-gray-200">
+                        Carregando fontes disponíveis...
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                        {allAvailableDataSources
+                          .filter(source => !configuredDataSources.find(ds => ds.endpoint === source.endpoint))
+                          .map((source) => (
+                            <button
+                              key={source.endpoint}
+                              onClick={() => addDataSource(source)}
+                              className="w-full p-4 bg-white rounded-lg border border-gray-200 hover:border-blue-500 hover:bg-blue-50 transition-all text-left"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="font-medium text-gray-900">{source.label}</span>
+                                    {source.restricted && (
+                                      <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">
+                                        Restrito
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-gray-500">{source.endpoint}</p>
+                                </div>
+                                <Plus className="w-5 h-5 text-blue-600" />
+                              </div>
+                            </button>
+                          ))}
+                        {allAvailableDataSources.filter(source => !configuredDataSources.find(ds => ds.endpoint === source.endpoint)).length === 0 && (
+                          <div className="p-4 text-center text-sm text-gray-500 bg-gray-50 rounded-lg border border-gray-200">
+                            Todas as fontes disponíveis já estão configuradas.
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Modal para métricas calculadas */}
+          {calculatedMetricsDataSource && (
+            <>
+              <div
+                className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 transition-opacity duration-300"
+                onClick={closeCalculatedMetricsModal}
+              />
+              <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl bg-white rounded-xl shadow-2xl z-[60] max-h-[90vh] overflow-hidden flex flex-col">
+                {(() => {
+                  const source = configuredDataSources.find(s => s.endpoint === calculatedMetricsDataSource)
+                  const sourceLabel = source?.label || calculatedMetricsDataSource
+                  const existingMetrics = source?.metrics || []
+                  const calculatedOnly = existingMetrics.filter((m: any) => m?.isCalculated)
+                  const availableKeys = new Set<string>([
+                    ...existingMetrics.map(m => m.key),
+                    ...Object.keys((allDataBySource.get(calculatedMetricsDataSource)?.[0] as any) || {})
+                  ])
+
+                  const validate = (): string | null => {
+                    const key = calculatedMetricForm.key.trim()
+                    const label = calculatedMetricForm.label.trim()
+                    const formula = calculatedMetricForm.formula.trim()
+                    if (!key) return 'Key é obrigatório'
+                    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return 'Key inválido (use letras, números e _; não comece com número)'
+                    if (!label) return 'Label é obrigatório'
+                    if (!formula) return 'Fórmula é obrigatória'
+
+                    const isEditing = !!editingCalculatedMetricKey
+                    if (!isEditing) {
+                      if (existingMetrics.find(m => m.key === key)) return `Já existe uma métrica com key "${key}"`
+                    } else if (editingCalculatedMetricKey !== key) {
+                      if (existingMetrics.find(m => m.key === key)) return `Já existe uma métrica com key "${key}"`
+                    }
+
+                    // Validar identificadores usados - sem preview (somente chaves conhecidas da fonte)
+                    const processedKeys = new Set(availableKeys)
+                    const ids = extractFormulaIdentifiers(formula)
+                    const unknown = ids.filter(id => !processedKeys.has(id) && id !== key)
+                    if (unknown.length > 0) return `Campos não encontrados na fonte: ${unknown.join(', ')}`
+
+                    // Validar sintaxe do parser (sem executar preview em amostra de dados)
+                    try {
+                      if (hasAggregateFunctions(formula)) {
+                        // Sem dados: identificadores já foram validados acima
+                        evaluateAggregateFormula(formula, [])
+                      } else {
+                        evaluateFormula(formula, {}) // valida parser apenas
+                      }
+                    } catch (e: any) {
+                      return e?.message || 'Fórmula inválida'
+                    }
+
+                    return null
+                  }
+
+                  const error = validate()
+
+                  const save = async () => {
+                    if (!selectedTable || !source) return
+                    const err = validate()
+                    if (err) {
+                      alert(err)
+                      return
+                    }
+
+                    const nextMetric = {
+                      key: calculatedMetricForm.key.trim(),
+                      label: calculatedMetricForm.label.trim(),
+                      type: calculatedMetricForm.type,
+                      isCalculated: true,
+                      formula: calculatedMetricForm.formula.trim()
+                    }
+
+                    const updatedSources = configuredDataSources.map(ds => {
+                      if (ds.endpoint !== calculatedMetricsDataSource) return ds
+                      const prev = ds.metrics || []
+                      // Se editando, substituir; senão, adicionar
+                      const without = editingCalculatedMetricKey
+                        ? prev.filter((m: any) => m.key !== editingCalculatedMetricKey)
+                        : prev
+                      return {
+                        ...ds,
+                        metrics: [...without, nextMetric]
+                      }
+                    })
+
+                    setConfiguredDataSources(updatedSources)
+                    await DashboardStorage.saveConfig(selectedTable, { dataSources: updatedSources })
+                    try {
+                      recomputeCalculatedMetricsForSource(calculatedMetricsDataSource, updatedSources)
+                    } catch (e: any) {
+                      console.error('❌ Erro ao recalcular métricas:', e)
+                      alert(e?.message || 'Erro ao recalcular métricas')
+                    }
+
+                    setEditingCalculatedMetricKey(null)
+                    setCalculatedMetricForm({ key: '', label: '', type: 'number', formula: '' })
+                  }
+
+                  const remove = async (key: string) => {
+                    if (!selectedTable) return
+                    if (!window.confirm(`Remover a métrica calculada "${key}"?`)) return
+                    const updatedSources = configuredDataSources.map(ds => {
+                      if (ds.endpoint !== calculatedMetricsDataSource) return ds
+                      const prev = ds.metrics || []
+                      return { ...ds, metrics: prev.filter((m: any) => m.key !== key) }
+                    })
+                    setConfiguredDataSources(updatedSources)
+                    await DashboardStorage.saveConfig(selectedTable, { dataSources: updatedSources })
+                    try {
+                      recomputeCalculatedMetricsForSource(calculatedMetricsDataSource, updatedSources)
+                    } catch (e: any) {
+                      console.error('❌ Erro ao recalcular métricas:', e)
+                      alert(e?.message || 'Erro ao recalcular métricas')
+                    }
+                    if (editingCalculatedMetricKey === key) {
+                      setEditingCalculatedMetricKey(null)
+                      setCalculatedMetricForm({ key: '', label: '', type: 'number', formula: '' })
+                    }
+                  }
+
+                  const startEdit = (m: any) => {
+                    setEditingCalculatedMetricKey(m.key)
+                    setCalculatedMetricForm({
+                      key: m.key || '',
+                      label: m.label || '',
+                      type: m.type || 'number',
+                      formula: m.formula || ''
+                    })
+                  }
+
+                  return (
+                    <>
+                      <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                        <div>
+                          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                            <Calculator className="w-5 h-5 text-purple-600" />
+                            Métricas calculadas
+                          </h2>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Fonte: <span className="font-medium text-gray-700">{sourceLabel}</span>
+                          </p>
+                        </div>
+                        <button
+                          onClick={closeCalculatedMetricsModal}
+                          className="p-2 hover:bg-gray-200/60 rounded-lg transition-all"
+                        >
+                          <X className="w-4 h-4 text-gray-600" />
+                        </button>
+                      </div>
+                      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                        <div className="bg-gray-50 rounded-lg border border-gray-200 p-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <h3 className="text-sm font-semibold text-gray-900">Existentes</h3>
+                            <span className="text-xs text-gray-600">{calculatedOnly.length} métrica(s)</span>
+                          </div>
+                          {calculatedOnly.length === 0 ? (
+                            <div className="text-sm text-gray-500 text-center py-6">
+                              Nenhuma métrica calculada ainda.
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              {calculatedOnly
+                                .slice()
+                                .sort((a: any, b: any) => (a.label || a.key).localeCompare(b.label || b.key))
+                                .map((m: any) => (
+                                  <div key={m.key} className="p-3 bg-white rounded-lg border border-gray-200 flex items-start justify-between gap-3">
+                                    <div className="flex-1">
+                                      <div className="text-sm font-medium text-gray-900">{m.label}</div>
+                                      <div className="text-xs text-gray-500 mt-0.5">
+                                        <span className="font-mono">{m.key}</span> • <span className="font-mono">{m.formula}</span>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        onClick={() => startEdit(m)}
+                                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                        title="Editar"
+                                      >
+                                        <Pencil className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        onClick={() => remove(m.key)}
+                                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                                        title="Remover"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="bg-white rounded-lg border border-gray-200 p-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <h3 className="text-sm font-semibold text-gray-900">
+                              {editingCalculatedMetricKey ? 'Editar métrica' : 'Nova métrica'}
+                            </h3>
+                            {editingCalculatedMetricKey && (
+                              <button
+                                onClick={() => {
+                                  setEditingCalculatedMetricKey(null)
+                                  setCalculatedMetricForm({ key: '', label: '', type: 'number', formula: '' })
+                                }}
+                                className="text-xs text-gray-600 hover:text-gray-800 underline"
+                              >
+                                Cancelar edição
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">Key</label>
+                              <input
+                                value={calculatedMetricForm.key}
+                                onChange={(e) => setCalculatedMetricForm(prev => ({ ...prev, key: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                placeholder="ex: roas_calc"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">Label</label>
+                              <input
+                                value={calculatedMetricForm.label}
+                                onChange={(e) => setCalculatedMetricForm(prev => ({ ...prev, label: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                placeholder="ex: ROAS (calc)"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">Tipo</label>
+                              <select
+                                value={calculatedMetricForm.type}
+                                onChange={(e) => setCalculatedMetricForm(prev => ({ ...prev, type: e.target.value as any }))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                              >
+                                <option value="number">Número</option>
+                                <option value="currency">Moeda</option>
+                                <option value="percentage">Percentual</option>
+                              </select>
+                            </div>
+                            <div className="sm:col-span-2">
+                              <label className="block text-xs font-medium text-gray-700 mb-1">Fórmula</label>
+                              <input
+                                value={calculatedMetricForm.formula}
+                                onChange={(e) => setCalculatedMetricForm(prev => ({ ...prev, formula: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                placeholder="ex: paid_revenue / cost"
+                              />
+                              <div className="mt-2 flex items-center justify-between">
+                                <div className="text-xs text-gray-500">
+                                  Suporta: + - * / ( ) e campos (ex: <span className="font-mono">revenue</span>)
+                                </div>
+                              </div>
+                              {error && (
+                                <div className="mt-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                                  {error}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="mt-4 flex items-center justify-end gap-2">
+                            <button
+                              onClick={closeCalculatedMetricsModal}
+                              className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg border border-gray-200"
+                            >
+                              Fechar
+                            </button>
+                            <button
+                              onClick={save}
+                              disabled={!!error}
+                              className="px-4 py-2 text-sm bg-purple-600 text-white hover:bg-purple-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {editingCalculatedMetricKey ? 'Salvar alterações' : 'Criar métrica'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )
+                })()}
+              </div>
+            </>
+          )}
+          
           {/* Modal para adicionar novo widget */}
           {showAddWidgetModal && (
             <>
               <div
                 className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 transition-opacity duration-300"
-                onClick={() => setShowAddWidgetModal(false)}
+                onClick={() => {
+                  setShowAddWidgetModal(false)
+                  setAddWidgetStep('selectDataSource')
+                }}
               />
               <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white rounded-xl shadow-2xl z-50">
                 <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
                   <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                     <Plus className="w-5 h-5 text-blue-600" />
-                    Adicionar Widget
+                    {addWidgetStep === 'selectDataSource' ? 'Selecionar Fonte de Dados' : 'Adicionar Widget'}
                   </h2>
                   <button
-                    onClick={() => setShowAddWidgetModal(false)}
+                    onClick={() => {
+                      setShowAddWidgetModal(false)
+                      setAddWidgetStep('selectDataSource')
+                    }}
                     className="p-2 hover:bg-gray-200/60 rounded-lg transition-all"
                   >
                     <X className="w-4 h-4 text-gray-600" />
                   </button>
                 </div>
                 <div className="p-6">
-                  <p className="text-sm text-gray-600 mb-4">Escolha o tipo de widget que deseja adicionar:</p>
-                  <div className="grid grid-cols-1 gap-3">
-                    <button
-                      onClick={() => {
-                        addWidget('cards')
-                        setShowAddWidgetModal(false)
-                      }}
-                      className="flex items-center gap-3 p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all text-left"
-                    >
-                      <div className="p-2 bg-blue-100 rounded-lg">
-                        <Layout className="w-6 h-6 text-blue-600" />
+                  {(() => {
+                    // Obter dataSource da aba ativa
+                    const activeTab = activeCustomTab ? customTabs.find(t => t.id === activeCustomTab) : null
+                    const tabDataSource = activeTab?.dataSource
+                    
+                    if (!tabDataSource) {
+                      return (
+                        <div className="mb-4 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                          <p className="text-sm text-yellow-800 mb-3">
+                            ⚠️ Esta aba não tem uma fonte de dados configurada.
+                          </p>
+                          <p className="text-xs text-yellow-700 mb-3">
+                            Configure a fonte de dados da aba antes de adicionar widgets.
+                          </p>
+                          <button
+                            onClick={() => {
+                              setShowAddWidgetModal(false)
+                              if (activeTab) {
+                                setEditingCustomTab(activeTab)
+                                setCustomTabFormData({ 
+                                  name: activeTab.name, 
+                                  icon: activeTab.icon, 
+                                  order: activeTab.order,
+                                  isUniversal: activeTab.isUniversal || false,
+                                  dataSource: activeTab.dataSource || ''
+                                })
+                                setShowCustomTabModal(true)
+                              }
+                            }}
+                            className="text-sm text-yellow-800 underline hover:text-yellow-900"
+                          >
+                            Configurar fonte de dados da aba
+                          </button>
+                        </div>
+                      )
+                    }
+                    
+                    return (
+                      <>
+                        <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Database className="w-4 h-4 text-blue-600" />
+                            <span className="text-sm font-medium text-blue-900">
+                              Fonte de dados da aba:
+                            </span>
+                          </div>
+                          <p className="text-sm text-blue-700">
+                            {configuredDataSources.find(s => s.endpoint === tabDataSource)?.label || tabDataSource}
+                          </p>
+                          <p className="text-xs text-blue-600 mt-1">
+                            Todos os widgets desta aba usarão esta fonte de dados
+                          </p>
+                        </div>
+                      
+                      <p className="text-sm text-gray-600 mb-4">Escolha o tipo de widget que deseja adicionar:</p>
+                      
+                      <div className="grid grid-cols-1 gap-3">
+                        <button
+                          onClick={() => {
+                            // Não passar dataSource - o widget herdará da aba
+                            addWidget('cards')
+                            setShowAddWidgetModal(false)
+                            setAddWidgetStep('selectDataSource')
+                          }}
+                          className="flex items-center gap-3 p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all text-left"
+                        >
+                          <div className="p-2 bg-blue-100 rounded-lg">
+                            <Layout className="w-6 h-6 text-blue-600" />
+                          </div>
+                          <div>
+                            <h3 className="font-semibold text-gray-900">Cards (Big Numbers)</h3>
+                            <p className="text-sm text-gray-500">Exiba métricas importantes em formato de cards</p>
+                          </div>
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            // Não passar dataSource - o widget herdará da aba
+                            addWidget('timeline')
+                            setShowAddWidgetModal(false)
+                            setAddWidgetStep('selectDataSource')
+                          }}
+                          className="flex items-center gap-3 p-4 border-2 border-gray-200 rounded-xl hover:border-purple-500 hover:bg-purple-50 transition-all text-left"
+                        >
+                          <div className="p-2 bg-purple-100 rounded-lg">
+                            <TrendingUp className="w-6 h-6 text-purple-600" />
+                          </div>
+                          <div>
+                            <h3 className="font-semibold text-gray-900">Timeline</h3>
+                            <p className="text-sm text-gray-500">Gráfico de linha temporal com até 2 métricas</p>
+                          </div>
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            // Não passar dataSource - o widget herdará da aba
+                            addWidget('table')
+                            setShowAddWidgetModal(false)
+                            setAddWidgetStep('selectDataSource')
+                          }}
+                          className="flex items-center gap-3 p-4 border-2 border-gray-200 rounded-xl hover:border-green-500 hover:bg-green-50 transition-all text-left"
+                        >
+                          <div className="p-2 bg-green-100 rounded-lg">
+                            <BarChart3 className="w-6 h-6 text-green-600" />
+                          </div>
+                          <div>
+                            <h3 className="font-semibold text-gray-900">Tabela</h3>
+                            <p className="text-sm text-gray-500">Dados agrupados em formato tabular</p>
+                          </div>
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            // Não passar dataSource - o widget herdará da aba
+                            addWidget('runrate')
+                            setShowAddWidgetModal(false)
+                            setAddWidgetStep('selectDataSource')
+                          }}
+                          className="flex items-center gap-3 p-4 border-2 border-gray-200 rounded-xl hover:border-orange-500 hover:bg-orange-50 transition-all text-left"
+                        >
+                          <div className="p-2 bg-orange-100 rounded-lg">
+                            <Target className="w-6 h-6 text-orange-600" />
+                          </div>
+                          <div>
+                            <h3 className="font-semibold text-gray-900">Run Rate da Meta</h3>
+                            <p className="text-sm text-gray-500">Projeção mensal e progresso da meta</p>
+                          </div>
+                        </button>
                       </div>
-                      <div>
-                        <h3 className="font-semibold text-gray-900">Cards (Big Numbers)</h3>
-                        <p className="text-sm text-gray-500">Exiba métricas importantes em formato de cards</p>
-                      </div>
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        addWidget('timeline')
-                        setShowAddWidgetModal(false)
-                      }}
-                      className="flex items-center gap-3 p-4 border-2 border-gray-200 rounded-xl hover:border-purple-500 hover:bg-purple-50 transition-all text-left"
-                    >
-                      <div className="p-2 bg-purple-100 rounded-lg">
-                        <TrendingUp className="w-6 h-6 text-purple-600" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-gray-900">Timeline</h3>
-                        <p className="text-sm text-gray-500">Gráfico de linha temporal com até 2 métricas</p>
-                      </div>
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        addWidget('table')
-                        setShowAddWidgetModal(false)
-                      }}
-                      className="flex items-center gap-3 p-4 border-2 border-gray-200 rounded-xl hover:border-green-500 hover:bg-green-50 transition-all text-left"
-                    >
-                      <div className="p-2 bg-green-100 rounded-lg">
-                        <BarChart3 className="w-6 h-6 text-green-600" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-gray-900">Tabela</h3>
-                        <p className="text-sm text-gray-500">Dados agrupados em formato tabular</p>
-                      </div>
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        addWidget('runrate')
-                        setShowAddWidgetModal(false)
-                      }}
-                      className="flex items-center gap-3 p-4 border-2 border-gray-200 rounded-xl hover:border-orange-500 hover:bg-orange-50 transition-all text-left"
-                    >
-                      <div className="p-2 bg-orange-100 rounded-lg">
-                        <Target className="w-6 h-6 text-orange-600" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-gray-900">Run Rate da Meta</h3>
-                        <p className="text-sm text-gray-500">Projeção mensal e progresso da meta</p>
-                      </div>
-                    </button>
-                  </div>
+                    </>
+                  )
+                  })()}
                 </div>
               </div>
             </>
@@ -4946,6 +8341,33 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                 
                 {/* Conteúdo do Modal */}
                 <div className="flex-1 overflow-y-auto p-6">
+                  {/* Seletor de fonte de dados (mostrar apenas se houver múltiplas fontes configuradas) */}
+                  {configuredDataSources.length > 1 && (
+                    <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Fonte de Dados
+                      </label>
+                      <select
+                        value={currentWidget?.dataSource || ''}
+                        onChange={(e) => updateWidget(editingWidget.id, { 
+                          dataSource: e.target.value || undefined 
+                        })}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                      >
+                        <option value="">Padrão ({selectedTable})</option>
+                        {configuredDataSources.map((source) => (
+                          <option key={source.endpoint} value={source.endpoint}>
+                            {source.label} {source.restricted && '(Restrito)'}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500">
+                        Escolha de qual fonte de dados este widget irá buscar informações. 
+                        Se não selecionar, usará a fonte padrão do dashboard.
+                      </p>
+                    </div>
+                  )}
+                  
                   {editingWidget?.type === 'cards' && (
                     <div className="space-y-6">
                       {/* Título do Widget */}
@@ -4977,7 +8399,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                           {(currentWidget?.cardOrder || currentWidget?.cardMetrics || [])
                             .filter(key => currentWidget?.cardMetrics?.includes(key))
                             .map((cardKey, index) => {
-                              const metric = metrics.find(m => m.key === cardKey)
+                              const metric = widgetMetricsAndDimensions.metrics.find(m => m.key === cardKey)
                               if (!metric) return null
                               
                               return (
@@ -4989,7 +8411,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                                   onDragLeave={handleDragLeave}
                                   onDragEnd={handleDragEnd}
                                   onDrop={(e) => handleDrop(e, cardKey)}
-                                  className="flex items-center gap-3 p-3 rounded-lg bg-white border border-gray-200 hover:border-blue-300 transition-all cursor-grab active:cursor-grabbing"
+                                  className="flex items-center gap-3 p-3 rounded-lg bg-white border border-gray-200 hover:border-blue-300 transition-all cursor-grab active:cursor-grabbing group"
                                 >
                                   <GripVertical className="w-4 h-4 text-gray-400 flex-shrink-0" />
                                   <span className="text-xs font-medium text-gray-500 w-6 flex-shrink-0">
@@ -4998,6 +8420,30 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                                   <span className="text-sm font-medium text-gray-900 flex-1">
                                     {metric.label}
                                   </span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      if (currentWidget && editingWidget) {
+                                        const currentMetrics = currentWidget.cardMetrics || []
+                                        const currentOrder = currentWidget.cardOrder || []
+                                        
+                                        // Remover da lista de métricas selecionadas
+                                        const newMetrics = currentMetrics.filter(key => key !== cardKey)
+                                        // Remover da ordem
+                                        const newOrder = currentOrder.filter(key => key !== cardKey)
+                                        
+                                        updateWidget(editingWidget.id, {
+                                          cardMetrics: newMetrics,
+                                          cardOrder: newOrder
+                                        })
+                                      }
+                                    }}
+                                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100 flex-shrink-0"
+                                    title="Remover métrica"
+                                    aria-label="Remover métrica"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
                                 </div>
                               )
                             })}
@@ -5012,7 +8458,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                             onClick={toggleAllCardMetrics}
                             className="text-xs font-semibold text-blue-600 hover:text-blue-700 px-2.5 py-1 rounded-lg hover:bg-blue-50 transition-all"
                           >
-                            {(currentWidget?.cardMetrics?.length || 0) === metrics.length ? 'Desselecionar Todas' : 'Selecionar Todas'}
+                            {(currentWidget?.cardMetrics?.length || 0) === widgetMetricsAndDimensions.metrics.length ? 'Desselecionar Todas' : 'Selecionar Todas'}
                           </button>
                         </div>
                         {/* Campo de busca */}
@@ -5038,36 +8484,41 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                           </div>
                         </div>
                         <div className="space-y-2 bg-gray-50 rounded-xl p-3 border border-gray-200 max-h-[300px] overflow-y-auto">
-                          {metrics
+                          {widgetMetricsAndDimensions.metrics
                             .filter(metric => {
+                              // Filtrar métricas já selecionadas - não mostrar na lista
+                              const isInCard = (currentWidget?.cardMetrics || []).includes(metric.key)
+                              if (isInCard) return false
+                              
+                              // Aplicar filtro de busca
                               if (!cardsMetricSearch) return true
                               const searchLower = cardsMetricSearch.toLowerCase()
                               return metric.label.toLowerCase().includes(searchLower) || 
                                      metric.key.toLowerCase().includes(searchLower)
                             })
                             .map(metric => {
-                              const isInCard = (currentWidget?.cardMetrics || []).includes(metric.key)
                             return (
                               <label
                                 key={metric.key}
-                                className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
-                                  isInCard 
-                                    ? 'bg-blue-50 border border-blue-200' 
-                                    : 'bg-white border border-gray-200 hover:border-gray-300'
-                                }`}
+                                className="flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all bg-white border border-gray-200 hover:border-gray-300"
                               >
                                 <input
                                   type="checkbox"
-                                  checked={isInCard}
+                                  checked={false}
                                   onChange={() => toggleCardMetric(metric.key)}
                                   className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                                 />
-                                <span className={`text-sm font-medium flex-1 ${isInCard ? 'text-blue-900' : 'text-gray-700'}`}>
+                                <span className="text-sm font-medium flex-1 text-gray-700">
                                   {metric.label}
                                 </span>
                               </label>
                             )
                           })}
+                          {widgetMetricsAndDimensions.metrics.filter(metric => (currentWidget?.cardMetrics || []).includes(metric.key)).length === widgetMetricsAndDimensions.metrics.length && (
+                            <p className="text-sm text-gray-500 text-center py-4">
+                              Todas as métricas disponíveis já estão selecionadas
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -5120,7 +8571,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                           </div>
                         </div>
                         <div className="space-y-2 bg-gray-50 rounded-xl p-3 border border-gray-200 max-h-[400px] overflow-y-auto">
-                          {metrics
+                          {widgetMetricsAndDimensions.metrics
                             .filter(metric => {
                               if (!timelineMetricSearch) return true
                               const searchLower = timelineMetricSearch.toLowerCase()
@@ -5159,7 +8610,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                             <div className="flex items-center gap-2">
                               <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
                               <span className="text-xs font-medium text-purple-900">
-                                Selecionadas: {currentWidget.timelineMetrics.map(key => metrics.find(m => m.key === key)?.label).filter(Boolean).join(', ')}
+                                Selecionadas: {currentWidget.timelineMetrics.map(key => widgetMetricsAndDimensions.metrics.find(m => m.key === key)?.label).filter(Boolean).join(', ')}
                               </span>
                             </div>
                           </div>
@@ -5195,7 +8646,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                             onClick={toggleAllDimensions}
                             className="text-xs font-semibold text-blue-600 hover:text-blue-700 px-2.5 py-1 rounded-lg hover:bg-blue-50 transition-all"
                           >
-                            {(currentWidget?.selectedDimensions?.length || 0) === dimensions.length ? 'Desselecionar Todas' : 'Selecionar Todas'}
+                            {(currentWidget?.selectedDimensions?.length || 0) === widgetMetricsAndDimensions.dimensions.length ? 'Desselecionar Todas' : 'Selecionar Todas'}
                           </button>
                         </div>
                         {/* Campo de busca de dimensões */}
@@ -5221,7 +8672,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                           </div>
                         </div>
                         <div className="space-y-2 bg-gray-50 rounded-xl p-3 border border-gray-200 max-h-[300px] overflow-y-auto">
-                          {dimensions
+                          {widgetMetricsAndDimensions.dimensions
                             .filter(dimension => {
                               if (!tableDimensionSearch) return true
                               const searchLower = tableDimensionSearch.toLowerCase()
@@ -5268,7 +8719,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                             onClick={toggleAllTableMetrics}
                             className="text-xs font-semibold text-blue-600 hover:text-blue-700 px-2.5 py-1 rounded-lg hover:bg-blue-50 transition-all"
                           >
-                            {(currentWidget?.selectedMetrics?.length || 0) === metrics.length ? 'Desselecionar Todas' : 'Selecionar Todas'}
+                            {(currentWidget?.selectedMetrics?.length || 0) === widgetMetricsAndDimensions.metrics.length ? 'Desselecionar Todas' : 'Selecionar Todas'}
                           </button>
                         </div>
                         {/* Campo de busca de métricas */}
@@ -5294,7 +8745,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                           </div>
                         </div>
                         <div className="space-y-2 bg-gray-50 rounded-xl p-3 border border-gray-200 max-h-[300px] overflow-y-auto">
-                          {metrics
+                          {widgetMetricsAndDimensions.metrics
                             .filter(metric => {
                               if (!tableMetricSearch) return true
                               const searchLower = tableMetricSearch.toLowerCase()
@@ -5390,13 +8841,13 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
 
                 {/* Conteúdo do Modal */}
                 <div className="p-6 overflow-y-auto flex-1">
-                  {widgets.length === 0 ? (
+                  {filteredWidgets.length === 0 ? (
                     <div className="text-center py-8 text-gray-500">
                       <p>Nenhum widget para reordenar.</p>
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {widgets.map((widget, index) => {
+                      {filteredWidgets.map((widget, index) => {
                         const Icon = getWidgetTypeIcon(widget.type)
                         const color = getWidgetTypeColor(widget.type)
                         const typeName = getWidgetTypeName(widget.type)
@@ -5453,9 +8904,9 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                               </button>
                               <button
                                 onClick={() => moveWidgetDown(index)}
-                                disabled={index === widgets.length - 1}
+                                disabled={index === filteredWidgets.length - 1}
                                 className={`p-2 rounded-lg transition-all ${
-                                  index === widgets.length - 1
+                                  index === filteredWidgets.length - 1
                                     ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                     : 'bg-white border border-gray-300 text-gray-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600'
                                 }`}
@@ -5796,11 +9247,12 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                             
                             let displayValue: string
                             if (metricType === 'currency') {
-                              displayValue = formatCurrency(value)
+                              // Removido formatação de moeda - tratar como número
+                              displayValue = new Intl.NumberFormat('pt-BR').format(value)
                             } else if (metricType === 'percentage') {
                               displayValue = `${value.toFixed(2)}%`
                             } else if (metKey === 'roas') {
-                              displayValue = value.toFixed(3) + 'x'
+                              displayValue = value.toFixed(2) + 'x'
                             } else {
                               displayValue = formatNumber(value)
                             }
@@ -5932,6 +9384,66 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                   })}
                 </div>
               </div>
+
+              {/* Opção para tornar aba universal (apenas para usuários com acesso "all") */}
+              <div className={`flex items-start gap-3 p-3 rounded-lg border ${
+                hasAllAccess 
+                  ? 'bg-blue-50 border-blue-200' 
+                  : 'bg-gray-50 border-gray-200 opacity-60'
+              }`}>
+                <input
+                  type="checkbox"
+                  id="isUniversal"
+                  checked={customTabFormData.isUniversal || false}
+                  onChange={(e) => {
+                    if (hasAllAccess) {
+                      setCustomTabFormData({ ...customTabFormData, isUniversal: e.target.checked })
+                    } else {
+                      alert('Apenas usuários com nível de acesso "all" podem criar abas universais')
+                    }
+                  }}
+                  disabled={!hasAllAccess}
+                  className="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                <div className="flex-1">
+                  <label 
+                    htmlFor="isUniversal" 
+                    className={`block text-sm font-medium cursor-pointer ${
+                      hasAllAccess ? 'text-gray-900' : 'text-gray-500 cursor-not-allowed'
+                    }`}
+                  >
+                    🌍 Tornar aba universal
+                  </label>
+                  <p className="text-xs text-gray-600 mt-1">
+                    {hasAllAccess 
+                      ? 'Esta aba ficará acessível para todos os clientes.'
+                      : 'Apenas usuários com nível de acesso "all" podem criar abas universais.'
+                    }
+                  </p>
+                </div>
+              </div>
+              
+              {/* Seletor de Fonte de Dados */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Fonte de Dados
+                </label>
+                <select
+                  value={customTabFormData.dataSource || ''}
+                  onChange={(e) => setCustomTabFormData({ ...customTabFormData, dataSource: e.target.value || '' })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white"
+                >
+                  <option value="">Selecione uma fonte de dados</option>
+                  {configuredDataSources.map((source) => (
+                    <option key={source.endpoint} value={source.endpoint}>
+                      {source.label} {source.restricted && '(Restrito)'}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-gray-500">
+                  Todos os widgets desta aba usarão esta fonte de dados
+                </p>
+              </div>
             </div>
             
             <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-end gap-3">
@@ -5939,7 +9451,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                 onClick={() => {
                   setShowCustomTabModal(false)
                   setEditingCustomTab(null)
-                  setCustomTabFormData({ name: '', icon: 'BarChart3', order: 0 })
+                  setCustomTabFormData({ name: '', icon: 'BarChart3', order: 0, isUniversal: false, dataSource: '' })
                 }}
                 className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors duration-200 font-medium"
               >
@@ -5952,12 +9464,48 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                     return
                   }
                   
+                  // Obter email do usuário para abas universais
+                  let userEmail = ''
+                  try {
+                    const loginResponse = localStorage.getItem('login-response')
+                    if (loginResponse) {
+                      const parsed = JSON.parse(loginResponse)
+                      userEmail = parsed.email || parsed.user?.email || ''
+                    }
+                  } catch (error) {
+                    console.error('Erro ao obter email do usuário:', error)
+                  }
+
                   if (editingCustomTab) {
+                    // Bloquear edição de abas universais para usuários sem acesso "all"
+                    if (editingCustomTab.isUniversal && !hasAllAccess) {
+                      alert('Apenas usuários com nível de acesso "all" podem editar abas universais.')
+                      return
+                    }
+                    
                     // Atualizar aba existente
+                    const updates: any = { 
+                      name: customTabFormData.name, 
+                      icon: customTabFormData.icon,
+                      dataSource: customTabFormData.dataSource || undefined
+                    }
+                    // Só permitir alterar isUniversal se for usuário com acesso "all"
+                    if (hasAllAccess) {
+                      updates.isUniversal = customTabFormData.isUniversal
+                      if (customTabFormData.isUniversal && !editingCustomTab.createdBy) {
+                        updates.createdBy = userEmail
+                      }
+                    } else if (editingCustomTab.isUniversal) {
+                      // Manter isUniversal como true se já era universal e usuário não tem acesso all
+                      // (não pode remover o status universal, mas pode editar outros campos se não for universal)
+                      // Na verdade, se chegou aqui e é universal sem acesso all, não deveria editar
+                      // Mas por segurança, vamos manter o isUniversal
+                      updates.isUniversal = true
+                    }
                     const updated = DashboardStorage.updateCustomTab(
                       selectedTable,
                       editingCustomTab.id,
-                      { name: customTabFormData.name, icon: customTabFormData.icon }
+                      updates
                     )
                     if (updated) {
                       const updatedTabs = customTabs.map(t => t.id === updated.id ? updated : t)
@@ -5965,11 +9513,23 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                     }
                   } else {
                     // Criar nova aba
-                    const newTab = DashboardStorage.addCustomTab(selectedTable, {
+                    // Bloquear criação de abas universais para usuários sem acesso "all"
+                    if (customTabFormData.isUniversal && !hasAllAccess) {
+                      alert('Apenas usuários com nível de acesso "all" podem criar abas universais.')
+                      return
+                    }
+                    
+                    const newTabData: any = {
                       name: customTabFormData.name,
                       icon: customTabFormData.icon,
                       order: customTabs.length
-                    })
+                    }
+                    // Adicionar isUniversal e createdBy se for usuário com acesso "all"
+                    if (hasAllAccess && customTabFormData.isUniversal) {
+                      newTabData.isUniversal = true
+                      newTabData.createdBy = userEmail
+                    }
+                    const newTab = DashboardStorage.addCustomTab(selectedTable, newTabData)
                     const updatedTabs = [...customTabs, newTab].sort((a, b) => a.order - b.order)
                     setCustomTabs(updatedTabs)
                     setActiveCustomTab(newTab.id)
@@ -5977,7 +9537,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                   
                   setShowCustomTabModal(false)
                   setEditingCustomTab(null)
-                  setCustomTabFormData({ name: '', icon: 'BarChart3', order: 0 })
+                  setCustomTabFormData({ name: '', icon: 'BarChart3', order: 0, isUniversal: false, dataSource: '' })
                 }}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center gap-2"
               >
