@@ -9,14 +9,27 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Middleware de logging
+// Middleware para ajustar path no Vercel
+// No Vercel com [...].js, o path pode vir como /api/dashboard/health ou /health
 app.use((req, res, next) => {
+  const originalPath = req.path || req.url.split('?')[0];
   console.log('🔍 [VERCEL] Request recebido:', {
     method: req.method,
+    originalPath,
+    originalUrl: req.url,
     path: req.path,
-    url: req.url,
     query: req.query
   });
+  
+  // Se o path começa com /api/dashboard, remover esse prefixo
+  if (originalPath.startsWith('/api/dashboard')) {
+    const newPath = originalPath.replace('/api/dashboard', '') || '/';
+    const queryString = req.url.includes('?') ? req.url.split('?')[1] : '';
+    req.url = newPath + (queryString ? `?${queryString}` : '');
+    req.path = newPath;
+    console.log('🔄 [VERCEL] Path ajustado:', { originalPath, newPath, newUrl: req.url });
+  }
+  
   next();
 });
 
@@ -506,7 +519,41 @@ app.use((err, req, res, next) => {
 });
 
 // Handler para Vercel
-// O Vercel com [...].js já remove o prefixo /api/dashboard automaticamente
-// Então /api/dashboard/health vira /health
-export default app;
+// No Vercel, com [...].js, o path pode vir de diferentes formas
+// Precisamos criar um wrapper que ajusta o path corretamente
+export default (req, res) => {
+  // No Vercel, o path pode vir como /api/dashboard/health ou /health
+  // Vamos garantir que sempre removemos o prefixo /api/dashboard
+  const originalUrl = req.url || req.path || '';
+  const pathWithoutQuery = originalUrl.split('?')[0];
+  
+  // Remover /api/dashboard se presente
+  let cleanPath = pathWithoutQuery;
+  if (cleanPath.startsWith('/api/dashboard')) {
+    cleanPath = cleanPath.replace('/api/dashboard', '') || '/';
+  }
+  
+  // Se o path está vazio, usar '/'
+  if (!cleanPath || cleanPath === '') {
+    cleanPath = '/';
+  }
+  
+  // Preservar query string
+  const queryString = originalUrl.includes('?') ? originalUrl.split('?')[1] : '';
+  const finalUrl = cleanPath + (queryString ? `?${queryString}` : '');
+  
+  // Ajustar req para o Express
+  req.url = finalUrl;
+  req.path = cleanPath;
+  req.originalUrl = cleanPath;
+  
+  console.log('🔄 [VERCEL HANDLER] Path ajustado:', {
+    original: originalUrl,
+    clean: cleanPath,
+    final: finalUrl
+  });
+  
+  // Processar com Express
+  app(req, res);
+};
 
