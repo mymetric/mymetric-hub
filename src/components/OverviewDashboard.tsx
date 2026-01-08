@@ -5243,64 +5243,31 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   // Função para obter o growth de uma métrica
   const getMetricGrowth = (metricKey: string, widgetData?: OverviewDataItem[], widgetPreviousData?: OverviewDataItem[]): number | undefined => {
     if (isLoadingPrevious) return undefined
+
+    // Verificar se é uma métrica calculada (personalizada) para permitir crescimento também nesses casos
+    const allCalculatedMetrics = getAllCalculatedMetrics()
+    const calculatedMetric = allCalculatedMetrics.find(m => m.key === metricKey)
     
     // Se dados do widget foram fornecidos, calcular crescimento baseado nesses dados
     if (widgetData && widgetData.length > 0) {
-      const widgetTotals = calculateTotalsFromData(widgetData)
-      
-      // Se há dados do período anterior específicos do widget, usar eles
+      // Se há dados do período anterior específicos do widget, usar eles (inclui métricas calculadas)
       if (widgetPreviousData && widgetPreviousData.length > 0) {
-        const widgetPreviousTotals = calculateTotalsFromData(widgetPreviousData)
-        
-        // Buscar valor atual e anterior dinamicamente
-        const currentValue = widgetTotals[metricKey as keyof typeof widgetTotals]
-        const previousValue = widgetPreviousTotals[metricKey as keyof typeof widgetPreviousTotals]
-        
-        if (currentValue !== undefined && previousValue !== undefined) {
-          const growth = calculateGrowth(
-            typeof currentValue === 'number' ? currentValue : 0,
-            typeof previousValue === 'number' ? previousValue : 0
-          )
-          console.log('📊 [DEBUG] Crescimento calculado (widget específico):', {
-            metricKey,
-            currentValue,
-            previousValue,
-            growth
-          })
-          return growth
-        }
-        
-        // Para métricas derivadas, calcular a partir dos totais do widget
-        if (metricKey === 'conversion_rate') {
-          const current = widgetTotals.sessions > 0 ? (widgetTotals.orders / widgetTotals.sessions) * 100 : 0
-          const previous = widgetPreviousTotals.sessions > 0 ? (widgetPreviousTotals.orders / widgetPreviousTotals.sessions) * 100 : 0
-          return calculateGrowth(current, previous)
-        }
-        if (metricKey === 'add_to_cart_rate') {
-          const current = widgetTotals.sessions > 0 ? (widgetTotals.add_to_carts / widgetTotals.sessions) * 100 : 0
-          const previous = widgetPreviousTotals.sessions > 0 ? (widgetPreviousTotals.add_to_carts / widgetPreviousTotals.sessions) * 100 : 0
-          return calculateGrowth(current, previous)
-        }
-        if (metricKey === 'revenue_per_session') {
-          const current = widgetTotals.sessions > 0 ? widgetTotals.revenue / widgetTotals.sessions : 0
-          const previous = widgetPreviousTotals.sessions > 0 ? widgetPreviousTotals.revenue / widgetPreviousTotals.sessions : 0
-          return calculateGrowth(current, previous)
-        }
-        if (metricKey === 'avg_order_value') {
-          const current = widgetTotals.orders > 0 ? widgetTotals.revenue / widgetTotals.orders : 0
-          const previous = widgetPreviousTotals.orders > 0 ? widgetPreviousTotals.revenue / widgetPreviousTotals.orders : 0
-          return calculateGrowth(current, previous)
-        }
-        if (metricKey === 'roas') {
-          const current = widgetTotals.cost > 0 ? widgetTotals.revenue / widgetTotals.cost : 0
-          const previous = widgetPreviousTotals.cost > 0 ? widgetPreviousTotals.revenue / widgetPreviousTotals.cost : 0
-          return calculateGrowth(current, previous)
-        }
+        const currentValue = getMetricValue(metricKey, widgetData)
+        const previousValue = getMetricValue(metricKey, widgetPreviousData)
+
+        const growth = calculateGrowth(currentValue, previousValue)
+        console.log('📊 [DEBUG] Crescimento calculado (widget específico):', {
+          metricKey,
+          currentValue,
+          previousValue,
+          growth
+        })
+        return growth
       }
       
       // Se não há dados do período anterior específicos, tentar usar dados globais como fallback
       // Calcular usando os totais do widget atual vs dados globais do período anterior
-      // widgetTotals já foi declarado acima, reutilizando-o
+      const widgetTotals = calculateTotalsFromData(widgetData)
       const currentValue = widgetTotals[metricKey as keyof typeof widgetTotals]
       const previousValue = (previousTotals as any)[metricKey]
       
@@ -5326,6 +5293,19 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
       })
     }
     
+    // Se for uma métrica calculada (não-agregada), calcular o valor anterior a partir de previousTotals
+    // (Para fórmulas agregadas, não temos um "dataset" global do período anterior aqui.)
+    if (calculatedMetric && !hasAggregateFunctions(calculatedMetric.formula)) {
+      try {
+        const currentValue = getMetricValue(metricKey, widgetData)
+        const rawPrevious = evaluateFormula(calculatedMetric.formula, previousTotals as any)
+        const previousValue = calculatedMetric.type === 'percentage' ? rawPrevious * 100 : rawPrevious
+        return calculateGrowth(currentValue, previousValue)
+      } catch (e) {
+        console.warn('⚠️ [DEBUG] Erro ao calcular crescimento de métrica calculada:', metricKey, e)
+      }
+    }
+
     // Fallback para dados globais - primeiro tentar busca dinâmica
     const currentValue = (totals as any)[metricKey]
     const previousValue = (previousTotals as any)[metricKey]
@@ -5813,7 +5793,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
               <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
               <span className="text-xs text-gray-500">Comparando...</span>
             </div>
-          ) : growth !== undefined && growth !== 0 && (
+          ) : growth !== undefined && !Number.isNaN(growth) && (
             <div className="flex items-center gap-1">
               {growth > 0 ? (
                 <ArrowUpRight className="w-4 h-4 text-green-600" />
@@ -6325,10 +6305,14 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                               </div>
                             ) : (() => {
                               const growth = getMetricGrowth(cardKey, widgetData, widgetPreviousData)
-                              return growth !== undefined && growth !== 0 && (
+                              return growth !== undefined && !Number.isNaN(growth) && (
                                 <div className="flex items-center gap-1">
-                                  {growth > 0 ? <ArrowUpRight className="w-4 h-4 text-green-600" /> : <ArrowDownRight className="w-4 h-4 text-red-600" />}
-                                  <span className={`text-sm font-medium ${growth > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                  {growth > 0 ? (
+                                    <ArrowUpRight className="w-4 h-4 text-green-600" />
+                                  ) : growth < 0 ? (
+                                    <ArrowDownRight className="w-4 h-4 text-red-600" />
+                                  ) : null}
+                                  <span className={`text-sm font-medium ${growth > 0 ? 'text-green-600' : growth < 0 ? 'text-red-600' : 'text-gray-500'}`}>
                                     {growth > 0 ? '+' : ''}{growth.toFixed(1)}%
                                   </span>
                                 </div>
