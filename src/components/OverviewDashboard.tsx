@@ -5032,40 +5032,33 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   }, [allDataBySource, selectedTable, activeCustomTab, startDate, endDate, isTabLoading, widgets, customTabs, isLoadingBySource])
 
   // Aplicar filtros de dimensões aos dados
-  const filteredData = useMemo(() => {
-    if (Object.keys(dimensionFilters).length === 0) {
-      return data
-    }
-    
-    return data.filter(item => {
-      // Verificar se o item passa por todos os filtros
+  const applyDimensionFiltersToRows = useCallback((rows: OverviewDataItem[]) => {
+    if (Object.keys(dimensionFilters).length === 0) return rows
+    return rows.filter((item: any) => {
       for (const [dimensionKey, filterValues] of Object.entries(dimensionFilters)) {
-        const itemValue = String(item[dimensionKey as keyof OverviewDataItem] || '')
+        // Se o campo não existe nesta fonte/linha, não bloquear o item (permite filtrar "a aba toda"
+        // sem zerar widgets de dataSources que não têm essa dimensão).
+        if (item?.[dimensionKey] === undefined || item?.[dimensionKey] === null) {
+          continue
+        }
+        const itemValue = String(item[dimensionKey])
         if (!filterValues.has(itemValue)) {
           return false
         }
       }
       return true
     })
-  }, [data, dimensionFilters])
+  }, [dimensionFilters])
+
+  const filteredData = useMemo(() => {
+    return applyDimensionFiltersToRows(data)
+  }, [data, applyDimensionFiltersToRows])
   
   // Função helper para obter filteredData para um widget específico baseado no dataSource
   const getWidgetFilteredData = useCallback((widget: Widget): OverviewDataItem[] => {
     const widgetData = getWidgetData(widget)
-    if (Object.keys(dimensionFilters).length === 0) {
-      return widgetData
-    }
-    
-    return widgetData.filter(item => {
-      for (const [dimensionKey, filterValues] of Object.entries(dimensionFilters)) {
-        const itemValue = String(item[dimensionKey as keyof OverviewDataItem] || '')
-        if (!filterValues.has(itemValue)) {
-          return false
-        }
-      }
-      return true
-    })
-  }, [getWidgetData, dimensionFilters])
+    return applyDimensionFiltersToRows(widgetData)
+  }, [getWidgetData, applyDimensionFiltersToRows])
 
   // Preparar dados para timeline usando dados filtrados
   const timelineData = useMemo(() => {
@@ -6259,7 +6252,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   {(() => {
                     // Obter dados específicos do widget se tiver dataSource
-                    const widgetData = getWidgetData(widget)
+                    const widgetData = getWidgetFilteredData(widget)
                     const widgetMetrics = getWidgetMetricsAndDimensions(widget).metrics
                     
                     // Determinar dataSource do widget para buscar dados do período anterior
@@ -6271,7 +6264,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                     
                     // Obter dados do período anterior para este widget
                     const widgetPreviousData = widgetDataSource 
-                      ? previousDataBySourceRef.current.get(widgetDataSource) || []
+                      ? applyDimensionFiltersToRows(previousDataBySourceRef.current.get(widgetDataSource) || [])
                       : []
                     
                     return (widget.cardOrder || widget.cardMetrics).filter(key => {
@@ -6352,7 +6345,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
         
         if (widget.type === 'timeline') {
           // Obter dados específicos do widget se tiver dataSource
-          const widgetData = getWidgetData(widget)
+          const widgetData = getWidgetFilteredData(widget)
           const dataToUse = widgetData.length > 0 ? widgetData : filteredData
           
           // Preparar dados da timeline para este widget específico
@@ -6710,8 +6703,10 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
           const applyTabFilterFromRow = (row: any) => {
             if (!widget.selectedDimensions || widget.selectedDimensions.length === 0) return
 
-            setDimensionFilters(prev => {
-              const next: Record<string, Set<string>> = { ...prev }
+            // Ao clicar, "fixar" a correspondência daquela linha para a aba inteira
+            // (limpa filtros anteriores para evitar combinações inesperadas).
+            setDimensionFilters(() => {
+              const next: Record<string, Set<string>> = {}
               widget.selectedDimensions!.forEach(dimKey => {
                 const value = row?.[dimKey]
                 next[dimKey] = new Set([String(value ?? '')])
@@ -6725,24 +6720,6 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
               key={widget.id}
               className="mb-6 relative group transition-all duration-200 bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200"
             >
-              <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
-                <button
-                  onClick={() => setEditingWidget({ id: widget.id, type: 'table' })}
-                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
-                  title="Editar tabela"
-                  aria-label="Editar tabela"
-                >
-                  <Pencil className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => removeWidget(widget.id)}
-                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
-                  title="Remover widget"
-                  aria-label="Remover widget"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
               {isWidgetLoading(widget) ? (
                 <div className="flex items-center justify-center py-16">
                   <div className="flex flex-col items-center gap-3">
@@ -6769,22 +6746,24 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                         >
                           Baixar XLSX
                         </button>
-                        {canShowMoreRows && (
-                          <button
-                            onClick={handleShowMoreRows}
-                            className="px-3 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                            title="Exibir mais linhas"
-                          >
-                            Ver mais
-                          </button>
-                        )}
+                        <button
+                          onClick={() => setEditingWidget({ id: widget.id, type: 'table' })}
+                          className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                          title="Editar tabela"
+                          aria-label="Editar tabela"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => removeWidget(widget.id)}
+                          className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Remover widget"
+                          aria-label="Remover widget"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
-                    {widget.rowLimit !== null && typeof widget.rowLimit === 'number' && widgetTableFullData.length > 0 && (
-                      <div className="mt-2 text-xs text-gray-500">
-                        Mostrando {Math.min(widgetTableData.length, widget.rowLimit)} de {formatNumber(widgetTableFullData.length)} linhas
-                      </div>
-                    )}
                   </div>
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
@@ -6878,6 +6857,24 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                  <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between gap-3">
+                    <div className="text-xs text-gray-500">
+                      {widget.rowLimit !== null && typeof widget.rowLimit === 'number' ? (
+                        <>Mostrando {Math.min(widgetTableData.length, widget.rowLimit)} de {formatNumber(widgetTableFullData.length)} linhas</>
+                      ) : (
+                        <>Mostrando {formatNumber(widgetTableFullData.length)} linhas</>
+                      )}
+                    </div>
+                    {canShowMoreRows && (
+                      <button
+                        onClick={handleShowMoreRows}
+                        className="px-3 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                        title="Exibir mais linhas"
+                      >
+                        Ver mais
+                      </button>
+                    )}
                   </div>
                 </>
               ) : (
