@@ -1691,7 +1691,25 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   }, [selectedTable]) // Executar apenas quando selectedTable mudar
 
   // Funções para gerenciar widgets
+  const isUniversalTabId = useCallback((tabId?: string | null): boolean => {
+    if (!tabId) return false
+    const tab = customTabs.find(t => t.id === tabId)
+    return tab?.isUniversal === true
+  }, [customTabs])
+
+  const canModifyWidget = useCallback((widget?: Widget): boolean => {
+    if (!widget) return true
+    if (!isUniversalTabId(widget.customTabId)) return true
+    return hasAllAccess
+  }, [hasAllAccess, isUniversalTabId])
+
   const addWidget = (type: 'cards' | 'timeline' | 'table' | 'runrate', dataSource?: string) => {
+    // Bloquear criação de widgets em abas universais para usuários sem acesso "all"
+    if (isUniversalTabId(activeCustomTab) && !hasAllAccess) {
+      alert('Você não tem permissão para editar widgets de uma aba universal.')
+      return
+    }
+
     // Prevenir adição duplicada
     if (addingWidgetRef.current) {
       return
@@ -1738,6 +1756,11 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
 
   const removeWidget = (id: string) => {
     setWidgets(prev => {
+      const target = prev.find(w => w.id === id)
+      if (!canModifyWidget(target)) {
+        console.warn('🚫 Tentativa de remover widget de aba universal sem permissão:', { widgetId: id })
+        return prev
+      }
       const newWidgets = prev.filter(w => w.id !== id)
       // Salvar imediatamente
       if (selectedTable) {
@@ -1752,14 +1775,31 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
 
   const removeAllWidgets = () => {
     if (window.confirm('Tem certeza que deseja remover todos os widgets? Esta ação não pode ser desfeita.')) {
-      setWidgets([])
-      // Salvar imediatamente
-      if (selectedTable) {
-        console.log('💾 Removendo todos os widgets, salvando...')
-        DashboardStorage.saveConfig(selectedTable, { widgets: [] }).catch((error) => {
-          console.error('❌ Erro ao salvar após remover todos os widgets:', error)
-        })
-      }
+      setWidgets(prev => {
+        if (!hasAllAccess) {
+          // Manter widgets que pertencem a abas universais
+          const kept = prev.filter(w => isUniversalTabId(w.customTabId))
+          const removedCount = prev.length - kept.length
+          if (removedCount > 0) {
+            alert('Foram removidos apenas widgets não-universais. Widgets de abas universais não podem ser removidos.')
+          }
+          if (selectedTable) {
+            DashboardStorage.saveConfig(selectedTable, { widgets: kept }).catch((error) => {
+              console.error('❌ Erro ao salvar após remover widgets não-universais:', error)
+            })
+          }
+          return kept
+        }
+
+        // Admin/all: remover tudo
+        if (selectedTable) {
+          console.log('💾 Removendo todos os widgets, salvando...')
+          DashboardStorage.saveConfig(selectedTable, { widgets: [] }).catch((error) => {
+            console.error('❌ Erro ao salvar após remover todos os widgets:', error)
+          })
+        }
+        return []
+      })
     }
   }
 
@@ -1796,6 +1836,10 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   const updateWidget = (id: string, updates: Partial<Widget>) => {
     setWidgets(prev => {
       const widget = prev.find(w => w.id === id)
+      if (!canModifyWidget(widget)) {
+        console.warn('🚫 Tentativa de editar widget de aba universal sem permissão:', { widgetId: id, updates })
+        return prev
+      }
       const updated = prev.map(w => w.id === id ? { ...w, ...updates } : w)
       const updatedWidget = updated.find(w => w.id === id)
       
@@ -1861,6 +1905,19 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     }
     
     setWidgets(prev => {
+      // Bloquear reordenação de widgets em abas universais para usuários sem acesso "all"
+      if (!hasAllAccess) {
+        const dragged = prev.find(w => w.id === draggedWidget)
+        const dropped = prev.find(w => w.id === dropWidgetId)
+        if (!canModifyWidget(dragged) || !canModifyWidget(dropped)) {
+          console.warn('🚫 Tentativa de reordenar widget de aba universal sem permissão:', {
+            draggedWidget,
+            dropWidgetId
+          })
+          return prev
+        }
+      }
+
       const newWidgets = [...prev]
       const dragIndex = newWidgets.findIndex(w => w.id === draggedWidget)
       const dropIndex = newWidgets.findIndex(w => w.id === dropWidgetId)
@@ -6297,30 +6354,34 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
 
       {/* Renderizar múltiplos widgets */}
       {filteredWidgets.map((widget, widgetIndex) => {
+        const isWidgetLocked = isUniversalTabId(widget.customTabId) && !hasAllAccess
+
         if (widget.type === 'cards') {
           return (
             <div
               key={widget.id}
               className="mb-6 relative group transition-all duration-200 border border-transparent rounded-xl"
             >
-              <div className="absolute top-0 right-0 z-10 flex items-center gap-2">
-                <button
-                  onClick={() => setEditingWidget({ id: widget.id, type: 'cards' })}
-                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
-                  title="Editar cards"
-                  aria-label="Editar cards"
-                >
-                  <Pencil className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => removeWidget(widget.id)}
-                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
-                  title="Remover widget"
-                  aria-label="Remover widget"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+              {!isWidgetLocked && (
+                <div className="absolute top-0 right-0 z-10 flex items-center gap-2">
+                  <button
+                    onClick={() => setEditingWidget({ id: widget.id, type: 'cards' })}
+                    className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
+                    title="Editar cards"
+                    aria-label="Editar cards"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => removeWidget(widget.id)}
+                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
+                    title="Remover widget"
+                    aria-label="Remover widget"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
               {/* Título do widget */}
               {widget.title && (
                 <div className="mb-4">
@@ -6461,24 +6522,26 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
               key={widget.id}
               className="mb-6 relative group transition-all duration-200 bg-white rounded-xl shadow-lg p-4 border border-gray-200"
             >
-              <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
-                <button
-                  onClick={() => setEditingWidget({ id: widget.id, type: 'timeline' })}
-                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
-                  title="Editar timeline"
-                  aria-label="Editar timeline"
-                >
-                  <Pencil className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => removeWidget(widget.id)}
-                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
-                  title="Remover widget"
-                  aria-label="Remover widget"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+              {!isWidgetLocked && (
+                <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+                  <button
+                    onClick={() => setEditingWidget({ id: widget.id, type: 'timeline' })}
+                    className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
+                    title="Editar timeline"
+                    aria-label="Editar timeline"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => removeWidget(widget.id)}
+                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
+                    title="Remover widget"
+                    aria-label="Remover widget"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
               {isWidgetLoading(widget) ? (
                 <div className="flex items-center justify-center py-16">
                   <div className="flex flex-col items-center gap-3">
@@ -6857,6 +6920,26 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                         >
                           <X className="w-4 h-4" />
                         </button>
+                        {!isWidgetLocked && (
+                          <>
+                            <button
+                              onClick={() => setEditingWidget({ id: widget.id, type: 'table' })}
+                              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                              title="Editar tabela"
+                              aria-label="Editar tabela"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => removeWidget(widget.id)}
+                              className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Remover widget"
+                              aria-label="Remover widget"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -7169,24 +7252,26 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
               key={widget.id}
               className="mb-6 relative group transition-all duration-200 border border-transparent rounded-xl"
             >
-              <div className="absolute top-0 right-0 z-10 flex items-center gap-2">
-                <button
-                  onClick={() => setEditingWidget({ id: widget.id, type: 'runrate' })}
-                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
-                  title="Editar run rate"
-                  aria-label="Editar run rate"
-                >
-                  <Pencil className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => removeWidget(widget.id)}
-                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
-                  title="Remover widget"
-                  aria-label="Remover widget"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+              {!isWidgetLocked && (
+                <div className="absolute top-0 right-0 z-10 flex items-center gap-2">
+                  <button
+                    onClick={() => setEditingWidget({ id: widget.id, type: 'runrate' })}
+                    className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
+                    title="Editar run rate"
+                    aria-label="Editar run rate"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => removeWidget(widget.id)}
+                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100"
+                    title="Remover widget"
+                    aria-label="Remover widget"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
               {/* Título do widget */}
               {widget.title && (
                 <div className="mb-4">
