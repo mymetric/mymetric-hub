@@ -337,7 +337,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     localStorage.setItem('dashboardVisibleColumns', JSON.stringify(visibleColumns))
   }, [visibleColumns])
   
-  const [activeTab, setActiveTab] = useState<string>('visao-geral')
+  // Novo dashboard como padrão
+  const [activeTab, setActiveTab] = useState<string>('visao-geral-nova')
   const [productsSubTab, setProductsSubTab] = useState<'visao-geral' | 'funil' | null>(null)
   const [showMobileTabMenu, setShowMobileTabMenu] = useState(false)
   const [showSubmenu, setShowSubmenu] = useState(false)
@@ -494,7 +495,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   // Carregar parâmetros da URL na inicialização (após a definição do selectedTable baseado no login-response)
   useEffect(() => {
     const urlParams = getUrlParams()
-    const normalizedTab = urlParams.tab === 'leads' ? 'visao-geral' : urlParams.tab
+    const normalizedTab = urlParams.tab === 'leads' ? 'visao-geral-nova' : urlParams.tab
     
     // Aplicar parâmetros da URL aos estados (apenas se não for "all")
     if (urlParams.table && urlParams.table !== 'all') {
@@ -510,7 +511,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       setEndDate(urlParams.endDate)
     } else {
       // Usar período padrão baseado na aba ativa
-      const currentTab = normalizedTab || 'visao-geral'
+      const currentTab = normalizedTab || 'visao-geral-nova'
       const defaultPeriod = getDefaultPeriodForTab(currentTab)
       setStartDate(defaultPeriod.start)
       setEndDate(defaultPeriod.end)
@@ -592,8 +593,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
     // Aba de Leads removida do menu (manter compatibilidade com URLs antigas)
     if (tab === 'leads') {
-      setActiveTab('visao-geral')
-      const defaultPeriod = getDefaultPeriodForTab('visao-geral')
+      setActiveTab('visao-geral-nova')
+      const defaultPeriod = getDefaultPeriodForTab('visao-geral-nova')
       setStartDate(defaultPeriod.start)
       setEndDate(defaultPeriod.end)
       return
@@ -1749,8 +1750,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
   // Definir abas visíveis baseado no cliente e permissões do usuário
   const visibleTabs = [
-    'visao-geral',
     'visao-geral-nova',
+    'visao-geral',
     'midia-paga',
     'funil-conversao',
     'produtos',
@@ -1929,8 +1930,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
               }
 
               const tabConfig = {
-                'visao-geral': { label: 'Visão Geral', icon: BarChart3 },
-                'visao-geral-nova': { label: 'Visão Geral (Novo)', icon: Zap },
+                'visao-geral-nova': { label: 'Visão Geral', icon: Zap },
+                'visao-geral': { label: 'Visão Geral (Antigo)', icon: BarChart3 },
                 'midia-paga': { label: 'Mídia Paga', icon: TrendingUp },
                 'funil-conversao': { label: 'Funil de Conversão', icon: Filter },
                 'dados-detalhados': { label: 'Dados Detalhados', icon: Database },
@@ -2028,8 +2029,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium text-gray-700">Aba atual:</span>
                 <span className="text-sm text-blue-600 font-semibold">
-                  {activeTab === 'visao-geral' && 'Visão Geral'}
-                  {activeTab === 'visao-geral-nova' && 'Visão Geral (Novo)'}
+                  {activeTab === 'visao-geral-nova' && 'Visão Geral'}
+                  {activeTab === 'visao-geral' && 'Visão Geral (Antigo)'}
                   {activeTab === 'midia-paga' && 'Mídia Paga'}
                   {activeTab === 'funil-conversao' && 'Funil de Conversão'}
                   {activeTab === 'dados-detalhados' && 'Dados Detalhados'}
@@ -2076,26 +2077,6 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   <div className="p-2 space-y-1">
                     <button
                       onClick={() => {
-                        handleTabChange('visao-geral')
-                        setShowMobileTabMenu(false)
-                      }}
-                      className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
-                        activeTab === 'visao-geral'
-                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                          : 'text-gray-700 hover:bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <BarChart3 className="w-5 h-5" />
-                        <span>Visão Geral</span>
-                        {activeTab === 'visao-geral' && (
-                          <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full"></div>
-                        )}
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={() => {
                         handleTabChange('visao-geral-nova')
                         setShowMobileTabMenu(false)
                       }}
@@ -2107,8 +2088,28 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                     >
                       <div className="flex items-center gap-3">
                         <Zap className="w-5 h-5" />
-                        <span>Visão Geral (Novo)</span>
+                        <span>Visão Geral</span>
                         {activeTab === 'visao-geral-nova' && (
+                          <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full"></div>
+                        )}
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        handleTabChange('visao-geral')
+                        setShowMobileTabMenu(false)
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                        activeTab === 'visao-geral'
+                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <BarChart3 className="w-5 h-5" />
+                        <span>Visão Geral (Antigo)</span>
+                        {activeTab === 'visao-geral' && (
                           <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full"></div>
                         )}
                       </div>
@@ -2346,20 +2347,6 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
             <div className="flex overflow-x-auto scrollbar-hide pb-2 -mx-4 px-4">
               <div className="flex space-x-2 min-w-max">
                 <button
-                  onClick={() => handleTabChange('visao-geral')}
-                  className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
-                    activeTab === 'visao-geral'
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  <div className="flex items-center gap-1">
-                    <BarChart3 className="w-3 h-3" />
-                    <span>Visão Geral</span>
-                  </div>
-                </button>
-
-                <button
                   onClick={() => handleTabChange('visao-geral-nova')}
                   className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
                     activeTab === 'visao-geral-nova'
@@ -2369,7 +2356,21 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 >
                   <div className="flex items-center gap-1">
                     <Zap className="w-3 h-3" />
-                    <span>Visão (Novo)</span>
+                    <span>Visão Geral</span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => handleTabChange('visao-geral')}
+                  className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
+                    activeTab === 'visao-geral'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-1">
+                    <BarChart3 className="w-3 h-3" />
+                    <span>Visão (Antigo)</span>
                   </div>
                 </button>
                 
