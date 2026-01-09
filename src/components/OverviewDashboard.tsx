@@ -1080,6 +1080,9 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   const [tableMetricSearch, setTableMetricSearch] = useState('')
   const [tableDimensionSearch, setTableDimensionSearch] = useState('')
   
+  // Busca por widget (ex.: tabela)
+  const [tableWidgetSearchById, setTableWidgetSearchById] = useState<Record<string, string>>({})
+
   // Estado para busca de métricas na sidebar
   const [metricSearchTerm, setMetricSearchTerm] = useState('')
   
@@ -6706,7 +6709,8 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
             selectedMets: string[] | undefined,
             sortField: string | null | undefined,
             sortDirection: 'asc' | 'desc' | undefined,
-            rowLimit: number | null | undefined
+            rowLimit: number | null | undefined,
+            searchTerm?: string
           ) => {
             if (!selectedDims || !selectedMets || 
                 selectedDims.length === 0 || selectedMets.length === 0) {
@@ -6739,6 +6743,14 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
             })
             
             let result = Array.from(grouped.values())
+
+            // Aplicar busca (filtro textual)
+            const q = (searchTerm || '').toString().trim().toLowerCase()
+            if (q) {
+              result = result.filter((row: any) => {
+                return selectedDims.some(dimKey => String(row?.[dimKey] ?? '').toLowerCase().includes(q))
+              })
+            }
             
             // Aplicar ordenação se houver
             if (sortField) {
@@ -6763,7 +6775,8 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
             widget.selectedMetrics,
             widget.sortField,
             widget.sortDirection,
-            widget.rowLimit
+            widget.rowLimit,
+            tableWidgetSearchById[widget.id] || ''
           )
 
           const widgetTableFullData = getWidgetTableData(
@@ -6771,7 +6784,8 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
             widget.selectedMetrics,
             widget.sortField,
             widget.sortDirection,
-            null
+            null,
+            tableWidgetSearchById[widget.id] || ''
           )
 
           const canShowMoreRows =
@@ -6905,6 +6919,17 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
           </p>
         </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="relative hidden sm:block">
+                          <Search className="w-4 h-4 text-gray-400 absolute left-2 top-1/2 -translate-y-1/2" />
+                          <input
+                            value={tableWidgetSearchById[widget.id] || ''}
+                            onChange={(e) =>
+                              setTableWidgetSearchById(prev => ({ ...prev, [widget.id]: e.target.value }))
+                            }
+                            placeholder="Buscar..."
+                            className="pl-8 pr-3 py-2 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-44"
+                          />
+                        </div>
                         <button
                           onClick={handleDownloadWidgetTableXLSX}
                           className="px-3 py-2 text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg transition-colors"
@@ -7135,6 +7160,17 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="relative hidden sm:block">
+                        <Search className="w-4 h-4 text-gray-400 absolute left-2 top-1/2 -translate-y-1/2" />
+                        <input
+                          value={tableWidgetSearchById[widget.id] || ''}
+                          onChange={(e) =>
+                            setTableWidgetSearchById(prev => ({ ...prev, [widget.id]: e.target.value }))
+                          }
+                          placeholder="Buscar..."
+                          className="pl-8 pr-3 py-2 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-56"
+                        />
+                      </div>
                       <button
                         onClick={handleDownloadWidgetTableXLSX}
                         className="px-3 py-2 text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg transition-colors"
