@@ -15,6 +15,8 @@ import {
   Square,
   ChevronDown,
   ChevronUp,
+  Maximize2,
+  Minimize2,
   X,
   Settings,
   Save,
@@ -1068,6 +1070,9 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   
   // Estado para modo de edição/visualização (padrão: visualização)
   const [isEditMode, setIsEditMode] = useState(false)
+
+  // Fullscreen (overlay) do widget de tabela
+  const [fullscreenTableWidgetId, setFullscreenTableWidgetId] = useState<string | null>(null)
   
   // Estados para busca nos modais de edição
   const [cardsMetricSearch, setCardsMetricSearch] = useState('')
@@ -1083,6 +1088,24 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   
   // Estado para mostrar amostra de dados de uma fonte
   const [showingDataSample, setShowingDataSample] = useState<string | null>(null)
+
+  // Fechar fullscreen do widget de tabela com ESC e travar scroll do body
+  useEffect(() => {
+    if (!fullscreenTableWidgetId) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFullscreenTableWidgetId(null)
+    }
+
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.body.style.overflow = prevOverflow
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [fullscreenTableWidgetId])
 
   // Estado para modal de métricas calculadas por fonte
   const [calculatedMetricsDataSource, setCalculatedMetricsDataSource] = useState<string | null>(null)
@@ -6873,6 +6896,30 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                         >
                           Baixar XLSX
                         </button>
+                        <button
+                          onClick={() => setFullscreenTableWidgetId(widget.id)}
+                          className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                          title="Tela cheia"
+                          aria-label="Abrir tabela em tela cheia"
+                        >
+                          <Maximize2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setEditingWidget({ id: widget.id, type: 'table' })}
+                          className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                          title="Editar tabela"
+                          aria-label="Editar tabela"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => removeWidget(widget.id)}
+                          className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Remover widget"
+                          aria-label="Remover widget"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
                         {!isWidgetLocked && (
                           <>
                             <button
@@ -7054,6 +7101,147 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                   Selecione dimensões e métricas no painel de edição para visualizar os dados na tabela.
         </div>
       )}
+
+              {fullscreenTableWidgetId === widget.id && (
+                <div className="fixed inset-0 z-[90] bg-white">
+                  <div className="h-14 px-4 flex items-center justify-between border-b border-gray-200">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-semibold text-gray-900 truncate">
+                          {widget.title || 'Dados Agrupados'}
+                        </span>
+                        <span className="text-xs text-gray-500 flex-shrink-0">• Tela cheia</span>
+                      </div>
+                      <div className="text-xs text-gray-500 truncate">
+                        {widget.selectedDimensions?.length
+                          ? `Agrupados por ${widget.selectedDimensions
+                              .map(d => widgetDimensions.find(dim => dim.key === d)?.label)
+                              .filter(Boolean)
+                              .join(', ')}`
+                          : 'Tabela'}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        onClick={handleDownloadWidgetTableXLSX}
+                        className="px-3 py-2 text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg transition-colors"
+                        title="Baixar XLSX"
+                      >
+                        Baixar XLSX
+                      </button>
+                      <button
+                        onClick={() => setFullscreenTableWidgetId(null)}
+                        className="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold border border-gray-200 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+                        title="Sair da tela cheia (ESC)"
+                        aria-label="Sair da tela cheia"
+                      >
+                        <Minimize2 className="w-4 h-4" />
+                        Fechar
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="h-[calc(100vh-3.5rem)] overflow-auto p-4 sm:p-6">
+                    <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50 sticky top-0 z-10">
+                            <tr>
+                              {widget.selectedDimensions?.map(dimKey => {
+                                const dimension = widgetDimensions.find(d => d.key === dimKey)
+                                if (!dimension) return null
+                                const isSorted = widget.sortField === dimKey
+                                const sortDirection = widget.sortDirection || 'asc'
+                                return (
+                                  <th
+                                    key={dimKey}
+                                    onClick={() => handleTableSort(dimKey)}
+                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors select-none"
+                                  >
+                                    <div className="flex items-center gap-1">
+                                      <span>{dimension.label}</span>
+                                      {isSorted ? (
+                                        sortDirection === 'asc' ? (
+                                          <ArrowUp className="w-3 h-3 text-blue-600" />
+                                        ) : (
+                                          <ArrowDown className="w-3 h-3 text-blue-600" />
+                                        )
+                                      ) : (
+                                        <ArrowUpDown className="w-3 h-3 text-gray-400 opacity-50" />
+                                      )}
+                                    </div>
+                                  </th>
+                                )
+                              })}
+                              {widget.selectedMetrics?.map(metKey => {
+                                const metric = widgetMetrics.find(m => m.key === metKey)
+                                if (!metric) return null
+                                const isSorted = widget.sortField === metKey
+                                const sortDirection = widget.sortDirection || 'asc'
+                                return (
+                                  <th
+                                    key={metKey}
+                                    onClick={() => handleTableSort(metKey)}
+                                    className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors select-none"
+                                  >
+                                    <div className="flex items-center justify-end gap-1">
+                                      <span>{metric.label}</span>
+                                      {isSorted ? (
+                                        sortDirection === 'asc' ? (
+                                          <ArrowUp className="w-3 h-3 text-blue-600" />
+                                        ) : (
+                                          <ArrowDown className="w-3 h-3 text-blue-600" />
+                                        )
+                                      ) : (
+                                        <ArrowUpDown className="w-3 h-3 text-gray-400 opacity-50" />
+                                      )}
+                                    </div>
+                                  </th>
+                                )
+                              })}
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {widgetTableFullData.map((row, idx) => (
+                              <tr
+                                key={idx}
+                                className="hover:bg-blue-50 cursor-pointer transition-colors"
+                                onClick={() => {
+                                  applyTabFilterFromRow(row)
+                                  setFullscreenTableWidgetId(null)
+                                }}
+                                title="Clique para filtrar a aba por esta linha"
+                              >
+                                {widget.selectedDimensions?.map(dimKey => (
+                                  <td key={dimKey} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    {row[dimKey] || '-'}
+                                  </td>
+                                ))}
+                                {widget.selectedMetrics?.map(metKey => {
+                                  const metric = widgetMetrics.find(m => m.key === metKey)
+                                  const value = row[metKey] || 0
+                                  return (
+                                    <td key={metKey} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                                      {metric?.type === 'currency'
+                                        ? new Intl.NumberFormat('pt-BR').format(value)
+                                        : metric?.type === 'percentage'
+                                          ? `${value.toFixed(1)}%`
+                                          : new Intl.NumberFormat('pt-BR').format(value)}
+                                    </td>
+                                  )
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="px-6 py-4 border-t border-gray-200 text-xs text-gray-500">
+                        Mostrando {formatNumber(widgetTableFullData.length)} linhas
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )
         }
