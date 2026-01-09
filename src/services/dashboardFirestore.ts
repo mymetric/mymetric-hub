@@ -51,7 +51,70 @@ export interface DashboardConfig {
   customTabs?: CustomTab[]
   dataSources?: DataSource[]
   version: string
-  legacy?: any
+  legacy?: unknown
+}
+
+const DASHBOARD_API_BASE_URL: string =
+  ((import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_DASHBOARD_API_BASE_URL || '').trim()
+
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message
+  if (typeof err === 'string') return err
+  try {
+    return JSON.stringify(err)
+  } catch {
+    return 'Erro desconhecido'
+  }
+}
+
+type FetchJsonOk<T> = { ok: true; data: T }
+type FetchJsonErr = { ok: false; status?: number; message: string; bodyText?: string }
+type FetchJsonResult<T> = FetchJsonOk<T> | FetchJsonErr
+
+function isFetchOk<T>(r: FetchJsonResult<T>): r is FetchJsonOk<T> {
+  return r.ok === true
+}
+
+async function fetchJson<T>(path: string, init?: RequestInit, timeoutMs = 20000): Promise<FetchJsonResult<T>> {
+  const url = `${DASHBOARD_API_BASE_URL}${path}`
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const response = await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    })
+
+    const status = response.status
+
+    // Tentar ler JSON; se falhar, capturar texto para debug
+    const contentType = response.headers.get('content-type') || ''
+    if (!response.ok) {
+      let bodyText: string | undefined
+      try {
+        bodyText = await response.text()
+      } catch {
+        // ignore (best-effort)
+      }
+      return { ok: false, status, message: `HTTP ${status} (${url})`, bodyText }
+    }
+
+    if (contentType.includes('application/json')) {
+      const data = (await response.json()) as T
+      return { ok: true, data }
+    }
+
+    // Mesmo quando ok, se não é JSON, isso é inesperado para nossa API
+    const bodyText = await response.text().catch(() => '')
+    return { ok: false, status, message: `Resposta não-JSON em ${url}`, bodyText }
+  } catch (err: unknown) {
+    const isAbort = err instanceof DOMException && err.name === 'AbortError'
+    const message = isAbort ? `Timeout após ${timeoutMs}ms (${url})` : getErrorMessage(err) || `Falha ao chamar ${url}`
+    return { ok: false, message }
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 /**
@@ -97,7 +160,9 @@ export class DashboardFirestore {
       const { userId, email, accessControl, tableName: userTableName } = this.getUserInfo()
       console.log('👤 Informações do usuário:', { userId, email, accessControl, tableName: userTableName })
 
-      const response = await fetch('/api/dashboard/save', {
+      const result = await fetchJson<{ success: boolean; docId?: string; error?: string; message?: string }>(
+        '/api/dashboard/save',
+        {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -110,23 +175,19 @@ export class DashboardFirestore {
           accessControl,
           userTableName
         })
-      })
+        },
+      )
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }))
-        throw new Error(errorData.error || `HTTP ${response.status}`)
+      if (!isFetchOk(result)) {
+        console.error('❌ Falha no /api/dashboard/save:', result)
+        throw new Error(result.message)
       }
 
-      const result = await response.json()
-      console.log('✅ Configuração salva no Firestore via API:', { tableName, docId: result.docId })
-    } catch (error: any) {
+      console.log('✅ Configuração salva no Firestore via API:', { tableName, docId: result.data.docId })
+    } catch (error: unknown) {
       console.error('❌ Erro ao salvar configuração no Firestore:', error)
       console.error('Detalhes completos do erro:', {
-        name: error?.name,
-        message: error?.message,
-        code: error?.code,
-        stack: error?.stack,
-        cause: error?.cause
+        message: getErrorMessage(error),
       })
       
       // Re-lançar o erro para que o caller possa tratá-lo
@@ -151,22 +212,21 @@ export class DashboardFirestore {
         ...(email && { email })
       })
 
-      const response = await fetch(`/api/dashboard/load?${params.toString()}`)
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }))
-        throw new Error(errorData.error || `HTTP ${response.status}`)
+      const result = await fetchJson<{ success: boolean; config: DashboardConfig | null; error?: string; message?: string }>(
+        `/api/dashboard/load?${params.toString()}`
+      )
+      if (!isFetchOk(result)) {
+        console.error('❌ Falha no /api/dashboard/load:', result)
+        throw new Error(result.message)
       }
-
-      const result = await response.json()
       
-      if (result.config) {
+      if (result.data.config) {
         console.log('✅ Configuração carregada do Firestore via API:', { tableName })
-        return result.config as DashboardConfig
+        return result.data.config as DashboardConfig
       }
       
       return null
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Erro ao carregar configuração do Firestore:', error)
       return null
     }
@@ -178,7 +238,9 @@ export class DashboardFirestore {
   static async deleteUniversalTab(tabId: string): Promise<void> {
     try {
       const { accessControl, tableName: userTableName } = this.getUserInfo()
-      const response = await fetch('/api/dashboard/delete-universal-tab', {
+      const result = await fetchJson<{ success: boolean; error?: string; message?: string }>(
+        '/api/dashboard/delete-universal-tab',
+        {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -188,15 +250,16 @@ export class DashboardFirestore {
           accessControl,
           userTableName
         })
-      })
+        },
+      )
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }))
-        throw new Error(errorData.error || `HTTP ${response.status}`)
+      if (!isFetchOk(result)) {
+        console.error('❌ Falha no /api/dashboard/delete-universal-tab:', result)
+        throw new Error(result.message)
       }
 
       console.log('✅ Aba universal deletada do documento _universal:', tabId)
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Erro ao deletar aba universal:', error)
       throw error
     }
@@ -212,25 +275,24 @@ export class DashboardFirestore {
 
     try {
       const params = new URLSearchParams({ tableName })
-      const response = await fetch(`/api/dashboard/data-sources?${params.toString()}`)
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }))
-        throw new Error(errorData.error || `HTTP ${response.status}`)
+      const result = await fetchJson<{ success: boolean; dataSources?: DataSource[]; error?: string; message?: string }>(
+        `/api/dashboard/data-sources?${params.toString()}`
+      )
+      if (!isFetchOk(result)) {
+        console.error('❌ Falha no /api/dashboard/data-sources:', result)
+        throw new Error(result.message)
       }
-
-      const result = await response.json()
       
-      if (result.success && result.dataSources) {
+      if (result.data.success && result.data.dataSources) {
         console.log('✅ Fontes de dados carregadas:', { 
           tableName, 
-          count: result.dataSources.length 
+          count: result.data.dataSources.length 
         })
-        return result.dataSources as DataSource[]
+        return result.data.dataSources as DataSource[]
       }
       
       return []
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Erro ao buscar fontes de dados:', error)
       return []
     }
@@ -239,7 +301,7 @@ export class DashboardFirestore {
   /**
    * Testar conexão com o Firestore via API backend
    */
-  static async testConnection(): Promise<{ success: boolean; error?: any; message: string }> {
+  static async testConnection(): Promise<{ success: boolean; error?: unknown; message: string }> {
     console.log('🧪 [TEST] Iniciando teste de conexão com Firestore via API...')
     
     try {
@@ -252,9 +314,12 @@ export class DashboardFirestore {
 
       for (const endpoint of healthEndpoints) {
         try {
-          response = await fetch(endpoint)
-          if (response.ok) break
-          lastError = new Error(`HTTP ${response.status} (${endpoint})`)
+          const r = await fetchJson<unknown>(endpoint, undefined, 10000)
+          if (isFetchOk(r)) {
+            response = new Response(JSON.stringify(r.data), { status: 200, headers: { 'content-type': 'application/json' } })
+            break
+          }
+          lastError = new Error(r.message)
         } catch (e) {
           lastError = e
           response = null
@@ -289,12 +354,12 @@ export class DashboardFirestore {
       console.log('✅ [TEST] Leitura funcionou!', loaded)
 
       return { success: true, message: 'Conexão com Firestore via API funcionando corretamente!' }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ [TEST] Erro ao testar conexão:', error)
       return { 
         success: false, 
         error,
-        message: `Erro ao testar conexão: ${error?.message || 'Erro desconhecido'}` 
+        message: `Erro ao testar conexão: ${getErrorMessage(error)}` 
       }
     }
   }

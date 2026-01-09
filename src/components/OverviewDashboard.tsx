@@ -318,36 +318,22 @@ class DashboardStorage {
     }
     
     try {
-      // Verificar se o Firestore está configurado
-      // Usa o mesmo projectId do GCP_PROJECT_ID que está no .env
-      const projectId = 'mymetric-hub-shopify' // Mesmo valor do GCP_PROJECT_ID
-      const hasFirestoreConfig = projectId
-      console.log('🔄 [initFirestore-3] projectId:', projectId, 'hasFirestoreConfig:', hasFirestoreConfig)
-      
-      if (hasFirestoreConfig) {
-        try {
-          console.log('🔄 [initFirestore-4] Importando firebase...')
-          // Importar dinamicamente para evitar erros se Firebase não estiver configurado
-          await import('../services/firebase') // Garantir que o Firebase está inicializado primeiro
-          console.log('🔄 [initFirestore-5] Firebase importado, importando dashboardFirestore...')
-          await import('../services/dashboardFirestore')
-          console.log('🔄 [initFirestore-6] dashboardFirestore importado')
-          this.firestoreInitialized = true
-          console.log('✅ [initFirestore-7] Firestore inicializado com sucesso')
-        } catch (error) {
-          console.error('❌ [initFirestore-ERRO] Erro ao inicializar Firestore:', error)
-          console.error('Detalhes do erro:', {
-            message: (error as any)?.message,
-            stack: (error as any)?.stack,
-            name: (error as any)?.name
-          })
-          this.firestoreInitialized = false
-        }
-      } else {
-        console.warn('⚠️ [initFirestore-SKIP] Firestore não configurado - projectId não encontrado')
-      }
+      /**
+       * IMPORTANTE:
+       * A configuração do dashboard é carregada/salva via API backend (`/api/dashboard/*`)
+       * usando Firebase Admin no servidor (Vercel/Express local).
+       *
+       * Ou seja: NÃO depende do Firebase client (`src/services/firebase.ts`) no browser.
+       * Se o Firebase client falhar por falta de `VITE_FIREBASE_API_KEY`, ainda assim
+       * devemos conseguir carregar as configs do Firestore via backend.
+       */
+      console.log('🔄 [initFirestore-3] Importando dashboardFirestore (API backend)...')
+      await import('../services/dashboardFirestore')
+      this.firestoreInitialized = true
+      console.log('✅ [initFirestore-4] Firestore (via API backend) inicializado com sucesso')
     } catch (error) {
       console.warn('⚠️ [initFirestore-ERRO] Firestore não disponível, usando apenas localStorage:', error)
+      this.firestoreInitialized = false
     }
   }
 
