@@ -6779,9 +6779,25 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
             typeof widget.rowLimit === 'number' &&
             widgetTableFullData.length > widgetTableData.length
 
+          const canShowLessRows =
+            widget.rowLimit === null ||
+            (typeof widget.rowLimit === 'number' && widget.rowLimit > 10)
+
           const handleShowMoreRows = () => {
             const current = typeof widget.rowLimit === 'number' ? widget.rowLimit : 10
             updateWidget(widget.id, { rowLimit: current + 10 })
+          }
+
+          const handleShowLessRows = () => {
+            // Se está mostrando "todas", voltar para o padrão (10)
+            if (widget.rowLimit === null) {
+              updateWidget(widget.id, { rowLimit: 10 })
+              return
+            }
+
+            const current = typeof widget.rowLimit === 'number' ? widget.rowLimit : 10
+            const next = Math.max(10, current - 10)
+            updateWidget(widget.id, { rowLimit: next })
           }
 
           const handleDownloadWidgetTableXLSX = () => {
@@ -6903,22 +6919,6 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                           aria-label="Abrir tabela em tela cheia"
                         >
                           <Maximize2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => setEditingWidget({ id: widget.id, type: 'table' })}
-                          className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                          title="Editar tabela"
-                          aria-label="Editar tabela"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => removeWidget(widget.id)}
-                          className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          title="Remover widget"
-                          aria-label="Remover widget"
-                        >
-                          <X className="w-4 h-4" />
                         </button>
                         {!isWidgetLocked && (
                           <>
@@ -7084,14 +7084,27 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                         </div>
                       </div>
 
-                      {canShowMoreRows && (
-                        <button
-                          onClick={handleShowMoreRows}
-                          className="px-3 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors self-start sm:self-auto"
-                          title="Exibir mais linhas"
-                        >
-                          Ver mais
-                        </button>
+                      {(canShowLessRows || canShowMoreRows) && (
+                        <div className="flex items-center gap-2 self-start sm:self-auto">
+                          {canShowLessRows && (
+                            <button
+                              onClick={handleShowLessRows}
+                              className="px-3 py-2 text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg transition-colors"
+                              title="Exibir menos linhas"
+                            >
+                              Ver menos
+                            </button>
+                          )}
+                          {canShowMoreRows && (
+                            <button
+                              onClick={handleShowMoreRows}
+                              className="px-3 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                              title="Exibir mais linhas"
+                            >
+                              Ver mais
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
