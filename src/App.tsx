@@ -5,6 +5,7 @@ import LoadingScreen from './components/LoadingScreen'
 import { useAuth } from './hooks/useAuth'
 import { useTokenExpiry } from './hooks/useTokenExpiry'
 import { useDocumentTitle } from './hooks/useDocumentTitle'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 function App() {
   const { isAuthenticated, user, isLoading, isInitialized, login, logout, checkTokenExpiry } = useAuth()
@@ -79,7 +80,9 @@ function App() {
   return (
     <div className="min-h-screen">
       {isAuthenticated ? (
-        <Dashboard onLogout={handleLogout} user={user} />
+        <ErrorBoundary title="Falha ao carregar o dashboard">
+          <Dashboard onLogout={handleLogout} user={user} />
+        </ErrorBoundary>
       ) : (
         <div className="min-h-screen flex items-center justify-center p-4">
           <LoginScreen onLogin={handleLogin} />
