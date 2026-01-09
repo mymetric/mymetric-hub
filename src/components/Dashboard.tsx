@@ -27,8 +27,7 @@ import {
   Truck,
   ArrowRight,
   MessageSquare,
-  Zap,
-  RotateCcw
+  Zap
 } from 'lucide-react'
 import { api, validateTableName } from '../services/api'
 import Logo from './Logo'
@@ -60,7 +59,6 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useUrlParams } from '../hooks/useUrlParams'
 import { getDefaultPeriodForTab, getDatePresets, formatDateToString, convertBrazilianDateToISO } from '../utils/dateUtils'
 import OrdersTab from './OrdersTab'
-import LeadsTab from './LeadsTab'
 import OverviewDashboard from './OverviewDashboard'
 
 interface User {
@@ -339,17 +337,6 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     localStorage.setItem('dashboardVisibleColumns', JSON.stringify(visibleColumns))
   }, [visibleColumns])
   
-  // Estado para controlar qual versão do dashboard de visão geral usar (padrão: 'novo')
-  const [overviewVersion, setOverviewVersion] = useState<'novo' | 'antigo'>(() => {
-    const saved = localStorage.getItem('overview-dashboard-version')
-    return (saved === 'novo' || saved === 'antigo') ? saved : 'novo'
-  })
-  
-  // Salvar preferência no localStorage quando mudar
-  useEffect(() => {
-    localStorage.setItem('overview-dashboard-version', overviewVersion)
-  }, [overviewVersion])
-  
   const [activeTab, setActiveTab] = useState<string>('visao-geral')
   const [productsSubTab, setProductsSubTab] = useState<'visao-geral' | 'funil' | null>(null)
   const [showMobileTabMenu, setShowMobileTabMenu] = useState(false)
@@ -507,13 +494,14 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   // Carregar parâmetros da URL na inicialização (após a definição do selectedTable baseado no login-response)
   useEffect(() => {
     const urlParams = getUrlParams()
+    const normalizedTab = urlParams.tab === 'leads' ? 'visao-geral' : urlParams.tab
     
     // Aplicar parâmetros da URL aos estados (apenas se não for "all")
     if (urlParams.table && urlParams.table !== 'all') {
       setSelectedTable(urlParams.table)
     }
-    if (urlParams.tab) {
-      setActiveTab(urlParams.tab)
+    if (normalizedTab) {
+      setActiveTab(normalizedTab)
     }
     
     // Definir datas baseado na aba ativa ou parâmetros da URL
@@ -522,7 +510,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
       setEndDate(urlParams.endDate)
     } else {
       // Usar período padrão baseado na aba ativa
-      const currentTab = urlParams.tab || 'visao-geral'
+      const currentTab = normalizedTab || 'visao-geral'
       const defaultPeriod = getDefaultPeriodForTab(currentTab)
       setStartDate(defaultPeriod.start)
       setEndDate(defaultPeriod.end)
@@ -599,6 +587,15 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     if (tab === 'configuracao' && !user?.admin) {
       console.log('🚫 Usuário não-admin tentou acessar aba de configuração, redirecionando...')
       setActiveTab('visao-geral') // Redirecionar para visão geral
+      return
+    }
+
+    // Aba de Leads removida do menu (manter compatibilidade com URLs antigas)
+    if (tab === 'leads') {
+      setActiveTab('visao-geral')
+      const defaultPeriod = getDefaultPeriodForTab('visao-geral')
+      setStartDate(defaultPeriod.start)
+      setEndDate(defaultPeriod.end)
       return
     }
     
@@ -1753,12 +1750,12 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
   // Definir abas visíveis baseado no cliente e permissões do usuário
   const visibleTabs = [
     'visao-geral',
+    'visao-geral-nova',
     'midia-paga',
     'funil-conversao',
     'produtos',
     'tempo-real',
-    'pedidos',
-    'leads'
+    'pedidos'
   ]
 
   // Abas que ficam no submenu
@@ -1933,13 +1930,13 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
               const tabConfig = {
                 'visao-geral': { label: 'Visão Geral', icon: BarChart3 },
+                'visao-geral-nova': { label: 'Visão Geral (Novo)', icon: Zap },
                 'midia-paga': { label: 'Mídia Paga', icon: TrendingUp },
                 'funil-conversao': { label: 'Funil de Conversão', icon: Filter },
                 'dados-detalhados': { label: 'Dados Detalhados', icon: Database },
                 'frete': { label: 'Frete', icon: Truck },
                 'tempo-real': { label: 'Tempo Real', icon: Activity },
                 'pedidos': { label: 'Pedidos', icon: ShoppingBag },
-                'leads': { label: 'Leads', icon: User },
                 'influencers': { label: 'Influencers', icon: Users2 }
               }[tabId]
 
@@ -2032,6 +2029,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 <span className="text-sm font-medium text-gray-700">Aba atual:</span>
                 <span className="text-sm text-blue-600 font-semibold">
                   {activeTab === 'visao-geral' && 'Visão Geral'}
+                  {activeTab === 'visao-geral-nova' && 'Visão Geral (Novo)'}
                   {activeTab === 'midia-paga' && 'Mídia Paga'}
                   {activeTab === 'funil-conversao' && 'Funil de Conversão'}
                   {activeTab === 'dados-detalhados' && 'Dados Detalhados'}
@@ -2050,7 +2048,6 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   {activeTab === 'tempo-real' && 'Tempo Real'}
                   {activeTab === 'configuracao' && user?.admin && 'Configuração'}
                   {activeTab === 'pedidos' && 'Pedidos'}
-                  {activeTab === 'leads' && 'Leads'}
                 </span>
               </div>
               
@@ -2092,6 +2089,26 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                         <BarChart3 className="w-5 h-5" />
                         <span>Visão Geral</span>
                         {activeTab === 'visao-geral' && (
+                          <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full"></div>
+                        )}
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        handleTabChange('visao-geral-nova')
+                        setShowMobileTabMenu(false)
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                        activeTab === 'visao-geral-nova'
+                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Zap className="w-5 h-5" />
+                        <span>Visão Geral (Novo)</span>
+                        {activeTab === 'visao-geral-nova' && (
                           <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full"></div>
                         )}
                       </div>
@@ -2299,26 +2316,6 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                       </div>
                     </button>
 
-                    <button
-                      onClick={() => {
-                        handleTabChange('leads')
-                        setShowMobileTabMenu(false)
-                      }}
-                      className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
-                        activeTab === 'leads'
-                          ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                          : 'text-gray-700 hover:bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <User className="w-5 h-5" />
-                        <span>Leads</span>
-                        {activeTab === 'leads' && (
-                          <div className="ml-auto w-2 h-2 bg-purple-600 rounded-full"></div>
-                        )}
-                      </div>
-                    </button>
-
                     {selectedTable === 'iwannasleep' && (
                       <button
                         onClick={() => {
@@ -2359,6 +2356,20 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                   <div className="flex items-center gap-1">
                     <BarChart3 className="w-3 h-3" />
                     <span>Visão Geral</span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => handleTabChange('visao-geral-nova')}
+                  className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
+                    activeTab === 'visao-geral-nova'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-1">
+                    <Zap className="w-3 h-3" />
+                    <span>Visão (Novo)</span>
                   </div>
                 </button>
                 
@@ -2524,42 +2535,13 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-1">
                   <h3 className="text-lg font-semibold text-gray-900">Filtros de Período</h3>
-                  {/* Toggle para alternar entre versões (apenas na visão geral) */}
-                  {activeTab === 'visao-geral' && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500 hidden sm:inline">Versão:</span>
-                      <button
-                        onClick={() => setOverviewVersion(overviewVersion === 'novo' ? 'antigo' : 'novo')}
-                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border-2 transition-all duration-200 hover:shadow-lg hover:scale-105 active:scale-95"
-                        style={{
-                          backgroundColor: overviewVersion === 'novo' ? '#eff6ff' : '#fef3c7',
-                          borderColor: overviewVersion === 'novo' ? '#3b82f6' : '#f59e0b',
-                          color: overviewVersion === 'novo' ? '#1e40af' : '#92400e'
-                        }}
-                        title={overviewVersion === 'novo' ? 'Clique para voltar para versão antiga' : 'Clique para ir para nova versão'}
-                      >
-                        {overviewVersion === 'novo' ? (
-                          <>
-                            <RotateCcw className="w-4 h-4" />
-                            <span className="font-semibold">Voltar para versão antiga</span>
-                          </>
-                        ) : (
-                          <>
-                            <Zap className="w-4 h-4" />
-                            <span className="font-semibold">Ir para nova versão</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  )}
                 </div>
                 <p className="text-sm text-gray-600">
-                  {activeTab === 'visao-geral' && 'Padrão: Mês atual até hoje'}
+                  {(activeTab === 'visao-geral' || activeTab === 'visao-geral-nova') && 'Padrão: Mês atual até hoje'}
                   {activeTab === 'funil-conversao' && 'Padrão: Últimos 60 dias até hoje'}
                   {activeTab === 'dados-detalhados' && 'Padrão: Últimos 7 dias até hoje'}
                   {activeTab === 'pedidos' && 'Padrão: Hoje'}
-                  {activeTab === 'leads' && 'Padrão: Últimos 12 meses até hoje'}
-                  {!['visao-geral', 'funil-conversao', 'dados-detalhados'].includes(activeTab) && 'Padrão: Mês atual até hoje'}
+                  {!['visao-geral', 'visao-geral-nova', 'funil-conversao', 'dados-detalhados'].includes(activeTab) && 'Padrão: Mês atual até hoje'}
                 </p>
               </div>
               {activeTab !== 'configuracao' && (
@@ -2580,15 +2562,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
 
         {/* Content based on active tab */}
-        {activeTab === 'visao-geral' && overviewVersion === 'novo' && (
-          <OverviewDashboard 
-            selectedTable={selectedTable}
-            startDate={startDate}
-            endDate={endDate}
-          />
-        )}
-        
-        {activeTab === 'visao-geral' && overviewVersion === 'antigo' && (
+        {activeTab === 'visao-geral' && (
           <>
             {/* Mobile Full Width Container for Big Numbers */}
             <div className="md:hidden -mx-4 px-4">
@@ -4725,10 +4699,6 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
 
         {activeTab === 'pedidos' && (
           <OrdersTab selectedTable={selectedTable} startDate={startDate} endDate={endDate} />
-        )}
-
-        {activeTab === 'leads' && (
-          <LeadsTab selectedTable={selectedTable} startDate={startDate} endDate={endDate} />
         )}
 
         {/* Visão Geral Nova Tab */}

@@ -90,6 +90,7 @@ export const getDefaultPeriodForTab = (tab: string) => {
   
   switch (tab) {
     case 'visao-geral':
+    case 'visao-geral-nova':
       return {
         start: presets.thisMonth.start,
         end: presets.thisMonth.end
