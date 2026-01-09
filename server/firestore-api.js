@@ -19,17 +19,20 @@ app.use(cors());
 app.use(express.json());
 
 // Inicializar Firebase Admin SDK
-let db;
+let db = null;
+let firebaseError = null;
 const databaseId = process.env.GCP_DATABASE || 'api-admin';
 
-try {
+function initializeFirebase() {
+  if (db) return;
+  if (firebaseError) throw firebaseError;
+
   const projectId = process.env.GCP_PROJECT_ID;
-  
   if (!projectId) {
-    throw new Error('GCP_PROJECT_ID não encontrado no .env');
+    firebaseError = new Error('GCP_PROJECT_ID não encontrado no .env');
+    throw firebaseError;
   }
 
-  // Criar credenciais do service account
   const serviceAccount = {
     type: 'service_account',
     project_id: projectId,
@@ -37,24 +40,21 @@ try {
     private_key: process.env.GCP_PRIVATE_KEY?.replace(/\\n/g, '\n'),
     client_email: process.env.GCP_CLIENT_EMAIL,
     client_id: process.env.GCP_CLIENT_ID,
-    auth_uri: process.env.GCP_AUTH_URI,
-    token_uri: process.env.GCP_TOKEN_URI,
-    auth_provider_x509_cert_url: process.env.GCP_AUTH_PROVIDER_X509_CERT_URL,
+    auth_uri: process.env.GCP_AUTH_URI || 'https://accounts.google.com/o/oauth2/auth',
+    token_uri: process.env.GCP_TOKEN_URI || 'https://oauth2.googleapis.com/token',
+    auth_provider_x509_cert_url: process.env.GCP_AUTH_PROVIDER_X509_CERT_URL || 'https://www.googleapis.com/oauth2/v1/certs',
     client_x509_cert_url: process.env.GCP_CLIENT_X509_CERT_URL,
     universe_domain: process.env.GCP_UNIVERSE_DOMAIN || 'googleapis.com'
   };
 
-  // Inicializar Firebase Admin apenas se ainda não foi inicializado
   if (getApps().length === 0) {
     initializeApp({
       credential: cert(serviceAccount),
-      projectId: projectId
+      projectId
     });
     console.log('✅ Firebase Admin inicializado');
   }
 
-  // Obter instância do Firestore
-  // Para databases não-default, o Admin SDK requer passar o databaseId como segundo parâmetro
   if (databaseId && databaseId !== '(default)') {
     db = getFirestore(undefined, databaseId);
     console.log('✅ Firestore Admin configurado para database:', databaseId);
@@ -62,10 +62,16 @@ try {
     db = getFirestore();
     console.log('✅ Firestore Admin configurado para database default');
   }
+
   console.log('✅ Firestore Admin inicializado:', { projectId, databaseId });
+}
+
+// Não derrubar o servidor se faltar env; deixa os endpoints retornarem erro amigável.
+try {
+  initializeFirebase();
 } catch (error) {
-  console.error('❌ Erro ao inicializar Firebase Admin:', error);
-  process.exit(1);
+  console.error('⚠️ Firebase Admin não inicializado no startup; será inicializado sob demanda.');
+  console.error('Detalhes:', error?.message || error);
 }
 
 const COLLECTION_NAME = 'dashboard_personalizations';
@@ -165,6 +171,19 @@ function hasAllAccess(accessControl, userTableName) {
 // Endpoint para salvar configuração do dashboard
 app.post('/api/dashboard/save', async (req, res) => {
   try {
+    if (!db) {
+      try {
+        initializeFirebase();
+      } catch (error) {
+        console.error('❌ Erro ao inicializar Firestore (save):', error);
+        return res.status(500).json({
+          error: 'Firestore não inicializado',
+          message: error.message,
+          hint: 'Verifique as variáveis GCP_* no .env (server/.env ou raiz do projeto)'
+        });
+      }
+    }
+
     const { tableName, config, userId, email, accessControl, userTableName } = req.body;
 
     if (!tableName) {
@@ -340,6 +359,19 @@ app.post('/api/dashboard/save', async (req, res) => {
 // Endpoint para carregar configuração do dashboard
 app.get('/api/dashboard/load', async (req, res) => {
   try {
+    if (!db) {
+      try {
+        initializeFirebase();
+      } catch (error) {
+        console.error('❌ Erro ao inicializar Firestore (load):', error);
+        return res.status(500).json({
+          error: 'Firestore não inicializado',
+          message: error.message,
+          hint: 'Verifique as variáveis GCP_* no .env (server/.env ou raiz do projeto)'
+        });
+      }
+    }
+
     const { tableName, userId, email } = req.query;
 
     if (!tableName) {
@@ -453,6 +485,19 @@ app.get('/api/dashboard/load', async (req, res) => {
 // Endpoint para deletar uma aba universal do documento _universal
 app.post('/api/dashboard/delete-universal-tab', async (req, res) => {
   try {
+    if (!db) {
+      try {
+        initializeFirebase();
+      } catch (error) {
+        console.error('❌ Erro ao inicializar Firestore (delete-universal-tab):', error);
+        return res.status(500).json({
+          error: 'Firestore não inicializado',
+          message: error.message,
+          hint: 'Verifique as variáveis GCP_* no .env (server/.env ou raiz do projeto)'
+        });
+      }
+    }
+
     const { tabId, accessControl, userTableName } = req.body;
 
     if (!tabId) {
@@ -520,6 +565,19 @@ app.post('/api/dashboard/delete-universal-tab', async (req, res) => {
 // Endpoint para buscar fontes de dados disponíveis da collection 'tables'
 app.get('/api/dashboard/data-sources', async (req, res) => {
   try {
+    if (!db) {
+      try {
+        initializeFirebase();
+      } catch (error) {
+        console.error('❌ Erro ao inicializar Firestore (data-sources):', error);
+        return res.status(500).json({
+          error: 'Firestore não inicializado',
+          message: error.message,
+          hint: 'Verifique as variáveis GCP_* no .env (server/.env ou raiz do projeto)'
+        });
+      }
+    }
+
     const { tableName } = req.query; // Nome do cliente para filtrar endpoints restritos
 
     console.log('📥 Buscando fontes de dados:', { tableName });
@@ -623,9 +681,16 @@ app.get('/api/dashboard/data-sources', async (req, res) => {
 
 // Endpoint de health check
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     service: 'firestore-api',
+    firestoreInitialized: !!db,
+    envVars: {
+      hasProjectId: !!process.env.GCP_PROJECT_ID,
+      hasPrivateKey: !!process.env.GCP_PRIVATE_KEY,
+      hasClientEmail: !!process.env.GCP_CLIENT_EMAIL,
+      databaseId: process.env.GCP_DATABASE || 'api-admin'
+    },
     timestamp: new Date().toISOString()
   });
 });
