@@ -243,7 +243,27 @@ export class DashboardFirestore {
     console.log('🧪 [TEST] Iniciando teste de conexão com Firestore via API...')
     
     try {
-      const response = await fetch('/api/health')
+      // No Vercel, o endpoint de health check da função serverless está em /api/dashboard/health.
+      // No servidor local (server/firestore-api.js), historicamente era /api/health.
+      // Para evitar travar/gerar 404 no deploy, tentamos o caminho novo e fazemos fallback.
+      const healthEndpoints = ['/api/dashboard/health', '/api/health']
+      let response: Response | null = null
+      let lastError: unknown = null
+
+      for (const endpoint of healthEndpoints) {
+        try {
+          response = await fetch(endpoint)
+          if (response.ok) break
+          lastError = new Error(`HTTP ${response.status} (${endpoint})`)
+        } catch (e) {
+          lastError = e
+          response = null
+        }
+      }
+
+      if (!response) {
+        throw lastError instanceof Error ? lastError : new Error('Falha ao chamar endpoint de health check')
+      }
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`)
