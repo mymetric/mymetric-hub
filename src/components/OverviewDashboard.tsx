@@ -191,6 +191,124 @@ class DashboardStorage {
   private static readonly CURRENT_VERSION = '2.0'
   private static firestoreInitialized = false
 
+  // Normalizar/sanitizar config vinda do Firestore/localStorage
+  // Objetivo: evitar quebra de render quando a config salva tem shape inesperado.
+  private static normalizeConfig(raw: unknown): DashboardConfig | null {
+    if (!raw || typeof raw !== 'object') return null
+    const obj = raw as any
+
+    const normalizeStringArray = (value: unknown): string[] | undefined => {
+      if (!Array.isArray(value)) return undefined
+      return value.filter((v) => typeof v === 'string')
+    }
+
+    const isValidWidgetType = (t: unknown): t is Widget['type'] => {
+      return t === 'cards' || t === 'timeline' || t === 'table' || t === 'runrate'
+    }
+
+    const normalizeWidget = (w: unknown, index: number): Widget | null => {
+      if (!w || typeof w !== 'object') return null
+      const ww = w as any
+      if (!isValidWidgetType(ww.type)) return null
+
+      const id = typeof ww.id === 'string' && ww.id.trim() ? ww.id : `widget-${ww.type}-${index}`
+
+      const sortDirection: Widget['sortDirection'] =
+        ww.sortDirection === 'asc' || ww.sortDirection === 'desc' ? ww.sortDirection : undefined
+
+      return {
+        id,
+        type: ww.type,
+        title: typeof ww.title === 'string' ? ww.title : undefined,
+        customTabId: typeof ww.customTabId === 'string' ? ww.customTabId : undefined,
+        dataSource: typeof ww.dataSource === 'string' ? ww.dataSource : undefined,
+        cardMetrics: normalizeStringArray(ww.cardMetrics),
+        cardOrder: normalizeStringArray(ww.cardOrder),
+        timelineMetrics: normalizeStringArray(ww.timelineMetrics),
+        selectedDimensions: normalizeStringArray(ww.selectedDimensions),
+        selectedMetrics: normalizeStringArray(ww.selectedMetrics),
+        sortField: typeof ww.sortField === 'string' || ww.sortField === null ? ww.sortField : undefined,
+        sortDirection,
+        rowLimit: typeof ww.rowLimit === 'number' || ww.rowLimit === null ? ww.rowLimit : undefined
+      }
+    }
+
+    const normalizeCustomTab = (t: unknown, index: number): CustomTab | null => {
+      if (!t || typeof t !== 'object') return null
+      const tt = t as any
+      const id = typeof tt.id === 'string' && tt.id.trim() ? tt.id : `custom-tab-${index}`
+      const name = typeof tt.name === 'string' && tt.name.trim() ? tt.name : `Aba ${index + 1}`
+      const icon = typeof tt.icon === 'string' && tt.icon.trim() ? tt.icon : 'BarChart3'
+      const order = typeof tt.order === 'number' ? tt.order : index
+      const createdAt = typeof tt.createdAt === 'string' ? tt.createdAt : new Date().toISOString()
+      const updatedAt = typeof tt.updatedAt === 'string' ? tt.updatedAt : createdAt
+      return {
+        id,
+        name,
+        icon,
+        order,
+        createdAt,
+        updatedAt,
+        isUniversal: tt.isUniversal === true,
+        createdBy: typeof tt.createdBy === 'string' ? tt.createdBy : undefined,
+        dataSource: typeof tt.dataSource === 'string' ? tt.dataSource : undefined
+      }
+    }
+
+    const normalizeDataSource = (s: unknown): DataSource | null => {
+      if (!s || typeof s !== 'object') return null
+      const ss = s as any
+      if (typeof ss.endpoint !== 'string' || !ss.endpoint.trim()) return null
+      return {
+        endpoint: ss.endpoint,
+        label: typeof ss.label === 'string' && ss.label.trim() ? ss.label : ss.endpoint,
+        restricted: ss.restricted === true,
+        metrics: Array.isArray(ss.metrics)
+          ? ss.metrics
+              .filter((m: any) => m && typeof m.key === 'string' && typeof m.label === 'string' && (m.type === 'number' || m.type === 'currency' || m.type === 'percentage'))
+              .map((m: any) => ({
+                key: m.key,
+                label: m.label,
+                type: m.type,
+                isCalculated: m.isCalculated === true,
+                formula: typeof m.formula === 'string' ? m.formula : undefined
+              }))
+          : undefined,
+        dimensions: Array.isArray(ss.dimensions)
+          ? ss.dimensions
+              .filter((d: any) => d && typeof d.key === 'string' && typeof d.label === 'string')
+              .map((d: any) => ({ key: d.key, label: d.label }))
+          : undefined,
+        isLoaded: ss.isLoaded === true,
+        isLoading: ss.isLoading === true
+      }
+    }
+
+    const widgetsRaw: unknown[] = Array.isArray(obj.widgets) ? obj.widgets : []
+    const widgets = widgetsRaw
+      .map((w, i) => normalizeWidget(w, i))
+      .filter((w): w is Widget => !!w)
+
+    const customTabsRaw: unknown[] = Array.isArray(obj.customTabs) ? obj.customTabs : []
+    const customTabs = customTabsRaw
+      .map((t, i) => normalizeCustomTab(t, i))
+      .filter((t): t is CustomTab => !!t)
+      .sort((a, b) => a.order - b.order)
+
+    const dataSourcesRaw: unknown[] = Array.isArray(obj.dataSources) ? obj.dataSources : []
+    const dataSources = dataSourcesRaw
+      .map((s) => normalizeDataSource(s))
+      .filter((s): s is DataSource => !!s)
+
+    return {
+      widgets,
+      customTabs,
+      dataSources,
+      version: typeof obj.version === 'string' ? obj.version : this.CURRENT_VERSION,
+      legacy: obj.legacy && typeof obj.legacy === 'object' ? obj.legacy : undefined
+    }
+  }
+
   // Inicializar Firestore de forma lazy
   static async initFirestore() {
     console.log('🔄 [initFirestore-1] Iniciando initFirestore, firestoreInitialized:', this.firestoreInitialized)
@@ -250,11 +368,12 @@ class DashboardStorage {
           const { DashboardFirestore } = await import('../services/dashboardFirestore')
           const firestoreConfig = await DashboardFirestore.loadConfig(tableName)
           if (firestoreConfig) {
+            const normalized = this.normalizeConfig(firestoreConfig) || firestoreConfig
             // Sincronizar com localStorage como backup
             const storageKey = this.getStorageKey(tableName)
-            localStorage.setItem(storageKey, JSON.stringify(firestoreConfig))
+            localStorage.setItem(storageKey, JSON.stringify(normalized))
             console.log('✅ Configuração carregada do Firestore e sincronizada com localStorage')
-            return firestoreConfig
+            return normalized as DashboardConfig
           }
         } catch (error) {
           console.warn('⚠️ Erro ao carregar do Firestore, tentando localStorage:', error)
@@ -271,18 +390,19 @@ class DashboardStorage {
       
       if (saved) {
         const parsed = JSON.parse(saved)
+        const normalized = this.normalizeConfig(parsed) || parsed
         
         // Se já tem widgets e versão, retornar direto (não migrar)
-        if (parsed.widgets && Array.isArray(parsed.widgets) && parsed.widgets.length > 0 && parsed.version === this.CURRENT_VERSION) {
-          return parsed as DashboardConfig
+        if (normalized.widgets && Array.isArray(normalized.widgets) && normalized.widgets.length > 0 && normalized.version === this.CURRENT_VERSION) {
+          return normalized as DashboardConfig
         }
         
         // Migrar de versão antiga se necessário
-        if (!parsed.version || parsed.version !== this.CURRENT_VERSION) {
-          return this.migrateFromLegacy(tableName, parsed)
+        if (!normalized.version || normalized.version !== this.CURRENT_VERSION) {
+          return this.migrateFromLegacy(tableName, normalized)
         }
         
-        return parsed as DashboardConfig
+        return normalized as DashboardConfig
       }
     } catch (error) {
       console.error('❌ Erro ao carregar configurações do localStorage:', error)
@@ -304,16 +424,17 @@ class DashboardStorage {
       
       if (saved) {
         const parsed = JSON.parse(saved)
+        const normalized = this.normalizeConfig(parsed) || parsed
         
-        if (parsed.widgets && Array.isArray(parsed.widgets) && parsed.widgets.length > 0 && parsed.version === this.CURRENT_VERSION) {
-          return parsed as DashboardConfig
+        if (normalized.widgets && Array.isArray(normalized.widgets) && normalized.widgets.length > 0 && normalized.version === this.CURRENT_VERSION) {
+          return normalized as DashboardConfig
         }
         
-        if (!parsed.version || parsed.version !== this.CURRENT_VERSION) {
-          return this.migrateFromLegacy(tableName, parsed)
+        if (!normalized.version || normalized.version !== this.CURRENT_VERSION) {
+          return this.migrateFromLegacy(tableName, normalized)
         }
         
-        return parsed as DashboardConfig
+        return normalized as DashboardConfig
       }
     } catch (error) {
       console.error('❌ Erro ao carregar configurações:', error)
