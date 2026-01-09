@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { Search, Database, BarChart3, TrendingUp, Filter, Truck, ShoppingCart, Activity, Package, Target, Settings, ArrowRight, Loader2, MessageSquare } from 'lucide-react'
+import { Search, Database, BarChart3, Zap, TrendingUp, Filter, Truck, ShoppingCart, Activity, Package, Target, Settings, ArrowRight, Loader2, MessageSquare } from 'lucide-react'
 import { useClientList } from '../hooks/useClientList'
 
 interface SpotlightUnifiedProps {
@@ -123,7 +123,8 @@ const SpotlightUnified = ({
 
   // Configuração das abas disponíveis
   const tabConfig = {
-    'visao-geral': { label: 'Visão Geral', icon: BarChart3, description: 'Métricas gerais e KPIs' },
+    'visao-geral-nova': { label: 'Visão Geral', icon: Zap, description: 'Métricas gerais e KPIs (novo)' },
+    'visao-geral': { label: 'Visão Geral (Antigo)', icon: BarChart3, description: 'Versão antiga da visão geral' },
     'midia-paga': { label: 'Mídia Paga', icon: TrendingUp, description: 'Análise de campanhas pagas' },
     'funil-conversao': { label: 'Funil de Conversão', icon: Filter, description: 'Jornada do cliente' },
     'dados-detalhados': { label: 'Dados Detalhados', icon: Database, description: 'Dados brutos e análises' },
@@ -138,6 +139,7 @@ const SpotlightUnified = ({
 
   // Abas visíveis baseado no cliente e permissões
   const visibleTabs = [
+    'visao-geral-nova',
     'visao-geral',
     'midia-paga', 
     'funil-conversao',
