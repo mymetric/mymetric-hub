@@ -555,6 +555,49 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
     })
   }, [selectedTable, startDate, endDate, activeTab]) // Removendo updateUrlParams da dependência
 
+  // Garantir que a aba atual é compatível com o cliente selecionado.
+  // Quando o usuário troca de cliente, abas específicas (ex: influencers / havaianas / funil-whatsapp)
+  // podem deixar de existir no menu. Sem esse guard, o conteúdo pode ficar em branco ou "travado".
+  useEffect(() => {
+    if (!selectedTable) return
+
+    const alwaysVisibleTabs = [
+      'visao-geral-nova',
+      'visao-geral',
+      'midia-paga',
+      'funil-conversao',
+      'produtos',
+      'tempo-real',
+      'pedidos'
+    ]
+
+    const clientSpecificTabs: string[] = []
+    if (selectedTable === 'havaianas') clientSpecificTabs.push('havaianas')
+    if (selectedTable === 'coroasparavelorio') clientSpecificTabs.push('funil-whatsapp')
+    if (selectedTable === 'iwannasleep') clientSpecificTabs.push('influencers')
+
+    const extraTabs = [
+      'dados-detalhados',
+      'frete',
+      'ab-testing',
+      ...(user?.admin ? ['configuracao', 'tokendebug'] : [])
+    ]
+
+    const allowedTabs = new Set<string>([
+      ...alwaysVisibleTabs,
+      ...clientSpecificTabs,
+      ...extraTabs
+    ])
+
+    if (!allowedTabs.has(activeTab)) {
+      setActiveTab('visao-geral-nova')
+      setShowSubmenu(false)
+      setShowProductsSubmenu(false)
+      setProductsSubTab(null)
+      setShowMobileTabMenu(false)
+    }
+  }, [selectedTable, user?.admin, activeTab])
+
   // Função para calcular período anterior
   const getPreviousPeriod = () => {
     const start = new Date(startDate)
@@ -4600,7 +4643,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
         )}
 
         {/* Havaianas Tab */}
-        {activeTab === 'havaianas' && (
+        {activeTab === 'havaianas' && selectedTable === 'havaianas' && (
           <HavaianasDashboard 
             selectedTable={selectedTable}
             startDate={startDate}
