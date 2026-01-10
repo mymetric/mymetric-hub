@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import { URL } from 'url';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
@@ -8,30 +9,6 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(express.json());
-
-// Middleware para ajustar path no Vercel
-// No Vercel com [...].js, o path pode vir como /api/dashboard/health ou /health
-app.use((req, res, next) => {
-  const originalPath = req.path || req.url.split('?')[0];
-  console.log('🔍 [VERCEL] Request recebido:', {
-    method: req.method,
-    originalPath,
-    originalUrl: req.url,
-    path: req.path,
-    query: req.query
-  });
-  
-  // Se o path começa com /api/dashboard, remover esse prefixo
-  if (originalPath.startsWith('/api/dashboard')) {
-    const newPath = originalPath.replace('/api/dashboard', '') || '/';
-    const queryString = req.url.includes('?') ? req.url.split('?')[1] : '';
-    req.url = newPath + (queryString ? `?${queryString}` : '');
-    req.path = newPath;
-    console.log('🔄 [VERCEL] Path ajustado:', { originalPath, newPath, newUrl: req.url });
-  }
-  
-  next();
-});
 
 // Inicializar Firebase Admin SDK
 let db = null;
@@ -105,6 +82,8 @@ try {
 
 const COLLECTION_NAME = 'dashboard_personalizations';
 const UNIVERSAL_DOC_ID = '_universal';
+const UNIVERSAL_CALCULATED_METRICS_DOC_ID = '_universal_calculated_metrics';
+const UNIVERSAL_DATA_SOURCES_DOC_ID = '_universal_data_sources';
 
 function getDocId(tableName, userId, email) {
   if (userId) {
@@ -481,6 +460,265 @@ app.get('/data-sources', async (req, res) => {
   }
 });
 
+// Salvar métricas calculadas universais
+// IMPORTANTE: Esta rota deve corresponder ao path sem /api/dashboard
+app.post('/save-universal-calculated-metrics', async (req, res) => {
+  console.log('🎯 [ROUTE] POST /save-universal-calculated-metrics CHAMADO!', {
+    method: req.method,
+    path: req.path,
+    url: req.url,
+    originalUrl: req.originalUrl,
+    bodyKeys: req.body ? Object.keys(req.body) : []
+  });
+  
+  try {
+    if (!db) {
+      try {
+        initializeFirebase();
+      } catch (error) {
+        console.error('❌ Erro ao inicializar Firestore:', error);
+        return res.status(500).json({ 
+          error: 'Firestore não inicializado', 
+          message: error.message
+        });
+      }
+    }
+    
+    const { metrics, userId, email, accessControl } = req.body || {};
+
+    if (!metrics || typeof metrics !== 'object') {
+      console.error('❌ [VALIDATION] metrics inválido:', { metrics, type: typeof metrics });
+      return res.status(400).json({ error: 'metrics é obrigatório e deve ser um objeto' });
+    }
+    
+    // Validar que metrics é um objeto válido
+    if (Array.isArray(metrics)) {
+      return res.status(400).json({ error: 'metrics deve ser um objeto, não um array' });
+    }
+    
+    console.log('💾 [SAVE-UNIVERSAL-METRICS] Salvando métricas calculadas universais:', {
+      dataSourcesCount: Object.keys(metrics).length,
+      dataSources: Object.keys(metrics)
+    });
+
+    const docRef = db.collection(COLLECTION_NAME).doc(UNIVERSAL_CALCULATED_METRICS_DOC_ID);
+    const docSnap = await docRef.get();
+    const now = new Date();
+
+    // Construir objeto para salvar - apenas campos essenciais, SEM updatedBy/createdBy
+    // Usar set() completo (sem merge) para substituir completamente o documento
+    // Isso remove campos undefined existentes
+    const dataToSave = {
+      metrics: metrics,
+      updatedAt: now
+    };
+
+    if (docSnap.exists) {
+      // O documento já existe - preservar createdAt se existir
+      const existingData = docSnap.data();
+      if (existingData && existingData.createdAt) {
+        dataToSave.createdAt = existingData.createdAt;
+      } else {
+        dataToSave.createdAt = now;
+      }
+      // Usar set() completo (sem merge) para substituir o documento inteiro
+      // Isso remove todos os campos undefined que possam existir
+      await docRef.set(dataToSave);
+    } else {
+      // Create: adicionar createdAt também
+      dataToSave.createdAt = now;
+      await docRef.set(dataToSave);
+    }
+
+    console.log('✅ [SAVE-UNIVERSAL-METRICS] Métricas calculadas universais salvas com sucesso');
+    return res.json({ 
+      success: true, 
+      message: 'Métricas calculadas universais salvas com sucesso',
+      dataSourcesCount: Object.keys(metrics).length
+    });
+  } catch (error) {
+    console.error('❌ Erro ao salvar métricas calculadas universais:', error);
+    console.error('❌ Stack:', error.stack);
+    return res.status(500).json({ 
+      error: 'Erro ao salvar métricas calculadas universais', 
+      message: error.message 
+    });
+  }
+});
+
+// Carregar métricas calculadas universais
+app.get('/load-universal-calculated-metrics', async (req, res) => {
+  console.log('🎯 [ROUTE] GET /load-universal-calculated-metrics CHAMADO!', {
+    method: req.method,
+    path: req.path,
+    url: req.url,
+    originalUrl: req.originalUrl
+  });
+  
+  try {
+    if (!db) {
+      try {
+        initializeFirebase();
+      } catch (error) {
+        console.error('❌ Erro ao inicializar Firestore:', error);
+        return res.status(500).json({ 
+          error: 'Firestore não inicializado', 
+          message: error.message
+        });
+      }
+    }
+    
+    console.log('📥 [LOAD-UNIVERSAL-METRICS] Carregando métricas calculadas universais');
+
+    const docRef = db.collection(COLLECTION_NAME).doc(UNIVERSAL_CALCULATED_METRICS_DOC_ID);
+    const docSnap = await docRef.get();
+
+    if (docSnap.exists) {
+      const data = docSnap.data();
+      const metrics = data.metrics || {};
+      
+      console.log('✅ [LOAD-UNIVERSAL-METRICS] Métricas calculadas universais carregadas:', {
+        dataSourcesCount: Object.keys(metrics).length,
+        dataSources: Object.keys(metrics)
+      });
+      
+      return res.json({ 
+        success: true, 
+        metrics 
+      });
+    } else {
+      console.log('ℹ️ [LOAD-UNIVERSAL-METRICS] Nenhuma métrica calculada universal encontrada');
+      return res.json({ 
+        success: true, 
+        metrics: {} 
+      });
+    }
+  } catch (error) {
+    console.error('❌ Erro ao carregar métricas calculadas universais:', error);
+    return res.status(500).json({ 
+      error: 'Erro ao carregar métricas calculadas universais', 
+      message: error.message 
+    });
+  }
+});
+
+// Salvar fontes de dados universais
+app.post('/save-universal-data-sources', async (req, res) => {
+  try {
+    if (!db) {
+      try {
+        initializeFirebase();
+      } catch (error) {
+        console.error('❌ Erro ao inicializar Firestore:', error);
+        return res.status(500).json({ 
+          error: 'Firestore não inicializado', 
+          message: error.message
+        });
+      }
+    }
+    
+    const { dataSources, userId, email, accessControl } = req.body;
+
+    if (!dataSources || !Array.isArray(dataSources)) {
+      return res.status(400).json({ error: 'dataSources é obrigatório e deve ser um array' });
+    }
+    
+    console.log('💾 [SAVE-UNIVERSAL-DS] Salvando fontes de dados universais:', {
+      count: dataSources.length,
+      endpoints: dataSources.map(ds => ds?.endpoint).filter(Boolean)
+    });
+
+    const docRef = db.collection(COLLECTION_NAME).doc(UNIVERSAL_DATA_SOURCES_DOC_ID);
+    const docSnap = await docRef.get();
+    const now = new Date();
+
+    // Construir objeto para salvar - apenas campos essenciais, SEM updatedBy/createdBy
+    // Usar set() completo (sem merge) para substituir completamente o documento
+    const dataToSave = {
+      dataSources: dataSources,
+      updatedAt: now
+    };
+
+    if (docSnap.exists) {
+      // O documento já existe - preservar createdAt se existir
+      const existingData = docSnap.data();
+      if (existingData && existingData.createdAt) {
+        dataToSave.createdAt = existingData.createdAt;
+      } else {
+        dataToSave.createdAt = now;
+      }
+      // Usar set() completo (sem merge) para substituir o documento inteiro
+      await docRef.set(dataToSave);
+    } else {
+      // Create: adicionar createdAt também
+      dataToSave.createdAt = now;
+      await docRef.set(dataToSave);
+    }
+
+    console.log('✅ [SAVE-UNIVERSAL-DS] Fontes de dados universais salvas com sucesso');
+    return res.json({ 
+      success: true, 
+      message: 'Fontes de dados universais salvas com sucesso',
+      count: dataSources.length
+    });
+  } catch (error) {
+    console.error('❌ Erro ao salvar fontes de dados universais:', error);
+    return res.status(500).json({ 
+      error: 'Erro ao salvar fontes de dados universais', 
+      message: error.message 
+    });
+  }
+});
+
+// Carregar fontes de dados universais
+app.get('/load-universal-data-sources', async (req, res) => {
+  try {
+    if (!db) {
+      try {
+        initializeFirebase();
+      } catch (error) {
+        console.error('❌ Erro ao inicializar Firestore:', error);
+        return res.status(500).json({ 
+          error: 'Firestore não inicializado', 
+          message: error.message
+        });
+      }
+    }
+    
+    console.log('📥 [LOAD-UNIVERSAL-DS] Carregando fontes de dados universais');
+
+    const docRef = db.collection(COLLECTION_NAME).doc(UNIVERSAL_DATA_SOURCES_DOC_ID);
+    const docSnap = await docRef.get();
+
+    if (docSnap.exists) {
+      const data = docSnap.data();
+      const dataSources = data.dataSources || [];
+      
+      console.log('✅ [LOAD-UNIVERSAL-DS] Fontes de dados universais carregadas:', {
+        count: dataSources.length,
+        endpoints: dataSources.map(ds => ds.endpoint)
+      });
+      
+      return res.json({ 
+        success: true, 
+        dataSources 
+      });
+    } else {
+      console.log('ℹ️ [LOAD-UNIVERSAL-DS] Nenhuma fonte de dados universal encontrada');
+      return res.json({ 
+        success: true, 
+        dataSources: [] 
+      });
+    }
+  } catch (error) {
+    console.error('❌ Erro ao carregar fontes de dados universais:', error);
+    return res.status(500).json({ 
+      error: 'Erro ao carregar fontes de dados universais', 
+      message: error.message 
+    });
+  }
+});
+
 // Endpoint de health check
 app.get('/health', (req, res) => {
   try {
@@ -508,52 +746,114 @@ app.get('/health', (req, res) => {
   }
 });
 
-// Middleware de tratamento de erros global
+// Middleware de tratamento de erros global (deve vir ANTES da rota catch-all)
 app.use((err, req, res, next) => {
   console.error('❌ Erro não tratado:', err);
-  res.status(500).json({ 
-    error: 'Internal Server Error',
-    message: err.message,
-    timestamp: new Date().toISOString()
+  if (!res.headersSent) {
+    res.status(500).json({ 
+      error: 'Internal Server Error',
+      message: err.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Rota catch-all para debug de rotas não encontradas (deve vir POR ÚLTIMO)
+app.use((req, res) => {
+  console.log('⚠️ [404] Rota não encontrada:', {
+    method: req.method,
+    path: req.path,
+    url: req.url,
+    originalUrl: req.originalUrl
+  });
+  
+  // Listar todas as rotas registradas para debug
+  const routes = [];
+  if (app._router && app._router.stack) {
+    app._router.stack.forEach((middleware) => {
+      if (middleware.route) {
+        const methods = Object.keys(middleware.route.methods).map(m => m.toUpperCase());
+        methods.forEach(method => {
+          routes.push({ method, path: middleware.route.path });
+        });
+      }
+    });
+  }
+  
+  console.log('📋 [ROUTES] Rotas registradas:', routes);
+  
+  res.status(404).json({
+    error: 'Rota não encontrada',
+    method: req.method,
+    path: req.path,
+    url: req.url,
+    originalUrl: req.originalUrl,
+    availableRoutes: routes
   });
 });
 
 // Handler para Vercel
-// No Vercel, com [...].js, o path pode vir de diferentes formas
-// Precisamos criar um wrapper que ajusta o path corretamente
-export default (req, res) => {
-  // No Vercel, o path pode vir como /api/dashboard/health ou /health
-  // Vamos garantir que sempre removemos o prefixo /api/dashboard
-  const originalUrl = req.url || req.path || '';
-  const pathWithoutQuery = originalUrl.split('?')[0];
-  
-  // Remover /api/dashboard se presente
-  let cleanPath = pathWithoutQuery;
-  if (cleanPath.startsWith('/api/dashboard')) {
-    cleanPath = cleanPath.replace('/api/dashboard', '') || '/';
+// No Vercel, com [...].js, o path completo vem em req.url
+export default async (req, res) => {
+  try {
+    // Capturar o path completo da requisição
+    const originalUrl = req.url || req.path || '';
+    const [pathPart, queryPart] = originalUrl.split('?');
+    const queryString = queryPart ? `?${queryPart}` : '';
+    
+    console.log('🔍 [VERCEL HANDLER] Request recebido:', {
+      method: req.method,
+      originalUrl,
+      pathPart,
+      'req.path': req.path,
+      'req.url': req.url
+    });
+    
+    // Extrair o path relativo após /api/dashboard
+    // Exemplo: /api/dashboard/load-universal-calculated-metrics -> /load-universal-calculated-metrics
+    let cleanPath = pathPart || '/';
+    
+    // Remover /api/dashboard do início (pode vir com ou sem barra final)
+    if (cleanPath.startsWith('/api/dashboard/')) {
+      cleanPath = cleanPath.substring('/api/dashboard'.length);
+    } else if (cleanPath === '/api/dashboard') {
+      cleanPath = '/';
+    } else if (cleanPath.startsWith('/api/dashboard')) {
+      cleanPath = cleanPath.substring('/api/dashboard'.length);
+    }
+    
+    // Garantir que sempre começa com /
+    if (!cleanPath || cleanPath === '') {
+      cleanPath = '/';
+    } else if (!cleanPath.startsWith('/')) {
+      cleanPath = '/' + cleanPath;
+    }
+    
+    // Construir URL final com query string
+    const finalUrl = cleanPath + queryString;
+    
+    console.log('🔄 [VERCEL HANDLER] Path ajustado:', {
+      original: originalUrl,
+      cleanPath,
+      finalUrl,
+      method: req.method
+    });
+    
+    // Modificar as propriedades do req diretamente (forma padrão no Vercel)
+    req.url = finalUrl;
+    req.path = cleanPath;
+    req.originalUrl = cleanPath;
+    
+    // Processar com Express
+    app(req, res);
+  } catch (error) {
+    console.error('❌ [VERCEL HANDLER] Erro no handler:', error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: 'Erro interno no handler',
+        message: error.message
+      });
+    }
   }
-  
-  // Se o path está vazio, usar '/'
-  if (!cleanPath || cleanPath === '') {
-    cleanPath = '/';
-  }
-  
-  // Preservar query string
-  const queryString = originalUrl.includes('?') ? originalUrl.split('?')[1] : '';
-  const finalUrl = cleanPath + (queryString ? `?${queryString}` : '');
-  
-  // Ajustar req para o Express
-  req.url = finalUrl;
-  req.path = cleanPath;
-  req.originalUrl = cleanPath;
-  
-  console.log('🔄 [VERCEL HANDLER] Path ajustado:', {
-    original: originalUrl,
-    clean: cleanPath,
-    final: finalUrl
-  });
-  
-  // Processar com Express
-  app(req, res);
 };
 

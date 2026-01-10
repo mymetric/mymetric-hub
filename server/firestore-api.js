@@ -70,6 +70,8 @@ try {
 
 const COLLECTION_NAME = 'dashboard_personalizations';
 const UNIVERSAL_DOC_ID = '_universal'; // Documento especial para abas universais
+const UNIVERSAL_CALCULATED_METRICS_DOC_ID = '_universal_calculated_metrics';
+const UNIVERSAL_DATA_SOURCES_DOC_ID = '_universal_data_sources';
 
 // Helper para obter ID do documento
 function getDocId(tableName, userId, email) {
@@ -621,6 +623,200 @@ app.get('/api/dashboard/data-sources', async (req, res) => {
   }
 });
 
+// Salvar métricas calculadas universais
+app.post('/api/dashboard/save-universal-calculated-metrics', async (req, res) => {
+  try {
+    const { metrics, userId, email, accessControl } = req.body || {};
+
+    if (!metrics || typeof metrics !== 'object') {
+      return res.status(400).json({ error: 'metrics é obrigatório e deve ser um objeto' });
+    }
+    
+    // Validar que metrics é um objeto válido
+    if (Array.isArray(metrics)) {
+      return res.status(400).json({ error: 'metrics deve ser um objeto, não um array' });
+    }
+    
+    console.log('💾 [SAVE-UNIVERSAL-METRICS] Salvando métricas calculadas universais:', {
+      dataSourcesCount: Object.keys(metrics).length,
+      dataSources: Object.keys(metrics)
+    });
+
+    const docRef = db.collection(COLLECTION_NAME).doc(UNIVERSAL_CALCULATED_METRICS_DOC_ID);
+    const docSnap = await docRef.get();
+    const now = new Date();
+
+    // Construir objeto para salvar - apenas campos essenciais, SEM updatedBy/createdBy
+    // Usar set() completo (sem merge) para substituir completamente o documento
+    // Isso remove campos undefined existentes
+    const dataToSave = {
+      metrics: metrics,
+      updatedAt: now
+    };
+
+    if (docSnap.exists) {
+      // O documento já existe - preservar createdAt se existir
+      const existingData = docSnap.data();
+      if (existingData && existingData.createdAt) {
+        dataToSave.createdAt = existingData.createdAt;
+      } else {
+        dataToSave.createdAt = now;
+      }
+      // Usar set() completo (sem merge) para substituir o documento inteiro
+      // Isso remove todos os campos undefined que possam existir
+      await docRef.set(dataToSave);
+    } else {
+      // Create: adicionar createdAt também
+      dataToSave.createdAt = now;
+      await docRef.set(dataToSave);
+    }
+
+    console.log('✅ [SAVE-UNIVERSAL-METRICS] Métricas calculadas universais salvas com sucesso');
+    return res.json({ 
+      success: true, 
+      message: 'Métricas calculadas universais salvas com sucesso',
+      dataSourcesCount: Object.keys(metrics).length
+    });
+  } catch (error) {
+    console.error('❌ Erro ao salvar métricas calculadas universais:', error);
+    console.error('❌ Stack:', error.stack);
+    return res.status(500).json({ 
+      error: 'Erro ao salvar métricas calculadas universais', 
+      message: error.message 
+    });
+  }
+});
+
+// Carregar métricas calculadas universais
+app.get('/api/dashboard/load-universal-calculated-metrics', async (req, res) => {
+  try {
+    console.log('📥 [LOAD-UNIVERSAL-METRICS] Carregando métricas calculadas universais');
+
+    const docRef = db.collection(COLLECTION_NAME).doc(UNIVERSAL_CALCULATED_METRICS_DOC_ID);
+    const docSnap = await docRef.get();
+
+    if (docSnap.exists) {
+      const data = docSnap.data();
+      const metrics = data.metrics || {};
+      
+      console.log('✅ [LOAD-UNIVERSAL-METRICS] Métricas calculadas universais carregadas:', {
+        dataSourcesCount: Object.keys(metrics).length,
+        dataSources: Object.keys(metrics)
+      });
+      
+      return res.json({ 
+        success: true, 
+        metrics 
+      });
+    } else {
+      console.log('ℹ️ [LOAD-UNIVERSAL-METRICS] Nenhuma métrica calculada universal encontrada');
+      return res.json({ 
+        success: true, 
+        metrics: {} 
+      });
+    }
+  } catch (error) {
+    console.error('❌ Erro ao carregar métricas calculadas universais:', error);
+    return res.status(500).json({ 
+      error: 'Erro ao carregar métricas calculadas universais', 
+      message: error.message 
+    });
+  }
+});
+
+// Salvar fontes de dados universais
+app.post('/api/dashboard/save-universal-data-sources', async (req, res) => {
+  try {
+    const { dataSources, userId, email, accessControl } = req.body;
+
+    if (!dataSources || !Array.isArray(dataSources)) {
+      return res.status(400).json({ error: 'dataSources é obrigatório e deve ser um array' });
+    }
+    
+    console.log('💾 [SAVE-UNIVERSAL-DS] Salvando fontes de dados universais:', {
+      count: dataSources.length,
+      endpoints: dataSources.map(ds => ds?.endpoint).filter(Boolean)
+    });
+
+    const docRef = db.collection(COLLECTION_NAME).doc(UNIVERSAL_DATA_SOURCES_DOC_ID);
+    const docSnap = await docRef.get();
+    const now = new Date();
+
+    // Construir objeto para salvar - apenas campos essenciais, SEM updatedBy/createdBy
+    // Usar set() completo (sem merge) para substituir completamente o documento
+    const dataToSave = {
+      dataSources: dataSources,
+      updatedAt: now
+    };
+
+    if (docSnap.exists) {
+      // O documento já existe - preservar createdAt se existir
+      const existingData = docSnap.data();
+      if (existingData && existingData.createdAt) {
+        dataToSave.createdAt = existingData.createdAt;
+      } else {
+        dataToSave.createdAt = now;
+      }
+      // Usar set() completo (sem merge) para substituir o documento inteiro
+      await docRef.set(dataToSave);
+    } else {
+      // Create: adicionar createdAt também
+      dataToSave.createdAt = now;
+      await docRef.set(dataToSave);
+    }
+
+    console.log('✅ [SAVE-UNIVERSAL-DS] Fontes de dados universais salvas com sucesso');
+    return res.json({ 
+      success: true, 
+      message: 'Fontes de dados universais salvas com sucesso',
+      count: dataSources.length
+    });
+  } catch (error) {
+    console.error('❌ Erro ao salvar fontes de dados universais:', error);
+    return res.status(500).json({ 
+      error: 'Erro ao salvar fontes de dados universais', 
+      message: error.message 
+    });
+  }
+});
+
+// Carregar fontes de dados universais
+app.get('/api/dashboard/load-universal-data-sources', async (req, res) => {
+  try {
+    console.log('📥 [LOAD-UNIVERSAL-DS] Carregando fontes de dados universais');
+
+    const docRef = db.collection(COLLECTION_NAME).doc(UNIVERSAL_DATA_SOURCES_DOC_ID);
+    const docSnap = await docRef.get();
+
+    if (docSnap.exists) {
+      const data = docSnap.data();
+      const dataSources = data.dataSources || [];
+      
+      console.log('✅ [LOAD-UNIVERSAL-DS] Fontes de dados universais carregadas:', {
+        count: dataSources.length,
+        endpoints: dataSources.map(ds => ds.endpoint)
+      });
+      
+      return res.json({ 
+        success: true, 
+        dataSources 
+      });
+    } else {
+      console.log('ℹ️ [LOAD-UNIVERSAL-DS] Nenhuma fonte de dados universal encontrada');
+      return res.json({ 
+        success: true, 
+        dataSources: [] 
+      });
+    }
+  } catch (error) {
+    console.error('❌ Erro ao carregar fontes de dados universais:', error);
+    return res.status(500).json({ 
+      error: 'Erro ao carregar fontes de dados universais', 
+      message: error.message 
+    });
+  }
+});
+
 // Endpoint de health check
 app.get('/api/health', (req, res) => {
   res.json({ 
@@ -638,6 +834,10 @@ app.listen(PORT, () => {
   console.log(`   GET  /api/dashboard/load - Carregar configuração`);
   console.log(`   POST /api/dashboard/delete-universal-tab - Deletar aba universal`);
   console.log(`   GET  /api/dashboard/data-sources - Buscar fontes de dados disponíveis`);
+  console.log(`   POST /api/dashboard/save-universal-calculated-metrics - Salvar métricas calculadas universais`);
+  console.log(`   GET  /api/dashboard/load-universal-calculated-metrics - Carregar métricas calculadas universais`);
+  console.log(`   POST /api/dashboard/save-universal-data-sources - Salvar fontes de dados universais`);
+  console.log(`   GET  /api/dashboard/load-universal-data-sources - Carregar fontes de dados universais`);
   console.log(`   GET  /api/health - Health check`);
 });
 

@@ -123,8 +123,8 @@ const SpotlightUnified = ({
 
   // Configuração das abas disponíveis
   const tabConfig = {
-    'visao-geral-nova': { label: 'Visão Geral', icon: Zap, description: 'Métricas gerais e KPIs (novo)' },
-    'visao-geral': { label: 'Visão Geral (Antigo)', icon: BarChart3, description: 'Versão antiga da visão geral' },
+    'visao-geral-nova': { label: 'Personalização', icon: Zap, description: 'Métricas gerais e KPIs (novo)' },
+    'visao-geral': { label: 'Visão Geral', icon: BarChart3, description: 'Versão antiga da visão geral' },
     'midia-paga': { label: 'Mídia Paga', icon: TrendingUp, description: 'Análise de campanhas pagas' },
     'funil-conversao': { label: 'Funil de Conversão', icon: Filter, description: 'Jornada do cliente' },
     'dados-detalhados': { label: 'Dados Detalhados', icon: Database, description: 'Dados brutos e análises' },

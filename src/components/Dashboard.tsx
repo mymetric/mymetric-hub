@@ -1930,8 +1930,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
               }
 
               const tabConfig = {
-                'visao-geral-nova': { label: 'Visão Geral', icon: Zap },
-                'visao-geral': { label: 'Visão Geral (Antigo)', icon: BarChart3 },
+                'visao-geral-nova': { label: 'Personalização', icon: Zap },
+                'visao-geral': { label: 'Visão Geral', icon: BarChart3 },
                 'midia-paga': { label: 'Mídia Paga', icon: TrendingUp },
                 'funil-conversao': { label: 'Funil de Conversão', icon: Filter },
                 'dados-detalhados': { label: 'Dados Detalhados', icon: Database },
@@ -2029,8 +2029,8 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium text-gray-700">Aba atual:</span>
                 <span className="text-sm text-blue-600 font-semibold">
-                  {activeTab === 'visao-geral-nova' && 'Visão Geral'}
-                  {activeTab === 'visao-geral' && 'Visão Geral (Antigo)'}
+                  {activeTab === 'visao-geral-nova' && 'Personalização'}
+                  {activeTab === 'visao-geral' && 'Visão Geral'}
                   {activeTab === 'midia-paga' && 'Mídia Paga'}
                   {activeTab === 'funil-conversao' && 'Funil de Conversão'}
                   {activeTab === 'dados-detalhados' && 'Dados Detalhados'}
@@ -2088,7 +2088,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                     >
                       <div className="flex items-center gap-3">
                         <Zap className="w-5 h-5" />
-                        <span>Visão Geral</span>
+                        <span>Personalização</span>
                         {activeTab === 'visao-geral-nova' && (
                           <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full"></div>
                         )}
@@ -2108,7 +2108,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                     >
                       <div className="flex items-center gap-3">
                         <BarChart3 className="w-5 h-5" />
-                        <span>Visão Geral (Antigo)</span>
+                        <span>Visão Geral</span>
                         {activeTab === 'visao-geral' && (
                           <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full"></div>
                         )}
@@ -2356,7 +2356,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 >
                   <div className="flex items-center gap-1">
                     <Zap className="w-3 h-3" />
-                    <span>Visão Geral</span>
+                    <span>Personalização</span>
                   </div>
                 </button>
 
@@ -2370,7 +2370,7 @@ const Dashboard = ({ onLogout, user }: { onLogout: () => void; user?: User }) =>
                 >
                   <div className="flex items-center gap-1">
                     <BarChart3 className="w-3 h-3" />
-                    <span>Visão (Antigo)</span>
+                    <span>Visão Geral</span>
                   </div>
                 </button>
                 

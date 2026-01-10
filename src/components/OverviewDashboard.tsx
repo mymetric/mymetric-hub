@@ -238,87 +238,39 @@ class DashboardStorage {
     return `${this.STORAGE_PREFIX}-${tableName}`
   }
 
-  // Carregar todas as configurações de um cliente (versão assíncrona - tenta Firestore primeiro, depois localStorage)
+  // Carregar todas as configurações de um cliente (versão assíncrona - apenas do Firestore)
   static async loadConfigAsync(tableName: string): Promise<DashboardConfig | null> {
     if (!tableName) return null
 
     try {
-      // Tentar carregar do Firestore primeiro
       await this.initFirestore()
-      if (this.firestoreInitialized) {
-        try {
-          const { DashboardFirestore } = await import('../services/dashboardFirestore')
-          const firestoreConfig = await DashboardFirestore.loadConfig(tableName)
-          if (firestoreConfig) {
-            // Sincronizar com localStorage como backup
-            const storageKey = this.getStorageKey(tableName)
-            localStorage.setItem(storageKey, JSON.stringify(firestoreConfig))
-            console.log('✅ Configuração carregada do Firestore e sincronizada com localStorage')
-            return firestoreConfig
-          }
-        } catch (error) {
-          console.warn('⚠️ Erro ao carregar do Firestore, tentando localStorage:', error)
-        }
+      if (!this.firestoreInitialized) {
+        console.warn('⚠️ Firestore não inicializado. Retornando null.')
+        return null
       }
-    } catch (error) {
-      console.warn('⚠️ Firestore não disponível, usando localStorage:', error)
-    }
-
-    // Fallback para localStorage
-    try {
-      const storageKey = this.getStorageKey(tableName)
-      const saved = localStorage.getItem(storageKey)
       
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        
-        // Se já tem widgets e versão, retornar direto (não migrar)
-        if (parsed.widgets && Array.isArray(parsed.widgets) && parsed.widgets.length > 0 && parsed.version === this.CURRENT_VERSION) {
-          return parsed as DashboardConfig
-        }
-        
-        // Migrar de versão antiga se necessário
-        if (!parsed.version || parsed.version !== this.CURRENT_VERSION) {
-          return this.migrateFromLegacy(tableName, parsed)
-        }
-        
-        return parsed as DashboardConfig
+      const { DashboardFirestore } = await import('../services/dashboardFirestore')
+      const firestoreConfig = await DashboardFirestore.loadConfig(tableName)
+      
+      if (firestoreConfig) {
+        console.log('✅ Configuração carregada do Firestore:', { tableName })
+        return firestoreConfig
       }
+      
+      console.log('ℹ️ Nenhuma configuração encontrada no Firestore para:', tableName)
+      return null
     } catch (error) {
-      console.error('❌ Erro ao carregar configurações do localStorage:', error)
+      console.error('❌ Erro ao carregar configurações do Firestore:', error)
+      throw error
     }
-
-    return null
   }
 
-  // Carregar todas as configurações de um cliente (versão síncrona - tenta localStorage primeiro, mas Firestore é primário)
-  // NOTA: Esta função é síncrona para compatibilidade, mas o sistema agora usa Firestore como primário
-  // Para carregar do Firestore, use loadConfigAsync()
+  // Carregar todas as configurações de um cliente (versão síncrona - OBSOLETA)
+  // NOTA: Esta função é síncrona e não pode carregar do Firestore. Use loadConfigAsync() em vez disso.
+  // Esta função retorna null porque não usamos mais localStorage.
   static loadConfig(tableName: string): DashboardConfig | null {
     if (!tableName) return null
-
-    try {
-      // Tentar carregar do localStorage (cache/backup)
-      const storageKey = this.getStorageKey(tableName)
-      const saved = localStorage.getItem(storageKey)
-      
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        
-        if (parsed.widgets && Array.isArray(parsed.widgets) && parsed.widgets.length > 0 && parsed.version === this.CURRENT_VERSION) {
-          return parsed as DashboardConfig
-        }
-        
-        if (!parsed.version || parsed.version !== this.CURRENT_VERSION) {
-          return this.migrateFromLegacy(tableName, parsed)
-        }
-        
-        return parsed as DashboardConfig
-      }
-    } catch (error) {
-      console.error('❌ Erro ao carregar configurações:', error)
-    }
-
+    console.warn('⚠️ loadConfig() é obsoleta. Use loadConfigAsync() para carregar do Firestore.')
     return null
   }
 
@@ -334,33 +286,14 @@ class DashboardStorage {
 
     try {
       console.log('💾 [saveConfig-2] Iniciando salvamento...')
-      const storageKey = this.getStorageKey(tableName)
       
-      // Carregar existente diretamente do localStorage para evitar migração durante save
+      // Carregar existente do Firestore
       let existing: DashboardConfig | null = null
       try {
-        const saved = localStorage.getItem(storageKey)
-        if (saved) {
-          const parsed = JSON.parse(saved)
-          // Preservar widgets e customTabs existentes mesmo se versão for antiga
-          if (parsed.widgets && Array.isArray(parsed.widgets)) {
-            existing = {
-              widgets: parsed.widgets,
-              customTabs: Array.isArray(parsed.customTabs) ? parsed.customTabs : [],
-              version: parsed.version || this.CURRENT_VERSION,
-              legacy: parsed.legacy
-            }
-          } else if (Array.isArray(parsed.customTabs)) {
-            // Caso raro: ter apenas customTabs salvas
-            existing = {
-              widgets: [],
-              customTabs: parsed.customTabs,
-              version: parsed.version || this.CURRENT_VERSION,
-              legacy: parsed.legacy
-            }
-          }
-        }
-      } catch {}
+        existing = await this.loadConfigAsync(tableName)
+      } catch (error) {
+        console.warn('⚠️ Erro ao carregar configuração existente do Firestore, usando valores padrão:', error)
+      }
 
       if (!existing) {
         existing = {
@@ -409,48 +342,33 @@ class DashboardStorage {
         updated.customTabs = config.customTabs
       }
 
-      // Salvar no Firestore primeiro (fonte primária)
-      console.log('🔄 [1] Iniciando processo de salvamento no Firestore (fonte primária)...')
-      try {
-        const { DashboardFirestore } = await import('../services/dashboardFirestore')
-        console.log('📤 [2] Tentando salvar no Firestore...', { 
-          tableName, 
-          widgets: updated.widgets.length, 
-          customTabs: updated.customTabs?.length || 0,
-          widgetsWithDataSource: updated.widgets.filter(w => w.dataSource).map(w => ({ id: w.id, dataSource: w.dataSource }))
-        })
-        // Garantir que widgets tenham dataSource preservado
-        const widgetsToSave = updated.widgets.map(w => ({
-          ...w,
-          // Preservar dataSource se existir, mesmo que seja string vazia (será tratado como null no backend)
-          ...(w.dataSource !== undefined && w.dataSource !== null ? { dataSource: w.dataSource } : {})
-        }))
-        const configToSave = {
-          ...updated,
-          widgets: widgetsToSave
-        }
-        console.log('📤 [2.5] Widgets a serem salvos com dataSource:', widgetsToSave.map(w => ({ id: w.id, type: w.type, dataSource: w.dataSource })))
-        await DashboardFirestore.saveConfig(tableName, configToSave)
-        console.log('✅ [3] Configurações salvas no Firestore com sucesso!', { tableName })
-        
-        // Após salvar no Firestore com sucesso, salvar no localStorage como backup/cache
-        console.log('💾 [4] Salvando no localStorage como backup...')
-        localStorage.setItem(storageKey, JSON.stringify(updated))
-        console.log('💾 [5] Configurações salvas no localStorage (backup):', { tableName, widgets: updated.widgets.length, customTabs: updated.customTabs?.length || 0 })
-      } catch (error) {
-        console.error('❌ [ERRO] Erro ao salvar no Firestore:', error)
-        console.error('Detalhes do erro:', {
-          message: (error as any)?.message,
-          code: (error as any)?.code,
-          stack: (error as any)?.stack,
-          name: (error as any)?.name
-        })
-        
-        // Se falhar no Firestore, salvar no localStorage como fallback
-        console.warn('⚠️ Salvando no localStorage como fallback (Firestore falhou)')
-        localStorage.setItem(storageKey, JSON.stringify(updated))
-        console.log('💾 Configurações salvas no localStorage (fallback):', { tableName })
+      // Salvar apenas no Firestore
+      await this.initFirestore()
+      if (!this.firestoreInitialized) {
+        throw new Error('Firestore não inicializado. Não é possível salvar configurações do dashboard.')
       }
+      
+      const { DashboardFirestore } = await import('../services/dashboardFirestore')
+      console.log('📤 Salvando configurações no Firestore...', { 
+        tableName, 
+        widgets: updated.widgets.length, 
+        customTabs: updated.customTabs?.length || 0,
+        widgetsWithDataSource: updated.widgets.filter(w => w.dataSource).map(w => ({ id: w.id, dataSource: w.dataSource }))
+      })
+      
+      // Garantir que widgets tenham dataSource preservado
+      const widgetsToSave = updated.widgets.map(w => ({
+        ...w,
+        // Preservar dataSource se existir, mesmo que seja string vazia (será tratado como null no backend)
+        ...(w.dataSource !== undefined && w.dataSource !== null ? { dataSource: w.dataSource } : {})
+      }))
+      const configToSave = {
+        ...updated,
+        widgets: widgetsToSave
+      }
+      
+      await DashboardFirestore.saveConfig(tableName, configToSave)
+      console.log('✅ Configurações salvas no Firestore com sucesso!', { tableName })
     } catch (error) {
       console.error('❌ Erro ao salvar configurações:', error)
     }
@@ -673,6 +591,167 @@ class DashboardStorage {
       console.log('🗑️ Configurações removidas:', tableName)
     } catch (error) {
       console.error('❌ Erro ao limpar configurações:', error)
+    }
+  }
+
+  // Métricas calculadas universais (compartilhadas entre todos os clientes)
+  private static readonly UNIVERSAL_CALCULATED_METRICS_KEY = 'overview-universal-calculated-metrics'
+  
+  // Fontes de dados universais (compartilhadas entre todos os clientes)
+  private static readonly UNIVERSAL_DATA_SOURCES_KEY = 'overview-universal-data-sources'
+  
+  // Salvar métricas calculadas universais (por dataSource)
+  static async saveUniversalCalculatedMetrics(dataSource: string, metrics: any[]): Promise<void> {
+    try {
+      console.log('💾 [SAVE-UNIVERSAL] Salvando métricas calculadas universais:', {
+        dataSource,
+        metricsCount: metrics.length,
+        metricsKeys: metrics.map((m: any) => m.key)
+      })
+      
+      // IMPORTANTE: Carregar métricas universais existentes de forma ASSÍNCRONA para garantir
+      // que estamos carregando as métricas mais recentes do Firestore/localStorage
+      const existing = await this.loadUniversalCalculatedMetricsAsync()
+      
+      console.log('📊 [SAVE-UNIVERSAL] Métricas universais existentes antes de salvar:', {
+        allDataSources: Object.keys(existing),
+        existingMetricsCounts: Object.entries(existing).reduce((acc, [key, value]) => {
+          acc[key] = value.length
+          return acc
+        }, {} as Record<string, number>),
+        existingMetricsForThisDataSource: existing[dataSource]?.length || 0
+      })
+      
+      // Atualizar métricas para este dataSource (mantendo todas as outras)
+      const updated = {
+        ...existing,
+        [dataSource]: metrics
+      }
+      
+      console.log('💾 [SAVE-UNIVERSAL] Objeto completo a ser salvo:', {
+        allDataSources: Object.keys(updated),
+        updatedMetricsCounts: Object.entries(updated).reduce((acc, [key, value]) => {
+          acc[key] = value.length
+          return acc
+        }, {} as Record<string, number>),
+        metricsForThisDataSource: updated[dataSource]?.length || 0,
+        metricsKeysForThisDataSource: updated[dataSource]?.map((m: any) => m.key) || []
+      })
+      
+      // Salvar apenas no Firestore
+      await this.initFirestore()
+      if (!this.firestoreInitialized) {
+        throw new Error('Firestore não inicializado. Não é possível salvar métricas calculadas.')
+      }
+      
+      const { DashboardFirestore } = await import('../services/dashboardFirestore')
+      await DashboardFirestore.saveUniversalCalculatedMetrics(updated)
+      console.log('✅ [SAVE-UNIVERSAL] Métricas calculadas universais salvas no Firestore')
+      
+      console.log('✅ [SAVE-UNIVERSAL] Métricas calculadas universais salvas com sucesso:', { 
+        dataSource, 
+        count: metrics.length,
+        totalDataSources: Object.keys(updated).length
+      })
+    } catch (error) {
+      console.error('❌ [SAVE-UNIVERSAL] Erro ao salvar métricas calculadas universais:', error)
+      throw error
+    }
+  }
+  
+  // Carregar métricas calculadas universais de forma assíncrona (apenas do Firestore)
+  static async loadUniversalCalculatedMetricsAsync(): Promise<Record<string, any[]>> {
+    try {
+      await this.initFirestore()
+      if (!this.firestoreInitialized) {
+        console.warn('⚠️ Firestore não inicializado. Retornando objeto vazio.')
+        return {}
+      }
+      
+      const { DashboardFirestore } = await import('../services/dashboardFirestore')
+      const firestoreMetrics = await DashboardFirestore.loadUniversalCalculatedMetrics()
+      
+      if (firestoreMetrics && typeof firestoreMetrics === 'object' && Object.keys(firestoreMetrics).length > 0) {
+        console.log('✅ Métricas calculadas universais carregadas do Firestore:', {
+          dataSourcesCount: Object.keys(firestoreMetrics).length,
+          dataSources: Object.keys(firestoreMetrics),
+          metricsCounts: Object.entries(firestoreMetrics).reduce((acc, [key, value]) => {
+            acc[key] = value.length
+            return acc
+          }, {} as Record<string, number>)
+        })
+        return firestoreMetrics
+      }
+      
+      console.log('ℹ️ Nenhuma métrica calculada encontrada no Firestore. Retornando objeto vazio.')
+      return {}
+    } catch (error) {
+      console.error('❌ Erro ao carregar métricas calculadas universais do Firestore:', error)
+      throw error
+    }
+  }
+  
+  // ========== FONTES DE DADOS UNIVERSAIS ==========
+  
+  // Salvar fontes de dados universais (compartilhadas entre todos os clientes)
+  static async saveUniversalDataSources(dataSources: DataSource[]): Promise<void> {
+    try {
+      console.log('💾 [SAVE-UNIVERSAL-DS] Salvando fontes de dados universais:', {
+        dataSourcesCount: dataSources.length,
+        endpoints: dataSources.map(ds => ds.endpoint)
+      })
+      
+      // IMPORTANTE: Remover métricas calculadas das fontes de dados antes de salvar
+      // As métricas calculadas devem ser salvas separadamente via saveUniversalCalculatedMetrics
+      const dataSourcesWithoutCalculated = dataSources.map(ds => ({
+        ...ds,
+        metrics: (ds.metrics || []).filter((m: any) => !m?.isCalculated)
+      }))
+      
+      // Salvar apenas no Firestore
+      await this.initFirestore()
+      if (!this.firestoreInitialized) {
+        throw new Error('Firestore não inicializado. Não é possível salvar fontes de dados universais.')
+      }
+      
+      const { DashboardFirestore } = await import('../services/dashboardFirestore')
+      await DashboardFirestore.saveUniversalDataSources(dataSourcesWithoutCalculated)
+      console.log('✅ [SAVE-UNIVERSAL-DS] Fontes de dados universais salvas no Firestore')
+      
+      console.log('✅ [SAVE-UNIVERSAL-DS] Fontes de dados universais salvas com sucesso:', { 
+        count: dataSourcesWithoutCalculated.length
+      })
+    } catch (error) {
+      console.error('❌ [SAVE-UNIVERSAL-DS] Erro ao salvar fontes de dados universais:', error)
+      throw error
+    }
+  }
+  
+  // Carregar fontes de dados universais de forma assíncrona (apenas do Firestore)
+  static async loadUniversalDataSourcesAsync(): Promise<DataSource[]> {
+    try {
+      await this.initFirestore()
+      if (!this.firestoreInitialized) {
+        console.warn('⚠️ Firestore não inicializado. Retornando array vazio.')
+        return []
+      }
+      
+      const { DashboardFirestore } = await import('../services/dashboardFirestore')
+      const firestoreDataSources = await DashboardFirestore.loadUniversalDataSources()
+      
+      if (firestoreDataSources && Array.isArray(firestoreDataSources) && firestoreDataSources.length > 0) {
+        console.log('✅ Fontes de dados universais carregadas do Firestore:', {
+          count: firestoreDataSources.length,
+          endpoints: firestoreDataSources.map(ds => ds.endpoint)
+        })
+        return firestoreDataSources
+      }
+      
+      console.log('ℹ️ Nenhuma fonte de dados universal encontrada no Firestore. Retornando array vazio.')
+      return []
+    } catch (error) {
+      console.error('❌ Erro ao carregar fontes de dados universais do Firestore:', error)
+      throw error
     }
   }
 }
@@ -934,6 +1013,171 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   
   // Estado para fontes de dados configuradas no dashboard (com métricas/dimensões mapeadas)
   const [configuredDataSources, setConfiguredDataSources] = useState<DataSource[]>([])
+  
+  // Função helper para aplicar métricas calculadas universais às fontes de dados
+  // IMPORTANTE: Esta função SEMPRE remove métricas calculadas existentes antes de aplicar as universais
+  // Isso garante que métricas calculadas antigas (salvas por cliente) não interfiram com as universais
+  const applyUniversalCalculatedMetrics = useCallback(async (sources: DataSource[]): Promise<DataSource[]> => {
+    try {
+      console.log('🔄 Aplicando métricas calculadas universais às fontes de dados...', {
+        sourcesCount: sources.length,
+        sourceEndpoints: sources.map(ds => ds.endpoint)
+      })
+      
+      const universalMetrics = await DashboardStorage.loadUniversalCalculatedMetricsAsync()
+      
+      console.log('📊 Métricas universais carregadas:', {
+        universalMetricsKeys: Object.keys(universalMetrics),
+        universalMetricsCounts: Object.entries(universalMetrics).reduce((acc, [key, metrics]) => {
+          acc[key] = metrics.length
+          return acc
+        }, {} as Record<string, number>)
+      })
+      
+      return sources.map((ds) => {
+        if (!ds.endpoint) {
+          console.warn('⚠️ Fonte de dados sem endpoint, ignorando:', ds)
+          return ds
+        }
+        
+        // SEMPRE remover métricas calculadas existentes primeiro (elas podem ser antigas, salvas por cliente)
+        const nonCalculated = (ds.metrics || []).filter((m: any) => !m?.isCalculated)
+        
+        // Buscar métricas universais para este dataSource
+        // Tentar busca exata primeiro
+        let universalForDataSource = universalMetrics[ds.endpoint] || []
+        
+        // Se não encontrou com busca exata, tentar outras variações (case-insensitive, trim, etc.)
+        if (universalForDataSource.length === 0) {
+          const allKeys = Object.keys(universalMetrics)
+          const matchingKey = allKeys.find(key => {
+            // Comparação exata
+            if (key === ds.endpoint) return true
+            // Comparação ignorando espaços
+            if (key.trim() === ds.endpoint.trim()) return true
+            // Comparação case-insensitive
+            if (key.toLowerCase() === ds.endpoint.toLowerCase()) return true
+            return false
+          })
+          
+          if (matchingKey) {
+            console.log('🔍 [APPLY-UNIVERSAL] Chave encontrada com correspondência alternativa:', {
+              dsEndpoint: ds.endpoint,
+              matchingKey,
+              exactMatch: matchingKey === ds.endpoint
+            })
+            universalForDataSource = universalMetrics[matchingKey] || []
+          } else {
+            console.log('⚠️ [APPLY-UNIVERSAL] Nenhuma métrica universal encontrada para dataSource:', {
+              dsEndpoint: ds.endpoint,
+              availableKeys: allKeys,
+              universalMetricsKeys: Object.keys(universalMetrics)
+            })
+          }
+        }
+        
+        if (universalForDataSource.length > 0) {
+          console.log(`✅ [APPLY-UNIVERSAL] Aplicando ${universalForDataSource.length} métricas calculadas universais ao dataSource:`, {
+            endpoint: ds.endpoint,
+            metricsCount: universalForDataSource.length,
+            metricsKeys: universalForDataSource.map((m: any) => m.key)
+          })
+          
+          // Combinar: não-calculadas + universais
+          return {
+            ...ds,
+            metrics: [...nonCalculated, ...universalForDataSource]
+          }
+        }
+        
+        // Se não há métricas universais para este dataSource, retornar sem métricas calculadas
+        console.log(`ℹ️ [APPLY-UNIVERSAL] Nenhuma métrica universal para dataSource:`, ds.endpoint)
+        return {
+          ...ds,
+          metrics: nonCalculated
+        }
+      })
+    } catch (error) {
+      console.warn('⚠️ Erro ao aplicar métricas universais:', error)
+      // Em caso de erro, retornar fontes sem métricas calculadas (remover todas)
+      return sources.map(ds => ({
+        ...ds,
+        metrics: (ds.metrics || []).filter((m: any) => !m?.isCalculated)
+      }))
+    }
+  }, [])
+  
+  // Função helper para aplicar fontes de dados universais
+  // IMPORTANTE: Esta função SEMPRE carrega e aplica as fontes de dados universais, mesclando com as do cliente
+  // As fontes de dados universais têm prioridade (substituem fontes com mesmo endpoint do cliente)
+  const applyUniversalDataSources = useCallback(async (clientDataSources: DataSource[] = []): Promise<DataSource[]> => {
+    try {
+      console.log('🔄 [APPLY-UNIVERSAL-DS] Aplicando fontes de dados universais...', {
+        clientDataSourcesCount: clientDataSources.length,
+        clientEndpoints: clientDataSources.map(ds => ds.endpoint)
+      })
+      
+      const universalDataSources = await DashboardStorage.loadUniversalDataSourcesAsync()
+      
+      console.log('📊 [APPLY-UNIVERSAL-DS] Fontes de dados universais carregadas:', {
+        universalCount: universalDataSources.length,
+        universalEndpoints: universalDataSources.map(ds => ds.endpoint)
+      })
+      
+      // Se não há fontes universais, aplicar apenas métricas universais às fontes do cliente
+      if (universalDataSources.length === 0) {
+        console.log('ℹ️ [APPLY-UNIVERSAL-DS] Nenhuma fonte de dados universal encontrada, usando apenas fontes do cliente com métricas universais aplicadas')
+        return applyUniversalCalculatedMetrics(clientDataSources)
+      }
+      
+      // Criar um mapa das fontes do cliente por endpoint (para verificar duplicatas)
+      const clientEndpoints = new Set<string>()
+      clientDataSources.forEach(ds => {
+        if (ds.endpoint) {
+          clientEndpoints.add(ds.endpoint)
+        }
+      })
+      
+      // Aplicar fontes de dados universais (prioridade)
+      // Se uma fonte universal tem o mesmo endpoint que uma fonte do cliente, a universal substitui
+      const mergedDataSources: DataSource[] = []
+      
+      // Primeiro, adicionar todas as fontes universais (aplicando métricas calculadas universais também)
+      for (const universalDS of universalDataSources) {
+        if (universalDS.endpoint) {
+          // Aplicar métricas calculadas universais a esta fonte
+          const sourcesWithMetrics = await applyUniversalCalculatedMetrics([universalDS])
+          mergedDataSources.push(sourcesWithMetrics[0] || universalDS)
+        }
+      }
+      
+      // Depois, adicionar fontes do cliente que não estão nas universais (para evitar duplicação)
+      for (const clientDS of clientDataSources) {
+        if (clientDS.endpoint) {
+          // Verificar se já existe uma fonte universal com este endpoint
+          const hasUniversal = universalDataSources.some(uds => uds.endpoint === clientDS.endpoint)
+          if (!hasUniversal) {
+            // Aplicar métricas calculadas universais também a fontes do cliente não universais
+            const sourcesWithMetrics = await applyUniversalCalculatedMetrics([clientDS])
+            mergedDataSources.push(sourcesWithMetrics[0] || clientDS)
+          }
+        }
+      }
+      
+      console.log('✅ [APPLY-UNIVERSAL-DS] Fontes de dados universais aplicadas:', {
+        totalCount: mergedDataSources.length,
+        universalCount: universalDataSources.length,
+        clientOnlyCount: mergedDataSources.length - universalDataSources.length,
+        endpoints: mergedDataSources.map(ds => ds.endpoint)
+      })
+      
+      return mergedDataSources
+    } catch (error) {
+      console.warn('⚠️ [APPLY-UNIVERSAL-DS] Erro ao aplicar fontes de dados universais:', error)
+      // Em caso de erro, retornar fontes do cliente com métricas universais aplicadas
+      return applyUniversalCalculatedMetrics(clientDataSources)
+    }
+  }, [applyUniversalCalculatedMetrics])
 
   // Estados para sub abas personalizadas (precisam estar antes de getWidgetMetricsAndDimensions)
   const [customTabs, setCustomTabs] = useState<CustomTab[]>(() => {
@@ -1119,11 +1363,28 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     type: 'number' | 'currency' | 'percentage'
     formula: string
   }>({ key: '', label: '', type: 'number', formula: '' })
+  
+  // Estados locais para inputs com atualização imediata (sem validação pesada)
+  const [localMetricForm, setLocalMetricForm] = useState<{
+    key: string
+    label: string
+    type: 'number' | 'currency' | 'percentage'
+    formula: string
+  }>({ key: '', label: '', type: 'number', formula: '' })
+  
+  // Limpar erro de validação quando o usuário começa a digitar novamente
+  useEffect(() => {
+    if (calculatedMetricValidationError) {
+      setCalculatedMetricValidationError(null)
+    }
+  }, [localMetricForm.key, localMetricForm.label, localMetricForm.formula, localMetricForm.type])
 
   const closeCalculatedMetricsModal = useCallback(() => {
     setCalculatedMetricsDataSource(null)
     setEditingCalculatedMetricKey(null)
     setCalculatedMetricForm({ key: '', label: '', type: 'number', formula: '' })
+    setLocalMetricForm({ key: '', label: '', type: 'number', formula: '' })
+    setCalculatedMetricValidationError(null)
   }, [])
 
   const recomputeCalculatedMetricsForSource = useCallback((endpoint: string, sourcesOverride?: DataSource[]) => {
@@ -1423,14 +1684,41 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
           })
           setCustomTabs(tabs)
           
-          // Carregar fontes de dados configuradas
-          if (config?.dataSources && Array.isArray(config.dataSources)) {
-            console.log('📊 Fontes de dados carregadas do Firestore:', config.dataSources.length)
-            setConfiguredDataSources(config.dataSources)
-          } else {
-            console.log('⚠️ Nenhuma fonte de dados encontrada na configuração')
-            setConfiguredDataSources([])
-          }
+          // IMPORTANTE: Sempre aplicar fontes de dados universais (mesmo se não houver fontes do cliente)
+          // Isso garante que as fontes de dados universais estejam sempre disponíveis
+          const clientDataSources = config?.dataSources && Array.isArray(config.dataSources)
+            ? config.dataSources.map((ds: any) => ({
+                ...ds,
+                metrics: (ds.metrics || []).filter((m: any) => !m?.isCalculated)
+              }))
+            : []
+          
+          console.log('📊 Fontes de dados do cliente carregadas do Firestore:', {
+            count: clientDataSources.length,
+            endpoints: clientDataSources.map((ds: any) => ds.endpoint)
+          })
+          
+          // Aplicar fontes de dados universais (que já inclui aplicar métricas calculadas universais)
+          applyUniversalDataSources(clientDataSources).then((dataSourcesWithUniversal) => {
+            console.log('✅ Fontes de dados universais aplicadas ao carregar customTabs:', {
+              count: dataSourcesWithUniversal.length,
+              endpoints: dataSourcesWithUniversal.map(ds => ds.endpoint)
+            })
+            setConfiguredDataSources(dataSourcesWithUniversal)
+          }).catch((error) => {
+            console.warn('⚠️ Erro ao aplicar fontes de dados universais ao carregar customTabs:', error)
+            // Fallback: aplicar apenas métricas universais às fontes do cliente
+            if (clientDataSources.length > 0) {
+              applyUniversalCalculatedMetrics(clientDataSources).then(setConfiguredDataSources).catch(() => {
+                setConfiguredDataSources(clientDataSources)
+              })
+            } else {
+              // Se não há fontes do cliente, aplicar apenas fontes universais
+              applyUniversalDataSources([]).then(setConfiguredDataSources).catch(() => {
+                setConfiguredDataSources([])
+              })
+            }
+          })
           
           // Abrir a primeira aba customizada ao carregar o dashboard
           if (tabs.length > 0) {
@@ -1447,6 +1735,31 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
           const tabs = DashboardStorage.getCustomTabs(selectedTable).sort((a, b) => a.order - b.order)
           console.log('📑 Abas carregadas do localStorage (fallback):', tabs.length)
           setCustomTabs(tabs)
+          
+          // Aplicar fontes de dados universais também no fallback
+          const localConfig = DashboardStorage.loadConfig(selectedTable)
+          const clientDataSources = localConfig?.dataSources && Array.isArray(localConfig.dataSources)
+            ? localConfig.dataSources.map((ds: any) => ({
+                ...ds,
+                metrics: (ds.metrics || []).filter((m: any) => !m?.isCalculated)
+              }))
+            : []
+          
+          applyUniversalDataSources(clientDataSources).then((dataSourcesWithUniversal) => {
+            console.log('✅ Fontes de dados universais aplicadas ao carregar customTabs (fallback)')
+            setConfiguredDataSources(dataSourcesWithUniversal)
+          }).catch((error) => {
+            console.warn('⚠️ Erro ao aplicar fontes de dados universais ao carregar customTabs (fallback):', error)
+            if (clientDataSources.length > 0) {
+              applyUniversalCalculatedMetrics(clientDataSources).then(setConfiguredDataSources).catch(() => {
+                setConfiguredDataSources(clientDataSources)
+              })
+            } else {
+              applyUniversalDataSources([]).then(setConfiguredDataSources).catch(() => {
+                setConfiguredDataSources([])
+              })
+            }
+          })
           
           // Abrir a primeira aba customizada ao carregar o dashboard (fallback)
           if (tabs.length > 0) {
@@ -1534,6 +1847,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   useEffect(() => {
     if (selectedTable) {
       // Só carregar se ainda não carregou OU se não há widgets no estado
+      // O cleanup deste useEffect reseta hasLoadedWidgetsRef quando selectedTable muda
       if (!hasLoadedWidgetsRef.current || widgets.length === 0) {
         // Carregar do Firestore primeiro (fonte primária)
         DashboardStorage.loadConfigAsync(selectedTable)
@@ -1542,7 +1856,8 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
               hasConfig: !!config,
               widgetsCount: config?.widgets?.length || 0,
               widgets: config?.widgets,
-              customTabsCount: config?.customTabs?.length || 0
+              customTabsCount: config?.customTabs?.length || 0,
+              dataSourcesCount: config?.dataSources?.length || 0
             })
             
             if (config) {
@@ -1573,6 +1888,34 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                 isWidgetsInitialMountRef.current = true
                 hasLoadedWidgetsRef.current = true
               }
+              
+              // IMPORTANTE: Sempre aplicar fontes de dados universais (mesmo se não houver fontes do cliente)
+              // Isso garante que as fontes de dados universais estejam sempre disponíveis
+              const clientDataSources = config.dataSources && Array.isArray(config.dataSources) 
+                ? config.dataSources.map((ds: any) => ({
+                    ...ds,
+                    metrics: (ds.metrics || []).filter((m: any) => !m?.isCalculated)
+                  }))
+                : []
+              
+              // Aplicar fontes de dados universais (que já inclui aplicar métricas calculadas universais)
+              applyUniversalDataSources(clientDataSources).then((dataSourcesWithUniversal) => {
+                console.log('✅ Fontes de dados universais aplicadas ao carregar widgets:', {
+                  count: dataSourcesWithUniversal.length,
+                  endpoints: dataSourcesWithUniversal.map(ds => ds.endpoint)
+                })
+                setConfiguredDataSources(dataSourcesWithUniversal)
+              }).catch((error) => {
+                console.warn('⚠️ Erro ao aplicar fontes de dados universais ao carregar widgets:', error)
+                // Fallback: aplicar apenas métricas universais às fontes do cliente
+                if (clientDataSources.length > 0) {
+                  applyUniversalCalculatedMetrics(clientDataSources).then(setConfiguredDataSources).catch(() => {
+                    setConfiguredDataSources(clientDataSources)
+                  })
+                } else {
+                  setConfiguredDataSources([])
+                }
+              })
             } else {
               // Fallback: tentar localStorage
               console.log('⚠️ Config não encontrada no Firestore, tentando localStorage...')
@@ -1590,6 +1933,28 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                 isWidgetsInitialMountRef.current = true
                 hasLoadedWidgetsRef.current = true
               }
+              
+              // Sempre aplicar fontes de dados universais no fallback também
+              const clientDataSources = localConfig?.dataSources && Array.isArray(localConfig.dataSources)
+                ? localConfig.dataSources.map((ds: any) => ({
+                    ...ds,
+                    metrics: (ds.metrics || []).filter((m: any) => !m?.isCalculated)
+                  }))
+                : []
+              
+              applyUniversalDataSources(clientDataSources).then((dataSourcesWithUniversal) => {
+                console.log('✅ Fontes de dados universais aplicadas ao carregar widgets (fallback)')
+                setConfiguredDataSources(dataSourcesWithUniversal)
+              }).catch((error) => {
+                console.warn('⚠️ Erro ao aplicar fontes de dados universais ao carregar widgets (fallback):', error)
+                if (clientDataSources.length > 0) {
+                  applyUniversalCalculatedMetrics(clientDataSources).then(setConfiguredDataSources).catch(() => {
+                    setConfiguredDataSources(clientDataSources)
+                  })
+                } else {
+                  setConfiguredDataSources([])
+                }
+              })
             }
           })
           .catch((error) => {
@@ -1603,6 +1968,28 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
               hasLoadedWidgetsRef.current = true
               console.log('🔄 Widgets recarregados do localStorage (fallback após erro):', localConfig.widgets.length, 'widgets')
             }
+            
+            // Sempre aplicar fontes de dados universais no fallback após erro também
+            const clientDataSources = localConfig?.dataSources && Array.isArray(localConfig.dataSources)
+              ? localConfig.dataSources.map((ds: any) => ({
+                  ...ds,
+                  metrics: (ds.metrics || []).filter((m: any) => !m?.isCalculated)
+                }))
+              : []
+            
+            applyUniversalDataSources(clientDataSources).then((dataSourcesWithUniversal) => {
+              console.log('✅ Fontes de dados universais aplicadas ao carregar widgets (fallback após erro)')
+              setConfiguredDataSources(dataSourcesWithUniversal)
+            }).catch((error) => {
+              console.warn('⚠️ Erro ao aplicar fontes de dados universais ao carregar widgets (fallback após erro):', error)
+              if (clientDataSources.length > 0) {
+                applyUniversalCalculatedMetrics(clientDataSources).then(setConfiguredDataSources).catch(() => {
+                  setConfiguredDataSources(clientDataSources)
+                })
+              } else {
+                setConfiguredDataSources([])
+              }
+            })
           })
       }
     }
@@ -1611,7 +1998,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     return () => {
       hasLoadedWidgetsRef.current = false
     }
-  }, [selectedTable])
+  }, [selectedTable, applyUniversalCalculatedMetrics, applyUniversalDataSources])
 
   // Migrar widgets antigos para o novo sistema na primeira vez
   useEffect(() => {
@@ -3783,9 +4170,24 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
       })
       
       if (dataResponse && dataResponse.data && Array.isArray(dataResponse.data)) {
-          // Verificar se o jobId ainda é o mesmo antes de atualizar os dados
+          // Verificar se o jobId ainda é o mesmo e se o selectedTable ainda é o mesmo antes de atualizar os dados
+          // Isso garante que os dados sejam salvos apenas se forem do cliente correto
           if (currentPollingJobIdRef.current && currentPollingJobIdRef.current !== currentJobId) {
-            console.log('⚠️ Job ID mudou durante busca de dados, ignorando dados antigos')
+            console.log('⚠️ Job ID mudou durante busca de dados, ignorando dados antigos:', {
+              currentJobId,
+              pollingJobId: currentPollingJobIdRef.current,
+              selectedTable
+            })
+            return
+          }
+          
+          // Verificar se o selectedTable ainda é o mesmo (para evitar salvar dados de cliente antigo)
+          if (hasStartedProcessingRef.current !== selectedTable) {
+            console.log('⚠️ Cliente mudou durante busca de dados, ignorando dados antigos:', {
+              startedFor: hasStartedProcessingRef.current,
+              current: selectedTable,
+              jobId: currentJobId
+            })
             return
           }
           
@@ -3793,26 +4195,54 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
           setAllData(dataResponse.data)
           
           // Filtrar por data se necessário (startDate e endDate)
+          let filteredData: OverviewDataItem[] = []
           if (startDate && endDate) {
             const startDateObj = new Date(startDate)
             const endDateObj = new Date(endDate)
             
-            const filtered = dataResponse.data.filter((item: OverviewDataItem) => {
+            filteredData = dataResponse.data.filter((item: OverviewDataItem) => {
               const itemDate = new Date(item.event_date)
               return itemDate >= startDateObj && itemDate <= endDateObj
             })
             
-            setData(filtered)
+            setData(filteredData)
             console.log('📅 Dados filtrados por data:', { 
               total: dataResponse.data.length, 
-              filtered: filtered.length,
+              filtered: filteredData.length,
               startDate,
               endDate
             })
           } else {
-            setData(dataResponse.data)
+            filteredData = dataResponse.data
+            setData(filteredData)
             console.log('📊 Dados carregados sem filtro de data:', dataResponse.data.length)
           }
+          
+          // Salvar também em dataBySource com chave padrão "overview" para widgets sem dataSource específico
+          setAllDataBySource(prev => {
+            const newMap = new Map(prev)
+            newMap.set('overview', dataResponse.data)
+            return newMap
+          })
+          
+          setDataBySource(prev => {
+            const newMap = new Map(prev)
+            newMap.set('overview', filteredData)
+            return newMap
+          })
+          
+          console.log('✅ Dados salvos em data e dataBySource["overview"]:', {
+            dataLength: filteredData.length,
+            allDataLength: dataResponse.data.length,
+            selectedTable,
+            jobId: currentJobId,
+            sampleData: filteredData.slice(0, 3).map(item => ({
+              date: item.event_date,
+              sessions: item.sessions,
+              revenue: item.revenue,
+              orders: item.orders
+            }))
+          })
           
           setJobStatus('completed')
           setJobProgress(`Dados carregados: ${dataResponse.count || dataResponse.data.length} registros`)
@@ -3983,8 +4413,8 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
     setJobProgress('Iniciando processamento...')
     setElapsedSeconds(null)
     setError(null)
-    setData([])
-    setAllData([])
+    // Não limpar data/allData aqui - já foram limpos no useEffect quando selectedTable mudou
+    // Se limpar aqui novamente, pode interferir com o carregamento de dados
 
     try {
       // Criar job
@@ -4016,7 +4446,65 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
   useEffect(() => {
     if (!selectedTable) return
     
+    // Limpar dados antigos quando o cliente mudar
+    console.log('🔄 Cliente mudou, limpando dados antigos:', selectedTable)
+    
+    // Parar qualquer polling anterior primeiro
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+      pollingIntervalRef.current = null
+    }
+    
+    // Limpar estado ANTES de limpar dados para evitar renderização com dados antigos
+    setIsLoading(true)
+    setError(null)
+    setJobStatus('idle')
+    setJobProgress('')
+    setElapsedSeconds(null)
+    
+    // Limpar dados
+    setData([])
+    setAllData([])
+    setDataBySource(new Map())
+    setAllDataBySource(new Map())
+    setPreviousTotals({
+      sessions: 0,
+      clicks: 0,
+      add_to_carts: 0,
+      orders: 0,
+      paid_orders: 0,
+      revenue: 0,
+      paid_revenue: 0,
+      cost: 0,
+      leads: 0,
+      new_customers: 0,
+      revenue_new_customers: 0,
+      paid_new_annual_orders: 0,
+      paid_new_annual_revenue: 0,
+      paid_new_montly_orders: 0,
+      paid_new_montly_revenue: 0,
+      paid_recurring_annual_orders: 0,
+      paid_recurring_annual_revenue: 0,
+      paid_recurring_montly_orders: 0,
+      paid_recurring_montly_revenue: 0
+    })
+    
+    // Limpar refs de processamento por fonte
+    jobsBySourceRef.current.clear()
+    isProcessingBySourceRef.current.clear()
+    previousDataBySourceRef.current.clear()
+    setIsLoadingBySource(new Map())
+    setElapsedSecondsBySource(new Map())
+    
+    // Resetar flag de widgets carregados para forçar recarregamento
+    hasLoadedWidgetsRef.current = false
+    
+    // Marcar que começamos o processamento para este cliente
     hasStartedProcessingRef.current = selectedTable
+    currentPollingJobIdRef.current = null
+    isProcessingRef.current = false
+    
+    // Iniciar processamento (que vai carregar os dados do novo cliente)
     startProcessing()
 
     // Cleanup
@@ -4519,12 +5007,41 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
         return prev
       }
       
+      return prev // Retornar prev temporariamente, a atualização será feita abaixo
+    })
+    
+    // Aplicar métricas calculadas universais à nova fonte antes de adicionar
+    try {
+      const sourcesWithUniversal = await applyUniversalCalculatedMetrics([source])
+      const newSourceWithUniversal = sourcesWithUniversal[0] || source
+      
       // Marcar como carregando
       const newSource: DataSource = {
-        ...source,
+        ...newSourceWithUniversal,
         isLoading: true,
         isLoaded: false
       }
+      
+      setConfiguredDataSources(current => {
+        // Verificar novamente se não foi adicionada enquanto processávamos
+        if (current.find(ds => ds.endpoint === source.endpoint)) {
+          return current
+        }
+        const updated = [...current, newSource]
+        
+        // IMPORTANTE: Salvar fontes de dados universalmente quando adicionar uma nova
+        // Remover métricas calculadas antes de salvar (elas vêm das universais)
+        const sourcesWithoutCalculated = updated.map(ds => ({
+          ...ds,
+          metrics: (ds.metrics || []).filter((m: any) => !m?.isCalculated)
+        }))
+        
+        DashboardStorage.saveUniversalDataSources(sourcesWithoutCalculated).catch(error => {
+          console.error('❌ Erro ao salvar fontes de dados universais:', error)
+        })
+        
+        return updated
+      })
       
       // Iniciar carregamento em background
       setTimeout(async () => {
@@ -4536,10 +5053,45 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
           setConfiguredDataSources(prevSources => prevSources.filter(ds => ds.endpoint !== source.endpoint))
         }
       }, 100)
+    } catch (error) {
+      console.error('❌ Erro ao aplicar métricas universais à nova fonte:', error)
+      // Adicionar fonte sem métricas universais em caso de erro
+      const newSource: DataSource = {
+        ...source,
+        isLoading: true,
+        isLoaded: false
+      }
+      setConfiguredDataSources(current => {
+        // Verificar novamente se não foi adicionada enquanto processávamos
+        if (current.find(ds => ds.endpoint === source.endpoint)) {
+          return current
+        }
+        const updated = [...current, newSource]
+        
+        // IMPORTANTE: Salvar fontes de dados universalmente quando adicionar uma nova
+        // Remover métricas calculadas antes de salvar (elas vêm das universais)
+        const sourcesWithoutCalculated = updated.map(ds => ({
+          ...ds,
+          metrics: (ds.metrics || []).filter((m: any) => !m?.isCalculated)
+        }))
+        
+        DashboardStorage.saveUniversalDataSources(sourcesWithoutCalculated).catch(error => {
+          console.error('❌ Erro ao salvar fontes de dados universais:', error)
+        })
+        
+        return updated
+      })
       
-      return [...prev, newSource]
-    })
-  }, [selectedTable, fetchDataSourceData])
+      setTimeout(async () => {
+        try {
+          await fetchDataSourceData(source.endpoint)
+        } catch (error) {
+          console.error('❌ Erro ao iniciar carregamento de fonte de dados:', error)
+          setConfiguredDataSources(prevSources => prevSources.filter(ds => ds.endpoint !== source.endpoint))
+        }
+      }, 100)
+    }
+  }, [selectedTable, fetchDataSourceData, applyUniversalCalculatedMetrics])
 
   // useEffect para mapear métricas/dimensões quando dados são carregados
   useEffect(() => {
@@ -4558,10 +5110,14 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
               ds.endpoint === source.endpoint 
                 ? {
                     ...ds,
-                    // Preservar métricas customizadas (ex: calculadas) e manter mapeadas atualizadas
+                    // NÃO preservar métricas calculadas aqui - elas devem vir sempre das métricas universais
+                    // Apenas preservar métricas mapeadas (não calculadas) e adicionar as mapeadas dos dados
                     metrics: (() => {
                       const existing = Array.isArray(ds.metrics) ? ds.metrics : []
-                      const preserved = existing.filter((m: any) => m?.isCalculated || !mappedMetrics.find(mm => mm.key === m?.key))
+                      // Remover métricas calculadas - elas vêm das universais
+                      const nonCalculated = existing.filter((m: any) => !m?.isCalculated)
+                      // Preservar métricas não-calculadas existentes que não foram mapeadas
+                      const preserved = nonCalculated.filter((m: any) => !mappedMetrics.find(mm => mm.key === m?.key))
                       const byKey = new Map<string, any>()
                       mappedMetrics.forEach(m => byKey.set(m.key, m))
                       preserved.forEach(m => {
@@ -4576,9 +5132,33 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                 : ds
             )
             
-            // Salvar no Firestore
-            DashboardStorage.saveConfig(selectedTable, { dataSources: updatedSources }).catch(error => {
-              console.error('❌ Erro ao salvar fontes de dados:', error)
+            // Aplicar métricas calculadas universais após mapear (fora do setState)
+            applyUniversalCalculatedMetrics(updatedSources).then((sourcesWithUniversal) => {
+              setConfiguredDataSources(sourcesWithUniversal)
+              
+              // Salvar no Firestore SEM métricas calculadas (elas vêm das universais)
+              if (selectedTable) {
+                // Remover métricas calculadas antes de salvar
+                const sourcesWithoutCalculated = sourcesWithUniversal.map(ds => ({
+                  ...ds,
+                  metrics: (ds.metrics || []).filter((m: any) => !m?.isCalculated)
+                }))
+                DashboardStorage.saveConfig(selectedTable, { dataSources: sourcesWithoutCalculated }).catch(error => {
+                  console.error('❌ Erro ao salvar fontes de dados:', error)
+                })
+              }
+            }).catch(error => {
+              console.error('❌ Erro ao aplicar métricas universais:', error)
+              // Salvar sem métricas calculadas em caso de erro
+              if (selectedTable) {
+                const sourcesWithoutCalculated = updatedSources.map(ds => ({
+                  ...ds,
+                  metrics: (ds.metrics || []).filter((m: any) => !m?.isCalculated)
+                }))
+                DashboardStorage.saveConfig(selectedTable, { dataSources: sourcesWithoutCalculated }).catch(error => {
+                  console.error('❌ Erro ao salvar fontes de dados:', error)
+                })
+              }
             })
             
             console.log('✅ Fonte de dados mapeada:', source.endpoint, {
@@ -4591,11 +5171,86 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
         }
       }
     })
-  }, [configuredDataSources, allDataBySource, isLoadingBySource, extractMetricsAndDimensions, selectedTable])
+  }, [configuredDataSources, allDataBySource, isLoadingBySource, extractMetricsAndDimensions, selectedTable, applyUniversalCalculatedMetrics])
+
+  // useEffect para sempre aplicar fontes de dados e métricas calculadas universais quando cliente muda
+  // Este useEffect garante que as fontes de dados e métricas universais sejam sempre aplicadas quando o cliente muda
+  const previousSelectedTableRef = useRef<string | null>(null)
+  const universalDataSourcesAppliedRef = useRef<string | null>(null)
+  
+  useEffect(() => {
+    if (!selectedTable) return
+    
+    // Verificar se o cliente mudou
+    const clientChanged = previousSelectedTableRef.current !== selectedTable
+    if (clientChanged) {
+      previousSelectedTableRef.current = selectedTable
+      universalDataSourcesAppliedRef.current = null
+      console.log('🔄 Cliente mudou, resetando fontes de dados e métricas universais:', selectedTable)
+    }
+    
+    // Aplicar fontes de dados e métricas universais quando:
+    // 1. Cliente mudou
+    // 2. Fontes de dados universais ainda não foram aplicadas para este cliente
+    if (clientChanged || universalDataSourcesAppliedRef.current !== selectedTable) {
+      console.log('🔄 Aplicando fontes de dados e métricas calculadas universais ao cliente:', {
+        selectedTable,
+        clientChanged,
+        currentDataSourcesCount: configuredDataSources.length
+      })
+      
+      // Remover métricas calculadas existentes antes de aplicar as universais
+      // Isso garante que métricas antigas (salvas por cliente) não interfiram
+      const sourcesWithoutCalculated = configuredDataSources.map(ds => ({
+        ...ds,
+        metrics: (ds.metrics || []).filter((m: any) => !m?.isCalculated)
+      }))
+      
+      // Sempre aplicar fontes de dados universais (que já inclui aplicar métricas calculadas universais)
+      applyUniversalDataSources(sourcesWithoutCalculated).then((sourcesWithUniversal) => {
+        const universalMetricsCount = sourcesWithUniversal.reduce((acc, ds) => {
+          const calculated = (ds.metrics || []).filter((m: any) => m?.isCalculated)
+          return acc + calculated.length
+        }, 0)
+        
+        console.log('✅ Fontes de dados e métricas calculadas universais aplicadas:', {
+          selectedTable,
+          dataSourcesCount: sourcesWithUniversal.length,
+          universalMetricsCount,
+          endpoints: sourcesWithUniversal.map(ds => ds.endpoint)
+        })
+        
+        setConfiguredDataSources(sourcesWithUniversal)
+        universalDataSourcesAppliedRef.current = selectedTable
+      }).catch(error => {
+        console.warn('⚠️ Erro ao aplicar fontes de dados e métricas calculadas universais:', error)
+        // Fallback: aplicar apenas métricas universais
+        applyUniversalCalculatedMetrics(sourcesWithoutCalculated).then((sourcesWithMetrics) => {
+          setConfiguredDataSources(sourcesWithMetrics)
+          universalDataSourcesAppliedRef.current = selectedTable
+        }).catch(() => {
+          universalDataSourcesAppliedRef.current = null
+        })
+      })
+    }
+  }, [selectedTable, configuredDataSources, applyUniversalCalculatedMetrics, applyUniversalDataSources])
 
   // Função para remover uma fonte de dados
   const removeDataSource = useCallback(async (endpoint: string) => {
     if (!selectedTable) return
+    
+    // Verificar se esta fonte está nas fontes de dados universais
+    const universalDataSources = await DashboardStorage.loadUniversalDataSourcesAsync()
+    const isUniversal = universalDataSources.some(ds => ds.endpoint === endpoint)
+    
+    if (isUniversal) {
+      // Se for universal, não permitir remover (ou mostrar aviso)
+      if (!window.confirm(`Esta fonte de dados é universal e será aplicada a todos os clientes. Deseja removê-la do cliente atual apenas? (Ela continuará disponível universalmente)`)) {
+        return
+      }
+      // Remover apenas do cliente específico, mas manter nas universais
+      // Isso significa que ela será reaplicada quando as fontes universais forem aplicadas novamente
+    }
     
     // Verificar se há widgets usando esta fonte
     const widgetsUsingSource = widgets.filter(w => w.dataSource === endpoint)
@@ -4611,18 +5266,45 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
       ))
     }
     
-    // Remover fonte
+    // IMPORTANTE: Remover apenas se não for universal, ou remover temporariamente do cliente
+    // Se for universal, ela será reaplicada quando as fontes universais forem aplicadas
     const updatedSources = configuredDataSources.filter(ds => ds.endpoint !== endpoint)
+    
+    // Remover métricas calculadas antes de salvar (elas vêm das universais)
+    const sourcesWithoutCalculated = updatedSources.map(ds => ({
+      ...ds,
+      metrics: (ds.metrics || []).filter((m: any) => !m?.isCalculated)
+    }))
+    
     setConfiguredDataSources(updatedSources)
     
-    // Salvar no Firestore
+    // Salvar no Firestore SEM métricas calculadas
     await DashboardStorage.saveConfig(selectedTable, { 
-      dataSources: updatedSources,
+      dataSources: sourcesWithoutCalculated,
       widgets: widgets.map(w => w.dataSource === endpoint ? { ...w, dataSource: undefined } : w)
     })
     
-    console.log('✅ Fonte de dados removida:', endpoint)
-  }, [selectedTable, configuredDataSources, widgets])
+    console.log('✅ Fonte de dados removida do cliente:', endpoint, { isUniversal })
+    
+    // IMPORTANTE: Reaplicar fontes de dados universais após remover (isso reaplica fontes universais que foram removidas)
+    // Isso garante que fontes universais sejam sempre mantidas
+    setTimeout(() => {
+      applyUniversalDataSources(updatedSources).then(sources => {
+        console.log('✅ Fontes de dados universais reaplicadas após remover fonte:', {
+          removedEndpoint: endpoint,
+          finalSourcesCount: sources.length,
+          endpoints: sources.map(ds => ds.endpoint)
+        })
+        setConfiguredDataSources(sources)
+      }).catch(error => {
+        console.error('❌ Erro ao reaplicar fontes de dados universais:', error)
+        // Fallback: aplicar apenas métricas universais
+        applyUniversalCalculatedMetrics(updatedSources).then(sources => {
+          setConfiguredDataSources(sources)
+        }).catch(console.error)
+      })
+    }, 100)
+  }, [selectedTable, configuredDataSources, widgets, applyUniversalCalculatedMetrics, applyUniversalDataSources])
 
   // Função helper para obter dados para um widget específico baseado no dataSource
   const getWidgetData = useCallback((widget: Widget): OverviewDataItem[] => {
@@ -5969,6 +6651,9 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
       </div>
     )
   }
+
+  // Estado para erro de validação (apenas após tentar salvar)
+  const [calculatedMetricValidationError, setCalculatedMetricValidationError] = useState<string | null>(null)
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -8165,9 +8850,12 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                                 )}
                                 <button
                                   onClick={() => {
+                                    const emptyForm = { key: '', label: '', type: 'number' as const, formula: '' }
                                     setCalculatedMetricsDataSource(source.endpoint)
                                     setEditingCalculatedMetricKey(null)
-                                    setCalculatedMetricForm({ key: '', label: '', type: 'number', formula: '' })
+                                    setLocalMetricForm(emptyForm)
+                                    setCalculatedMetricForm(emptyForm)
+                                    setCalculatedMetricValidationError(null)
                                   }}
                                   className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-all"
                                   title="Métricas calculadas"
@@ -8188,10 +8876,24 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                                           : ds
                                       )
                                       setConfiguredDataSources(updatedSources)
-                                      DashboardStorage.saveConfig(selectedTable, { dataSources: updatedSources }).catch(error => {
+                                      
+                                      // Remover métricas calculadas antes de salvar (elas vêm das universais)
+                                      const sourcesWithoutCalculated = updatedSources.map(ds => ({
+                                        ...ds,
+                                        metrics: (ds.metrics || []).filter((m: any) => !m?.isCalculated)
+                                      }))
+                                      
+                                      DashboardStorage.saveConfig(selectedTable, { dataSources: sourcesWithoutCalculated }).catch(error => {
                                         console.error('❌ Erro ao salvar configuração de campo de data:', error)
                                       })
                                       console.log('✅ Campo de data atualizado:', source.endpoint, newDateField.trim())
+                                      
+                                      // Reaplicar métricas universais após salvar
+                                      setTimeout(() => {
+                                        applyUniversalCalculatedMetrics(updatedSources).then(sources => {
+                                          setConfiguredDataSources(sources)
+                                        }).catch(console.error)
+                                      }, 100)
                                     }
                                   }}
                                   className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
@@ -8386,97 +9088,304 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                     ...Object.keys((allDataBySource.get(calculatedMetricsDataSource)?.[0] as any) || {})
                   ])
 
-                  const validate = (): string | null => {
-                    const key = calculatedMetricForm.key.trim()
-                    const label = calculatedMetricForm.label.trim()
-                    const formula = calculatedMetricForm.formula.trim()
-                    if (!key) return 'Key é obrigatório'
-                    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return 'Key inválido (use letras, números e _; não comece com número)'
-                    if (!label) return 'Label é obrigatório'
-                    if (!formula) return 'Fórmula é obrigatória'
-
-                    const isEditing = !!editingCalculatedMetricKey
-                    if (!isEditing) {
-                      if (existingMetrics.find(m => m.key === key)) return `Já existe uma métrica com key "${key}"`
-                    } else if (editingCalculatedMetricKey !== key) {
-                      if (existingMetrics.find(m => m.key === key)) return `Já existe uma métrica com key "${key}"`
-                    }
-
-                    // Validar identificadores usados - sem preview (somente chaves conhecidas da fonte)
-                    const processedKeys = new Set(availableKeys)
-                    const ids = extractFormulaIdentifiers(formula)
-                    const unknown = ids.filter(id => !processedKeys.has(id) && id !== key)
-                    if (unknown.length > 0) return `Campos não encontrados na fonte: ${unknown.join(', ')}`
-
-                    // Validar sintaxe do parser (sem executar preview em amostra de dados)
-                    try {
-                      if (hasAggregateFunctions(formula)) {
-                        // Sem dados: identificadores já foram validados acima
-                        evaluateAggregateFormula(formula, [])
-                      } else {
-                        evaluateFormula(formula, {}) // valida parser apenas
-                      }
-                    } catch (e: any) {
-                      return e?.message || 'Fórmula inválida'
-                    }
-
-                    return null
-                  }
-
-                  const error = validate()
-
                   const save = async () => {
-                    if (!selectedTable || !source) return
-                    const err = validate()
-                    if (err) {
-                      alert(err)
-                      return
-                    }
-
-                    const nextMetric = {
-                      key: calculatedMetricForm.key.trim(),
-                      label: calculatedMetricForm.label.trim(),
-                      type: calculatedMetricForm.type,
-                      isCalculated: true,
-                      formula: calculatedMetricForm.formula.trim()
-                    }
-
-                    const updatedSources = configuredDataSources.map(ds => {
-                      if (ds.endpoint !== calculatedMetricsDataSource) return ds
-                      const prev = ds.metrics || []
-                      // Se editando, substituir; senão, adicionar
-                      const without = editingCalculatedMetricKey
-                        ? prev.filter((m: any) => m.key !== editingCalculatedMetricKey)
-                        : prev
-                      return {
-                        ...ds,
-                        metrics: [...without, nextMetric]
-                      }
-                    })
-
-                    setConfiguredDataSources(updatedSources)
-                    await DashboardStorage.saveConfig(selectedTable, { dataSources: updatedSources })
                     try {
-                      recomputeCalculatedMetricsForSource(calculatedMetricsDataSource, updatedSources)
-                    } catch (e: any) {
-                      console.error('❌ Erro ao recalcular métricas:', e)
-                      alert(e?.message || 'Erro ao recalcular métricas')
-                    }
+                      if (!source) return
+                      
+                      // Limpar erro anterior
+                      setCalculatedMetricValidationError(null)
+                      
+                      // Validar usando os valores locais (mais recentes)
+                      const key = localMetricForm.key.trim()
+                      const label = localMetricForm.label.trim()
+                      const formula = localMetricForm.formula.trim()
+                      
+                      // Validar campos obrigatórios
+                      if (!key) {
+                        setCalculatedMetricValidationError('Key é obrigatório')
+                        return
+                      }
+                      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+                        setCalculatedMetricValidationError('Key inválido (use letras, números e _; não comece com número)')
+                        return
+                      }
+                      if (!label) {
+                        setCalculatedMetricValidationError('Label é obrigatório')
+                        return
+                      }
+                      if (!formula) {
+                        setCalculatedMetricValidationError('Fórmula é obrigatória')
+                        return
+                      }
+                      
+                      // Validar duplicação de key
+                      const isEditing = !!editingCalculatedMetricKey
+                      if (!isEditing) {
+                        if (existingMetrics.find(m => m.key === key)) {
+                          setCalculatedMetricValidationError(`Já existe uma métrica com key "${key}"`)
+                          return
+                        }
+                      } else if (editingCalculatedMetricKey !== key) {
+                        if (existingMetrics.find(m => m.key === key)) {
+                          setCalculatedMetricValidationError(`Já existe uma métrica com key "${key}"`)
+                          return
+                        }
+                      }
+                      
+                      // Validar identificadores usados na fórmula
+                      const processedKeys = new Set(availableKeys)
+                      const ids = extractFormulaIdentifiers(formula)
+                      const unknown = ids.filter(id => !processedKeys.has(id) && id !== key)
+                      if (unknown.length > 0) {
+                        setCalculatedMetricValidationError(`Campos não encontrados na fonte: ${unknown.join(', ')}`)
+                        return
+                      }
+                      
+                      // Validar sintaxe do parser
+                      try {
+                        if (hasAggregateFunctions(formula)) {
+                          evaluateAggregateFormula(formula, [])
+                        } else {
+                          evaluateFormula(formula, {})
+                        }
+                      } catch (e: any) {
+                        setCalculatedMetricValidationError(e?.message || 'Fórmula inválida')
+                        return
+                      }
+                      
+                      // Se chegou aqui, validação passou - usar valores locais diretamente
+                      const nextMetric = {
+                        key: localMetricForm.key.trim(),
+                        label: localMetricForm.label.trim(),
+                        type: localMetricForm.type,
+                        isCalculated: true,
+                        formula: localMetricForm.formula.trim()
+                      }
 
-                    setEditingCalculatedMetricKey(null)
-                    setCalculatedMetricForm({ key: '', label: '', type: 'number', formula: '' })
+                      // IMPORTANTE: Verificar se calculatedMetricsDataSource está definido
+                      if (!calculatedMetricsDataSource || calculatedMetricsDataSource.trim() === '') {
+                        alert('Erro: DataSource não identificado. Por favor, feche e abra novamente o modal de métricas calculadas.')
+                        console.error('❌ Erro: calculatedMetricsDataSource está vazio ou indefinido')
+                        return
+                      }
+                      
+                      // Carregar métricas calculadas universais existentes para este dataSource (ASSÍNCRONO)
+                      console.log('💾 [SAVE] Salvando métrica calculada universalmente:', {
+                        dataSource: calculatedMetricsDataSource,
+                        dataSourceType: typeof calculatedMetricsDataSource,
+                        dataSourceLength: calculatedMetricsDataSource.length,
+                        metricKey: nextMetric.key,
+                        metricLabel: nextMetric.label,
+                        metricFormula: nextMetric.formula,
+                        isEditing: !!editingCalculatedMetricKey,
+                        editingKey: editingCalculatedMetricKey
+                      })
+                      
+                      const universalMetrics = await DashboardStorage.loadUniversalCalculatedMetricsAsync()
+                      console.log('📊 [SAVE] Métricas universais existentes antes de salvar:', {
+                        allDataSources: Object.keys(universalMetrics),
+                        allDataSourcesCount: Object.keys(universalMetrics).length,
+                        metricsForThisDataSource: universalMetrics[calculatedMetricsDataSource]?.length || 0,
+                        allMetricsByDataSource: Object.entries(universalMetrics).reduce((acc, [key, metrics]) => {
+                          acc[key] = {
+                            count: metrics.length,
+                            keys: metrics.map((m: any) => m.key)
+                          }
+                          return acc
+                        }, {} as Record<string, { count: number; keys: string[] }>)
+                      })
+                      
+                      const existingForDataSource = universalMetrics[calculatedMetricsDataSource] || []
+                      
+                      // Verificar se o dataSource existe nas métricas universais
+                      if (!(calculatedMetricsDataSource in universalMetrics)) {
+                        console.log('ℹ️ [SAVE] DataSource não encontrado nas métricas universais, será criado:', calculatedMetricsDataSource)
+                      }
+                      
+                      // Atualizar métricas universais (substituir se editando, adicionar se criando)
+                      const without = editingCalculatedMetricKey
+                        ? existingForDataSource.filter((m: any) => m.key !== editingCalculatedMetricKey)
+                        : existingForDataSource
+                      const updatedUniversalForDataSource = [...without, nextMetric]
+                      
+                      console.log('💾 [SAVE] Atualizando métricas universais para dataSource:', {
+                        dataSource: calculatedMetricsDataSource,
+                        beforeCount: existingForDataSource.length,
+                        afterCount: updatedUniversalForDataSource.length,
+                        metricsKeys: updatedUniversalForDataSource.map((m: any) => m.key),
+                        newMetric: nextMetric
+                      })
+                      
+                      // Salvar métricas calculadas universalmente (não por cliente)
+                      // IMPORTANTE: Salvar o objeto COMPLETO com todas as métricas de todos os dataSources
+                      await DashboardStorage.saveUniversalCalculatedMetrics(
+                        calculatedMetricsDataSource,
+                        updatedUniversalForDataSource
+                      )
+                      
+                      console.log('✅ [SAVE] Métricas salvas com sucesso no Firestore')
+                      
+                      // Verificar se foi salvo corretamente (aguardar um pouco para garantir que foi salvo)
+                      await new Promise(resolve => setTimeout(resolve, 500))
+                      const savedMetrics = await DashboardStorage.loadUniversalCalculatedMetricsAsync()
+                      
+                      console.log('✅ [SAVE] Métricas universais após salvar:', {
+                        allDataSources: Object.keys(savedMetrics),
+                        allDataSourcesCount: Object.keys(savedMetrics).length,
+                        metricsForThisDataSource: savedMetrics[calculatedMetricsDataSource]?.length || 0,
+                        savedMetricsForThisDataSource: savedMetrics[calculatedMetricsDataSource]?.map((m: any) => ({ key: m.key, label: m.label })) || [],
+                        dataSourceExists: calculatedMetricsDataSource in savedMetrics,
+                        allMetricsByDataSource: Object.entries(savedMetrics).reduce((acc, [key, metrics]) => {
+                          acc[key] = {
+                            count: metrics.length,
+                            keys: metrics.map((m: any) => m.key)
+                          }
+                          return acc
+                        }, {} as Record<string, { count: number; keys: string[] }>)
+                      })
+                      
+                      // Verificar se o dataSource foi realmente salvo
+                      if (!(calculatedMetricsDataSource in savedMetrics)) {
+                        console.error('❌ [SAVE] ERRO: DataSource não foi salvo nas métricas universais!', {
+                          calculatedMetricsDataSource,
+                          savedDataSources: Object.keys(savedMetrics)
+                        })
+                        alert('Erro: A métrica não foi salva corretamente. Por favor, tente novamente.')
+                        return
+                      }
+                      
+                      // Verificar se a métrica específica foi salva
+                      const savedMetricsForDataSource = savedMetrics[calculatedMetricsDataSource] || []
+                      const metricExists = savedMetricsForDataSource.some((m: any) => m.key === nextMetric.key)
+                      if (!metricExists) {
+                        console.error('❌ [SAVE] ERRO: Métrica não encontrada após salvar!', {
+                          metricKey: nextMetric.key,
+                          savedMetricsKeys: savedMetricsForDataSource.map((m: any) => m.key)
+                        })
+                        alert('Erro: A métrica não foi encontrada após salvar. Por favor, verifique o console e tente novamente.')
+                        return
+                      }
+
+                      // Atualizar fontes de dados locais para todos os clientes (sincronizar)
+                      const updatedSources = configuredDataSources.map(ds => {
+                        if (ds.endpoint !== calculatedMetricsDataSource) return ds
+                        const prev = ds.metrics || []
+                        // Remover métricas calculadas antigas e adicionar as novas universais
+                        const withoutCalculated = prev.filter((m: any) => !m?.isCalculated)
+                        return {
+                          ...ds,
+                          metrics: [...withoutCalculated, ...updatedUniversalForDataSource]
+                        }
+                      })
+
+                      setConfiguredDataSources(updatedSources)
+                      
+                      // NÃO salvar métricas calculadas nas fontes de dados do cliente
+                      // As métricas calculadas devem ser sempre carregadas das métricas universais
+                      // Se quisermos atualizar as fontes de dados do cliente atual, removemos as métricas calculadas antes de salvar
+                      if (selectedTable) {
+                        // Remover métricas calculadas das fontes antes de salvar (elas vêm das universais)
+                        const sourcesWithoutCalculated = updatedSources.map(ds => ({
+                          ...ds,
+                          metrics: (ds.metrics || []).filter((m: any) => !m?.isCalculated)
+                        }))
+                        await DashboardStorage.saveConfig(selectedTable, { dataSources: sourcesWithoutCalculated })
+                      }
+                      
+                      try {
+                        recomputeCalculatedMetricsForSource(calculatedMetricsDataSource, updatedSources)
+                      } catch (e: any) {
+                        console.error('❌ Erro ao recalcular métricas:', e)
+                        alert(e?.message || 'Erro ao recalcular métricas')
+                      }
+
+                      // Se chegou aqui, salvou com sucesso
+                      const emptyForm = { key: '', label: '', type: 'number' as const, formula: '' }
+                      setEditingCalculatedMetricKey(null)
+                      setLocalMetricForm(emptyForm)
+                      setCalculatedMetricForm(emptyForm)
+                      setCalculatedMetricValidationError(null)
+                      
+                      // Forçar reaplicação das métricas universais após salvar
+                      setTimeout(() => {
+                        applyUniversalCalculatedMetrics(configuredDataSources).then(sources => {
+                          setConfiguredDataSources(sources)
+                        }).catch(console.error)
+                      }, 100)
+                    } catch (saveError: any) {
+                      // Este catch captura qualquer erro que ocorra durante o salvamento
+                      console.error('❌ [SAVE] Erro geral ao salvar métrica calculada:', saveError)
+                      const errorMessage = saveError?.message || 'Erro desconhecido ao salvar métrica calculada'
+                      setCalculatedMetricValidationError(`Erro ao salvar: ${errorMessage}`)
+                      alert(`Erro ao salvar métrica calculada: ${errorMessage}\n\nPor favor, verifique o console para mais detalhes.`)
+                    }
                   }
 
                   const remove = async (key: string) => {
-                    if (!selectedTable) return
                     if (!window.confirm(`Remover a métrica calculada "${key}"?`)) return
+                    
+                    // Carregar métricas calculadas universais existentes (ASSÍNCRONO para garantir que carrega todas)
+                    console.log('🗑️ Removendo métrica calculada universalmente:', {
+                      dataSource: calculatedMetricsDataSource,
+                      metricKey: key
+                    })
+                    
+                    const universalMetrics = await DashboardStorage.loadUniversalCalculatedMetricsAsync()
+                    console.log('📊 Métricas universais existentes antes de remover:', {
+                      allDataSources: Object.keys(universalMetrics),
+                      metricsForThisDataSource: universalMetrics[calculatedMetricsDataSource]?.length || 0
+                    })
+                    
+                    const existingForDataSource = universalMetrics[calculatedMetricsDataSource] || []
+                    
+                    // Remover métrica das métricas universais
+                    const updatedUniversalForDataSource = existingForDataSource.filter((m: any) => m.key !== key)
+                    
+                    console.log('🗑️ Métricas após remover:', {
+                      dataSource: calculatedMetricsDataSource,
+                      beforeCount: existingForDataSource.length,
+                      afterCount: updatedUniversalForDataSource.length
+                    })
+                    
+                    // Salvar métricas calculadas universalmente (não por cliente)
+                    // IMPORTANTE: Salvar mantendo TODAS as métricas de TODOS os dataSources
+                    await DashboardStorage.saveUniversalCalculatedMetrics(
+                      calculatedMetricsDataSource,
+                      updatedUniversalForDataSource
+                    )
+                    
+                    // Verificar se foi salvo corretamente
+                    const savedMetrics = await DashboardStorage.loadUniversalCalculatedMetricsAsync()
+                    console.log('✅ Métricas universais após remover:', {
+                      allDataSources: Object.keys(savedMetrics),
+                      metricsForThisDataSource: savedMetrics[calculatedMetricsDataSource]?.length || 0
+                    })
+
+                    // Atualizar fontes de dados locais para todos os clientes (sincronizar)
                     const updatedSources = configuredDataSources.map(ds => {
                       if (ds.endpoint !== calculatedMetricsDataSource) return ds
                       const prev = ds.metrics || []
-                      return { ...ds, metrics: prev.filter((m: any) => m.key !== key) }
+                      // Remover métricas calculadas antigas e adicionar as novas universais
+                      const withoutCalculated = prev.filter((m: any) => !m?.isCalculated)
+                      return {
+                        ...ds,
+                        metrics: [...withoutCalculated, ...updatedUniversalForDataSource]
+                      }
                     })
+                    
                     setConfiguredDataSources(updatedSources)
-                    await DashboardStorage.saveConfig(selectedTable, { dataSources: updatedSources })
+                    
+                    // NÃO salvar métricas calculadas nas fontes de dados do cliente
+                    // As métricas calculadas devem ser sempre carregadas das métricas universais
+                    if (selectedTable) {
+                      // Remover métricas calculadas das fontes antes de salvar (elas vêm das universais)
+                      const sourcesWithoutCalculated = updatedSources.map(ds => ({
+                        ...ds,
+                        metrics: (ds.metrics || []).filter((m: any) => !m?.isCalculated)
+                      }))
+                      await DashboardStorage.saveConfig(selectedTable, { dataSources: sourcesWithoutCalculated })
+                    }
+                    
                     try {
                       recomputeCalculatedMetricsForSource(calculatedMetricsDataSource, updatedSources)
                     } catch (e: any) {
@@ -8484,19 +9393,32 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                       alert(e?.message || 'Erro ao recalcular métricas')
                     }
                     if (editingCalculatedMetricKey === key) {
+                      const emptyForm = { key: '', label: '', type: 'number' as const, formula: '' }
                       setEditingCalculatedMetricKey(null)
-                      setCalculatedMetricForm({ key: '', label: '', type: 'number', formula: '' })
+                      setLocalMetricForm(emptyForm)
+                      setCalculatedMetricForm(emptyForm)
+                      setCalculatedMetricValidationError(null)
                     }
+                    
+                    // Forçar reaplicação das métricas universais após remover
+                    setTimeout(() => {
+                      applyUniversalCalculatedMetrics(configuredDataSources).then(sources => {
+                        setConfiguredDataSources(sources)
+                      }).catch(console.error)
+                    }, 100)
                   }
 
                   const startEdit = (m: any) => {
-                    setEditingCalculatedMetricKey(m.key)
-                    setCalculatedMetricForm({
+                    const formData = {
                       key: m.key || '',
                       label: m.label || '',
                       type: m.type || 'number',
                       formula: m.formula || ''
-                    })
+                    }
+                    setEditingCalculatedMetricKey(m.key)
+                    setLocalMetricForm(formData)
+                    setCalculatedMetricForm(formData)
+                    setCalculatedMetricValidationError(null)
                   }
 
                   return (
@@ -8571,8 +9493,11 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                             {editingCalculatedMetricKey && (
                               <button
                                 onClick={() => {
+                                  const emptyForm = { key: '', label: '', type: 'number' as const, formula: '' }
                                   setEditingCalculatedMetricKey(null)
-                                  setCalculatedMetricForm({ key: '', label: '', type: 'number', formula: '' })
+                                  setLocalMetricForm(emptyForm)
+                                  setCalculatedMetricForm(emptyForm)
+                                  setCalculatedMetricValidationError(null)
                                 }}
                                 className="text-xs text-gray-600 hover:text-gray-800 underline"
                               >
@@ -8585,8 +9510,8 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                             <div>
                               <label className="block text-xs font-medium text-gray-700 mb-1">Key</label>
                               <input
-                                value={calculatedMetricForm.key}
-                                onChange={(e) => setCalculatedMetricForm(prev => ({ ...prev, key: e.target.value }))}
+                                value={localMetricForm.key}
+                                onChange={(e) => setLocalMetricForm(prev => ({ ...prev, key: e.target.value }))}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                                 placeholder="ex: roas_calc"
                               />
@@ -8594,8 +9519,8 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                             <div>
                               <label className="block text-xs font-medium text-gray-700 mb-1">Label</label>
                               <input
-                                value={calculatedMetricForm.label}
-                                onChange={(e) => setCalculatedMetricForm(prev => ({ ...prev, label: e.target.value }))}
+                                value={localMetricForm.label}
+                                onChange={(e) => setLocalMetricForm(prev => ({ ...prev, label: e.target.value }))}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                                 placeholder="ex: ROAS (calc)"
                               />
@@ -8603,8 +9528,8 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                             <div>
                               <label className="block text-xs font-medium text-gray-700 mb-1">Tipo</label>
                               <select
-                                value={calculatedMetricForm.type}
-                                onChange={(e) => setCalculatedMetricForm(prev => ({ ...prev, type: e.target.value as any }))}
+                                value={localMetricForm.type}
+                                onChange={(e) => setLocalMetricForm(prev => ({ ...prev, type: e.target.value as any }))}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                               >
                                 <option value="number">Número</option>
@@ -8615,8 +9540,8 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                             <div className="sm:col-span-2">
                               <label className="block text-xs font-medium text-gray-700 mb-1">Fórmula</label>
                               <input
-                                value={calculatedMetricForm.formula}
-                                onChange={(e) => setCalculatedMetricForm(prev => ({ ...prev, formula: e.target.value }))}
+                                value={localMetricForm.formula}
+                                onChange={(e) => setLocalMetricForm(prev => ({ ...prev, formula: e.target.value }))}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                                 placeholder="ex: paid_revenue / cost"
                               />
@@ -8625,9 +9550,9 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                                   Suporta: + - * / ( ) e campos (ex: <span className="font-mono">revenue</span>)
                                 </div>
                               </div>
-                              {error && (
+                              {calculatedMetricValidationError && (
                                 <div className="mt-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                                  {error}
+                                  {calculatedMetricValidationError}
                                 </div>
                               )}
                             </div>
@@ -8642,8 +9567,7 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                             </button>
                             <button
                               onClick={save}
-                              disabled={!!error}
-                              className="px-4 py-2 text-sm bg-purple-600 text-white hover:bg-purple-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="px-4 py-2 text-sm bg-purple-600 text-white hover:bg-purple-700 rounded-lg transition-colors"
                             >
                               {editingCalculatedMetricKey ? 'Salvar alterações' : 'Criar métrica'}
                             </button>
@@ -10038,13 +10962,19 @@ const OverviewDashboard = ({ selectedTable, startDate, endDate }: OverviewDashbo
                     const newTabData: any = {
                       name: customTabFormData.name,
                       icon: customTabFormData.icon,
-                      order: customTabs.length
+                      order: customTabs.length,
+                      dataSource: customTabFormData.dataSource || undefined
                     }
                     // Adicionar isUniversal e createdBy se for usuário com acesso "all"
                     if (hasAllAccess && customTabFormData.isUniversal) {
                       newTabData.isUniversal = true
                       newTabData.createdBy = userEmail
                     }
+                    console.log('💾 Criando nova aba com dataSource:', {
+                      name: newTabData.name,
+                      dataSource: newTabData.dataSource,
+                      isUniversal: newTabData.isUniversal
+                    })
                     const newTab = DashboardStorage.addCustomTab(selectedTable, newTabData)
                     const updatedTabs = [...customTabs, newTab].sort((a, b) => a.order - b.order)
                     setCustomTabs(updatedTabs)

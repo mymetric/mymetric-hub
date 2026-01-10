@@ -237,6 +237,179 @@ export class DashboardFirestore {
   }
 
   /**
+   * Salvar métricas calculadas universais (compartilhadas entre todos os clientes)
+   */
+  static async saveUniversalCalculatedMetrics(metrics: Record<string, any[]>): Promise<void> {
+    try {
+      const { userId, email, accessControl } = this.getUserInfo()
+      
+      // Tentar salvar via API (quando implementado no backend)
+      try {
+        const response = await fetch('/api/dashboard/save-universal-calculated-metrics', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            metrics,
+            userId,
+            email,
+            accessControl
+          })
+        })
+
+        if (response.ok) {
+          const result = await response.json()
+          console.log('✅ Métricas calculadas universais salvas no Firestore via API:', result)
+          return
+        } else {
+          const errorText = await response.text()
+          console.error('❌ Erro HTTP ao salvar métricas calculadas:', {
+            status: response.status,
+            statusText: response.statusText,
+            body: errorText
+          })
+          throw new Error(`Erro ao salvar métricas calculadas: HTTP ${response.status} - ${errorText}`)
+        }
+      } catch (error) {
+        console.error('❌ Erro ao salvar métricas calculadas universais via API:', error)
+        throw error
+      }
+    } catch (error: any) {
+      console.error('❌ Erro ao salvar métricas calculadas universais:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Carregar métricas calculadas universais (compartilhadas entre todos os clientes)
+   */
+  static async loadUniversalCalculatedMetrics(): Promise<Record<string, any[]> | null> {
+    try {
+      const response = await fetch('/api/dashboard/load-universal-calculated-metrics')
+      
+      if (response.ok) {
+        const result = await response.json()
+        console.log('📥 [LOAD] Resposta da API:', result)
+        
+        if (result.success && result.metrics && typeof result.metrics === 'object') {
+          const metrics = result.metrics as Record<string, any[]>
+          if (Object.keys(metrics).length > 0) {
+            console.log('✅ Métricas calculadas universais carregadas do Firestore via API:', {
+              dataSourcesCount: Object.keys(metrics).length,
+              dataSources: Object.keys(metrics)
+            })
+            return metrics
+          } else {
+            console.log('ℹ️ Nenhuma métrica calculada universal encontrada no Firestore (objeto vazio)')
+            return {}
+          }
+        } else {
+          console.log('ℹ️ Nenhuma métrica calculada universal encontrada no Firestore (resposta sem métricas)')
+          return {}
+        }
+      } else {
+        const errorText = await response.text()
+        console.error('❌ Erro HTTP ao carregar métricas calculadas:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorText
+        })
+        throw new Error(`Erro ao carregar métricas calculadas: HTTP ${response.status} - ${errorText}`)
+      }
+    } catch (error: any) {
+      console.error('❌ Erro ao carregar métricas calculadas universais do Firestore:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Salvar fontes de dados universais (compartilhadas entre todos os clientes)
+   */
+  static async saveUniversalDataSources(dataSources: any[]): Promise<void> {
+    try {
+      const { userId, email, accessControl } = this.getUserInfo()
+      
+      // Tentar salvar via API (quando implementado no backend)
+      try {
+        const response = await fetch('/api/dashboard/save-universal-data-sources', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            dataSources,
+            userId,
+            email,
+            accessControl
+          })
+        })
+
+        if (response.ok) {
+          const result = await response.json()
+          console.log('✅ Fontes de dados universais salvas no Firestore via API:', result)
+          return
+        } else {
+          const errorText = await response.text()
+          console.error('❌ Erro HTTP ao salvar fontes de dados:', {
+            status: response.status,
+            statusText: response.statusText,
+            body: errorText
+          })
+          throw new Error(`Erro ao salvar fontes de dados: HTTP ${response.status} - ${errorText}`)
+        }
+      } catch (error) {
+        console.error('❌ Erro ao salvar fontes de dados universais via API:', error)
+        throw error
+      }
+    } catch (error: any) {
+      console.error('❌ Erro ao salvar fontes de dados universais:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Carregar fontes de dados universais (compartilhadas entre todos os clientes)
+   */
+  static async loadUniversalDataSources(): Promise<any[] | null> {
+    try {
+      const response = await fetch('/api/dashboard/load-universal-data-sources')
+      
+      if (response.ok) {
+        const result = await response.json()
+        console.log('📥 [LOAD-DS] Resposta da API:', result)
+        
+        if (result.success && result.dataSources && Array.isArray(result.dataSources)) {
+          if (result.dataSources.length > 0) {
+            console.log('✅ Fontes de dados universais carregadas do Firestore via API:', {
+              count: result.dataSources.length,
+              endpoints: result.dataSources.map((ds: any) => ds.endpoint)
+            })
+            return result.dataSources as any[]
+          } else {
+            console.log('ℹ️ Nenhuma fonte de dados universal encontrada no Firestore (array vazio)')
+            return []
+          }
+        } else {
+          console.log('ℹ️ Nenhuma fonte de dados universal encontrada no Firestore (resposta sem dataSources)')
+          return []
+        }
+      } else {
+        const errorText = await response.text()
+        console.error('❌ Erro HTTP ao carregar fontes de dados:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorText
+        })
+        throw new Error(`Erro ao carregar fontes de dados: HTTP ${response.status} - ${errorText}`)
+      }
+    } catch (error: any) {
+      console.error('❌ Erro ao carregar fontes de dados universais do Firestore:', error)
+      throw error
+    }
+  }
+
+  /**
    * Testar conexão com o Firestore via API backend
    */
   static async testConnection(): Promise<{ success: boolean; error?: any; message: string }> {
